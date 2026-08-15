@@ -1,318 +1,445 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { SalesRepository } from '../database/repositories/SalesRepository.js';
-import { PurchasesRepository } from '../database/repositories/PurchasesRepository.js';
-import { WithdrawalsRepository } from '../database/repositories/WithdrawalsRepository.js';
-import { CapitalRepository } from '../database/repositories/CapitalRepository.js';
-import { LossesRepository } from '../database/repositories/LossesRepository.js';
-import { CategoriesRepository } from '../database/repositories/CategoriesRepository.js';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
-import { SettingsRepository } from '../database/repositories/SettingsRepository.js';
+import { DebtorsRepository } from '../database/repositories/DebtorsRepository.js';
+import { BaseRepository } from '../database/repositories/BaseRepository.js';
 import { useUIStore } from '../stores/useUIStore.js';
-import { formatCurrency } from '../utils/helpers.js';
+import { formatCurrency, formatDate } from '../utils/helpers.js';
+import { Sparkles, Send, Bot, User, Wrench, CheckCircle, HelpCircle, Settings as SettingsIcon, Database, ArrowRight } from 'lucide-react';
 
 const salesRepo = new SalesRepository();
-const purchasesRepo = new PurchasesRepository();
-const withdrawalsRepo = new WithdrawalsRepository();
-const capitalRepo = new CapitalRepository();
-const lossesRepo = new LossesRepository();
-const categoriesRepo = new CategoriesRepository();
 const inventoryRepo = new InventoryRepository();
-const settingsRepo = new SettingsRepository();
+const debtorsRepo = new DebtorsRepository();
+const settingsRepo = new BaseRepository('settings');
 
-// Far-future upper bound used with get*InRange to emulate `date >= cutoff`
-const END_OF_TIME = new Date(8640000000000000).toISOString();
+const SYSTEM_KNOWLEDGE_MANUAL = `
+أنت المساعد الذكي والمستشار التشغيلي الخبير لمنظومة "الدفة للعطور" (Aldaffa Perfumes ERP).
+المنظومة مصممة خصيصاً لمتاجر ومصانع العطور في ليبيا (العملة: د.ل).
+
+دليلك التشغيلي الشامل لكافة وحدات المنظومة (18 وحدة):
+1. نقاط البيع (POS): بيع مباشر، باركود (F1)، خصم نسبة % أو مبلغ د.ل، دفع نقدي/بطاقة/تحويل/دين (آجل).
+2. مبيعات الأونلاين (Online Sales): إدارة وتتبع شحنات التوصيل مع نافذة 30 ساعة.
+3. المرتجعات (Returns): استرجاع جزئي أو كلي لفواتير المحل أو الأونلاين وإعادة الكميات للمخزون فوراً.
+4. الفواتير (Invoices): أرشيف وتدقيق وإعادة طباعة فواتير المحل والأونلاين والمشتريات.
+5. الديون والعملاء (Debtors): متابعة أرصدة العملاء، تسديد الدفعات، وسجل الحركات المالية.
+6. المخزون (Inventory): متابعة كميات العطور والزجاجات، جرد يومي/أسبوعي/سنوي/مخصص، تسوية الفوارق.
+7. المشتريات (Purchases): تسجيل فواتير التوريد، إضافة أصناف جديدة فورياً، توليد باركود تلقائي، وطباعة ملصقات الباركود.
+8. مختبر تركيب العطور (Mix Lab): تركيب خلطات عطرية مخصصة، حساب نسب الزيت والكحول والزجاجة، وخصم المكونات آلياً من المخزون.
+9. إغلاق الوردية (Shift Close): مطابقة النقدية الفعلية مع المتوقع، تسجيل العجز/الفائض، وحفظ الإغلاق في السجلات.
+10. السحوبات والضخ الرأسمالي والخسائر والهدايا: تسجيل حركة الأموال والمصاريف والتوالف بدقة.
+
+يمكنك تنفيذ عمليات حقيقية في قاعدة البيانات بأمان عندما يطلب المستخدم ذلك، والإجابة عن الأسئلة التشغيلية بدقة واحترافية وبلهجة ودية وواضحة.
+`;
 
 const AIAdvisorModule = () => {
   const { showSuccess, showError, showWarning } = useUIStore();
 
-  const [loading, setLoading] = useState(false);
-  const [analysis, setAnalysis] = useState(null);
-  const [geminiKey, setGeminiKey] = useState('');
-  const [dateRange, setDateRange] = useState(30);
-
-  const loadGeminiKey = useCallback(async () => {
-    try {
-      const value = await settingsRepo.getSetting('gemini_api_key');
-      if (value !== null) {
-        setGeminiKey(value);
-      }
-    } catch (error) {
-      showError('خطأ في تحميل مفتاح Gemini: ' + error.message);
+  const [messages, setMessages] = useState([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      text: 'مرحباً بك! أنا المستشار الذكي لمنظومة الدفة للعطور 🌿\nكيف يمكنني مساعدتك اليوم؟ يمكنك سؤالي عن كيفية استخدام أي وحدة في النظام، أو طلب تنفيذ عمليات مثل (إضافة منتج، فحص النواقص، تقرير المبيعات، أو تسجيل دفعة دين).'
     }
-  }, [showError]);
+  ]);
+  const [inputMessage, setInputMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // Settings
+  const [apiUrl, setApiUrl] = useState('https://openrouter.ai/api/v1/chat/completions');
+  const [apiKey, setApiKey] = useState('');
+  const [modelName, setModelName] = useState('deepseek/deepseek-chat');
+  const [showConfig, setShowConfig] = useState(false);
+
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    loadGeminiKey();
-  }, [loadGeminiKey]);
+    loadSettings();
+  }, []);
 
-  const generateAnalysis = async () => {
-    if (!geminiKey) {
-      showWarning('يرجى إدخال مفتاح Gemini API في إعدادات المشتريات أولاً');
-      return;
-    }
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
 
-    setLoading(true);
-
+  const loadSettings = async () => {
     try {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - dateRange);
-      const cutoffIso = cutoffDate.toISOString();
+      const url = await settingsRepo.findOne({ key: 'ai_api_url' });
+      const key = await settingsRepo.findOne({ key: 'ai_api_key' });
+      const model = await settingsRepo.findOne({ key: 'ai_model_name' });
+      const gemini = await settingsRepo.findOne({ key: 'gemini_api_key' });
 
-      // Gather business data via repositories
-      const [sales, inventory, purchases, withdrawals, capitalInjections, losses, categories] =
-        await Promise.all([
-          salesRepo.getSalesInRange(cutoffIso, END_OF_TIME),
-          inventoryRepo.findAll(),
-          purchasesRepo.getPurchasesInRange(cutoffIso, END_OF_TIME),
-          withdrawalsRepo.getWithdrawalsInRange(cutoffIso, END_OF_TIME),
-          capitalRepo.getInjectionsInRange(cutoffIso, END_OF_TIME),
-          lossesRepo.getLossesInRange(cutoffIso, END_OF_TIME),
-          categoriesRepo.findAll()
-        ]);
+      if (url?.value) setApiUrl(url.value);
+      if (key?.value) setApiKey(key.value);
+      else if (gemini?.value) setApiKey(gemini.value);
+      if (model?.value) setModelName(model.value);
+    } catch (e) {
+      console.warn('loadSettings error:', e);
+    }
+  };
 
-      // Calculate metrics
-      const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
-      const totalProfit = sales.reduce((sum, s) => sum + s.profit, 0);
-      const totalPurchases = purchases.reduce((sum, p) => sum + p.total, 0);
-      const totalWithdrawals = withdrawals.reduce((sum, w) => sum + w.amount, 0);
-      const totalCapital = capitalInjections.reduce((sum, c) => sum + c.amount, 0);
-      const totalLosses = losses.reduce((sum, l) => sum + l.cost_value, 0);
-      const inventoryValue = inventory.reduce((sum, p) => sum + (p.cost * p.qty), 0);
+  const saveSettings = async () => {
+    try {
+      const queries = [
+        { sql: 'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', params: ['ai_api_url', apiUrl.trim()] },
+        { sql: 'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', params: ['ai_api_key', apiKey.trim()] },
+        { sql: 'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', params: ['ai_model_name', modelName.trim()] }
+      ];
+      await db.transaction(queries);
+      showSuccess('✅ تم حفظ إعدادات محرك الذكاء الاصطناعي');
+      setShowConfig(false);
+    } catch (e) {
+      showError(`فشل حفظ الإعدادات: ${e.message}`);
+    }
+  };
 
-      // Category performance
-      const categoryPerformance = {};
-      for (const cat of categories) {
-        const catProducts = inventory.filter(p => p.category === cat.name);
-        const catSales = sales.filter(s => {
-          const items = JSON.parse(s.items_json || '[]');
-          return items.some(item => catProducts.find(p => p.id === item.product_id));
+  // AI Tool Executors (Function Calling Handler)
+  const executeAITool = async (toolName, params) => {
+    try {
+      if (toolName === 'add_product') {
+        const { name, cost_price, sell_price, stock_quantity, category } = params;
+        const autoBarcode = `AL${Date.now().toString().slice(-6)}${Math.floor(100 + Math.random() * 900)}`;
+        const res = await inventoryRepo.create({
+          name: name.trim(),
+          category: category || 'عطور',
+          cost: parseFloat(cost_price) || 0,
+          price: parseFloat(sell_price) || (parseFloat(cost_price) * 1.4),
+          qty: parseFloat(stock_quantity) || 0,
+          unit: 'قطعة',
+          barcode: autoBarcode,
+          min_qty: 5
         });
+        return { success: true, message: `تمت إضافة المنتج "${name}" بنجاح في المخزون بالباركود ${autoBarcode} وسعر ${sell_price} د.ل` };
+      }
 
-        categoryPerformance[cat.name] = {
-          revenue: catSales.reduce((sum, s) => sum + s.total, 0),
-          profit: catSales.reduce((sum, s) => sum + s.profit, 0),
-          inventoryValue: catProducts.reduce((sum, p) => sum + (p.cost * p.qty), 0),
-          lowStockCount: catProducts.filter(p => p.qty <= 10).length
+      if (toolName === 'check_low_stock') {
+        const items = await inventoryRepo.getLowStock(10);
+        if (items.length === 0) {
+          return { success: true, message: 'جميع المنتجات متوفرة بكميات كافية (لا توجد نواقص أقل من 10 قطع)' };
+        }
+        const summary = items.slice(0, 10).map((p) => `• ${p.name}: المتبقي ${p.qty} ${p.unit} (الحد الأدنى: ${p.min_qty})`).join('\n');
+        return { success: true, message: `تنبيه: يوجد ${items.length} منتج منخفض في المخزون:\n${summary}` };
+      }
+
+      if (toolName === 'query_sales_summary') {
+        const fromDate = params.from_date || new Date().toISOString().split('T')[0];
+        const toDate = params.to_date || new Date().toISOString().split('T')[0];
+        const summary = await salesRepo.getSalesSummary(
+          new Date(fromDate).toISOString(),
+          new Date(toDate + 'T23:59:59').toISOString()
+        );
+        return {
+          success: true,
+          message: `تقرير المبيعات من ${fromDate} إلى ${toDate}:\n• عدد الفواتير: ${summary?.total_sales || 0}\n• إجمالي الإيرادات: ${formatCurrency(summary?.total_revenue || 0)}\n• إجمالي الأرباح: ${formatCurrency(summary?.total_profit || 0)}`
         };
       }
 
-      // Prepare AI prompt
-      const prompt = `أنت مستشار مالي خبير لمحل عطور "الدفة". قم بتحليل البيانات التالية وقدم توصيات استراتيجية:
+      if (toolName === 'record_debt_payment') {
+        const { customer_name, amount } = params;
+        const debtors = await debtorsRepo.findAll({ name: customer_name.trim() });
+        if (debtors.length === 0) {
+          return { success: false, message: `لم يتم العثور على عميل باسم "${customer_name}" في سجل الديون` };
+        }
+        const debtor = debtors[0];
+        await debtorsRepo.addDebtTransaction(debtor.id, {
+          debtor_id: debtor.id,
+          type: 'payment',
+          amount: parseFloat(amount),
+          date: new Date().toISOString(),
+          notes: 'تسديد دفعة عبر المساعد الذكي'
+        });
+        return { success: true, message: `تم تسجيل سداد مبلغ ${formatCurrency(amount)} للعميل "${customer_name}". الرصيد المتبقي: ${formatCurrency(debtor.total_debt - parseFloat(amount))}` };
+      }
 
-البيانات المالية (آخر ${dateRange} يوم):
-- إجمالي الإيرادات: ${formatCurrency(totalRevenue)}
-- إجمالي الأرباح: ${formatCurrency(totalProfit)}
-- هامش الربح: ${totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0}%
-- المشتريات: ${formatCurrency(totalPurchases)}
-- السحوبات النقدية: ${formatCurrency(totalWithdrawals)}
-- الضخ الرأسمالي: ${formatCurrency(totalCapital)}
-- الخسائر والتالف: ${formatCurrency(totalLosses)}
-- قيمة المخزون الحالية: ${formatCurrency(inventoryValue)}
+      return { success: false, message: 'أمر غير معروف' };
+    } catch (err) {
+      return { success: false, message: `خطأ أثناء تنفيذ العملية: ${err.message}` };
+    }
+  };
 
-أداء الفئات:
-${Object.entries(categoryPerformance).map(([name, perf]) =>
-  `- ${name}: إيرادات ${formatCurrency(perf.revenue)}, أرباح ${formatCurrency(perf.profit)}, مخزون ${formatCurrency(perf.inventoryValue)}, ${perf.lowStockCount} منتج منخفض`
-).join('\n')}
+  // Send Message & Process Response
+  const handleSendMessage = async (e) => {
+    e?.preventDefault();
+    const userText = inputMessage.trim();
+    if (!userText || loading) return;
 
-عدد المنتجات: ${inventory.length}
-المنتجات منخفضة المخزون: ${inventory.filter(p => p.qty <= 10).length}
+    const newMsg = { id: generateId(), role: 'user', text: userText };
+    setMessages((prev) => [...prev, newMsg]);
+    setInputMessage('');
+    setLoading(true);
 
-قدم تحليلاً شاملاً يتضمن:
-1. تقييم الوضع المالي الحالي
-2. توصيات لتوزيع رأس المال على الفئات
-3. تحذيرات من المخاطر المحتملة
-4. فرص النمو والتوسع
-5. نصائح لتحسين هامش الربح
+    // Fallback if no API key provided: Smart local rule-based assistance
+    if (!apiKey.trim()) {
+      setTimeout(async () => {
+        let localReply = '';
+        const lower = userText.toLowerCase();
 
-اجعل التحليل عملياً وقابلاً للتنفيذ، بأرقام محددة.`;
+        if (lower.includes('نواقص') || lower.includes('مخزون') || lower.includes('ناقص')) {
+          const res = await executeAITool('check_low_stock', {});
+          localReply = `🔍 ${res.message}`;
+        } else if (lower.includes('مبيعات اليوم') || lower.includes('ارباح اليوم') || lower.includes('تقرير اليوم')) {
+          const today = new Date().toISOString().split('T')[0];
+          const res = await executeAITool('query_sales_summary', { from_date: today, to_date: today });
+          localReply = `📊 ${res.message}`;
+        } else if (lower.includes('كيف') || lower.includes('طريقة') || lower.includes('شرح')) {
+          localReply = `💡 دليل منظومة الدفة:\nيمكنك التنقل بين الشاشات عبر القبة العلوية المقوسة. تدعم المنظومة تسجيل المبيعات (F3)، إضافة المشتريات وتوليد الباركود، خلطات العطور في المختبر، وجرد المخزون.\n\nلتفعيل الذكاء الاصطناعي التوليدي الكامل، يرجى إدخال مفتاح API في زر ⚙️ الإعدادات بالأعلى.`;
+        } else {
+          localReply = `أهلاً بك! أنا أعمل في الوضع المحلي الأساسي. للإجابة الذكية وتنفيذ الأوامر، تفضل بإضافة مفتاح API (OpenRouter / DeepSeek / Gemini) في إعدادات المساعد بالأعلى ⚙️.`;
+        }
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+        setMessages((prev) => [
+          ...prev,
+          { id: generateId(), role: 'assistant', text: localReply }
+        ]);
+        setLoading(false);
+      }, 500);
+      return;
+    }
+
+    try {
+      // Build LLM messages payload
+      const historyPayload = messages.slice(-8).map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.text
+      }));
+
+      const toolsDefinition = `
+You have access to the following operational tools to execute actions on the ERP database:
+1. add_product(name, cost_price, sell_price, stock_quantity, category)
+2. check_low_stock()
+3. query_sales_summary(from_date, to_date)
+4. record_debt_payment(customer_name, amount)
+
+If the user wants you to execute one of these tools, respond with a JSON action tag in this exact format:
+:::ACTION:{"tool":"tool_name","params":{}}:::
+Followed by a friendly Arabic explanation. Otherwise, reply directly with helpful Arabic advice based on the system manual.
+`;
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey.trim()}`
+        },
         body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }]
+          model: modelName.trim() || 'deepseek/deepseek-chat',
+          messages: [
+            { role: 'system', content: `${SYSTEM_KNOWLEDGE_MANUAL}\n${toolsDefinition}` },
+            ...historyPayload,
+            { role: 'user', content: userText }
+          ],
+          temperature: 0.4
         })
       });
 
       const data = await response.json();
+      const aiReply = data?.choices?.[0]?.message?.content || data?.candidates?.[0]?.content?.parts?.[0]?.text || 'عذراً، لم أتمكن من الحصول على إجابة. يرجى مراجعة إعدادات المفتاح.';
 
-      if (data.candidates && data.candidates[0]) {
-        const aiResponse = data.candidates[0].content.parts[0].text;
+      // Check for action tool invocation
+      const actionMatch = aiReply.match(/:::ACTION:(\{[\s\S]*?\})\:::/);
+      if (actionMatch) {
+        try {
+          const actionData = JSON.parse(actionMatch[1]);
+          const cleanText = aiReply.replace(/:::ACTION:[\s\S]*?\:::/, '').trim();
+          const toolResult = await executeAITool(actionData.tool, actionData.params || {});
 
-        setAnalysis({
-          generatedAt: new Date().toISOString(),
-          dateRange,
-          metrics: {
-            totalRevenue,
-            totalProfit,
-            profitMargin: totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100) : 0,
-            totalPurchases,
-            totalWithdrawals,
-            totalCapital,
-            totalLosses,
-            inventoryValue
-          },
-          categoryPerformance,
-          aiInsights: aiResponse
-        });
-
-        showSuccess('✅ تم إكمال التحليل بنجاح');
-      } else {
-        throw new Error('فشل في الحصول على استجابة من AI');
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'assistant',
+              text: cleanText ? `${cleanText}\n\n⚡ **نتيجة العملية:**\n${toolResult.message}` : toolResult.message,
+              toolAction: actionData.tool
+            }
+          ]);
+          setLoading(false);
+          return;
+        } catch (actionErr) {
+          console.warn('Action parsing error:', actionErr);
+        }
       }
-    } catch (error) {
-      showError('خطأ في التحليل: ' + error.message);
+
+      setMessages((prev) => [
+        ...prev,
+        { id: generateId(), role: 'assistant', text: aiReply }
+      ]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { id: generateId(), role: 'assistant', text: `⚠️ تعذر الاتصال بمحرك الذكاء الاصطناعي: ${err.message}` }
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="h-full flex flex-col glass-card p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold text-gold flex items-center gap-2">
-          <span>🤖</span>
-          <span>المستشار الاستراتيجي بالذكاء الاصطناعي</span>
-        </h2>
-        <div className="flex gap-3">
-          <select
-            value={dateRange}
-            onChange={(e) => setDateRange(parseInt(e.target.value))}
-            className="bg-gray-800 text-white px-4 py-2 rounded-lg border border-gold/30"
-          >
-            <option value={7}>آخر 7 أيام</option>
-            <option value={30}>آخر 30 يوم</option>
-            <option value={90}>آخر 90 يوم</option>
-            <option value={365}>السنة كاملة</option>
-          </select>
+    <div className="h-full flex flex-col gap-4">
+      {/* Header */}
+      <div className="atelier-card p-4 flex justify-between items-center flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+            <Sparkles className="w-5 h-5 text-amber-500" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-[#2D2424] dark:text-white">المستشار الذكي (AI Co-Pilot)</h1>
+            <p className="text-xs text-[#5C524F] dark:text-slate-400">مساعد تشغيلي ذكي ينفذ العمليات ويجيب على الاستفسارات الفنية والمالية</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
           <button
-            onClick={generateAnalysis}
-            disabled={loading}
-            className="btn-gold px-6 py-2 disabled:opacity-50"
+            onClick={() => setShowConfig(!showConfig)}
+            className="btn-atelier-secondary py-1.5 px-3 text-xs flex items-center gap-1.5"
           >
-            {loading ? '⏳ جاري التحليل...' : '🤖 تحليل الأعمال'}
+            <SettingsIcon className="w-3.5 h-3.5 text-amber-600" />
+            <span>⚙️ إعدادات المحرك والـ API</span>
           </button>
         </div>
       </div>
 
-      <div className="bg-purple-600/10 border border-purple-400/30 p-4 rounded-lg mb-4">
-        <div className="text-sm text-purple-400 space-y-1">
-          <div>🧠 تحليل ذكي لوضعك المالي وأداء الفئات</div>
-          <div>💡 توصيات لتوزيع رأس المال الأمثل</div>
-          <div>📈 استراتيجيات لزيادة الأرباح وتقليل المخاطر</div>
+      {/* Config Drawer */}
+      {showConfig && (
+        <div className="atelier-card p-4 border border-amber-500/30 bg-amber-50/50 dark:bg-slate-800/80 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs animate-in fade-in duration-200">
+          <div>
+            <label className="block font-bold text-gray-500 mb-1">API Base URL (OpenRouter / DeepSeek / Ollama):</label>
+            <input
+              type="text"
+              value={apiUrl}
+              onChange={(e) => setApiUrl(e.target.value)}
+              className="input-atelier w-full text-xs"
+              dir="ltr"
+              placeholder="https://openrouter.ai/api/v1/chat/completions"
+            />
+          </div>
+
+          <div>
+            <label className="block font-bold text-gray-500 mb-1">اسم النموذج (Model Name):</label>
+            <input
+              type="text"
+              value={modelName}
+              onChange={(e) => setModelName(e.target.value)}
+              className="input-atelier w-full text-xs"
+              dir="ltr"
+              placeholder="deepseek/deepseek-chat أو gpt-4o-mini"
+            />
+          </div>
+
+          <div>
+            <label className="block font-bold text-gray-500 mb-1">مفتاح الـ API (API Key):</label>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                className="input-atelier flex-1 text-xs"
+                dir="ltr"
+                placeholder="sk-or-v1-..."
+              />
+              <button
+                onClick={saveSettings}
+                className="btn-atelier-primary py-1 px-4 text-xs font-bold"
+              >
+                حفظ
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {loading && !analysis ? (
-          <div className="space-y-4">
-            <div className="glass-card p-4 animate-pulse">
-              <div className="h-5 bg-gray-700 rounded mb-4 w-1/4"></div>
-              <div className="grid grid-cols-4 gap-3">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="bg-gray-800 p-3 rounded h-20"></div>
-                ))}
+      {/* Main Chat Interface */}
+      <div className="atelier-card flex-1 p-4 flex flex-col justify-between overflow-hidden">
+        {/* Messages Scroll Area */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin space-y-3.5 pr-1 pl-1">
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex items-start gap-2.5 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+            >
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm ${
+                  msg.role === 'user'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-emerald-600 text-white'
+                }`}
+              >
+                {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
               </div>
-            </div>
-            <div className="glass-card p-4 animate-pulse">
-              <div className="h-5 bg-gray-700 rounded mb-4 w-1/4"></div>
-              <div className="h-20 bg-gray-700 rounded"></div>
-            </div>
-          </div>
-        ) : !analysis ? (
-          <div className="text-center text-gray-500 py-12">
-            <div className="text-6xl mb-4">🤖</div>
-            <div className="text-lg mb-2">انقر على "تحليل الأعمال" للحصول على رؤى استراتيجية</div>
-            <div className="text-sm">مدعوم بذكاء Gemini الاصطناعي</div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Metrics Summary */}
-            <div className="glass-card p-4">
-              <h3 className="text-xl font-bold text-gold mb-4">ملخص الأداء</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="bg-gray-800 p-3 rounded">
-                  <div className="text-xs text-gray-400">الإيرادات</div>
-                  <div className="text-lg font-bold text-green-400">
-                    {formatCurrency(analysis.metrics.totalRevenue)}
-                  </div>
-                </div>
-                <div className="bg-gray-800 p-3 rounded">
-                  <div className="text-xs text-gray-400">الأرباح</div>
-                  <div className="text-lg font-bold text-gold">
-                    {formatCurrency(analysis.metrics.totalProfit)}
-                  </div>
-                </div>
-                <div className="bg-gray-800 p-3 rounded">
-                  <div className="text-xs text-gray-400">هامش الربح</div>
-                  <div className="text-lg font-bold text-blue-400">
-                    {analysis.metrics.profitMargin.toFixed(1)}%
-                  </div>
-                </div>
-                <div className="bg-gray-800 p-3 rounded">
-                  <div className="text-xs text-gray-400">قيمة المخزون</div>
-                  <div className="text-lg font-bold text-purple-400">
-                    {formatCurrency(analysis.metrics.inventoryValue)}
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Category Performance */}
-            <div className="glass-card p-4">
-              <h3 className="text-xl font-bold text-gold mb-4">أداء الفئات</h3>
-              <div className="space-y-2">
-                {Object.keys(analysis.categoryPerformance).length === 0 ? (
-                  <div className="text-center text-gray-500 py-6">
-                    لا توجد فئات مسجلة
+              <div
+                className={`max-w-[78%] p-3.5 rounded-2xl text-xs leading-relaxed ${
+                  msg.role === 'user'
+                    ? 'bg-amber-500 text-slate-950 font-medium rounded-tr-none shadow-sm'
+                    : 'bg-white dark:bg-slate-800 text-[#2D2424] dark:text-slate-200 rounded-tl-none border border-amber-500/15 shadow-sm whitespace-pre-wrap'
+                }`}
+              >
+                {msg.text}
+                {msg.toolAction && (
+                  <div className="mt-2 pt-2 border-t border-amber-500/20 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>تم تنفيذ العملية: {msg.toolAction}</span>
                   </div>
-                ) : (
-                  Object.entries(analysis.categoryPerformance).map(([name, perf]) => (
-                    <div key={name} className="bg-gray-800 p-3 rounded">
-                      <div className="flex justify-between items-center mb-2">
-                        <h4 className="font-bold">{name}</h4>
-                        <span className="text-sm text-gold">{formatCurrency(perf.revenue)}</span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div>
-                          <span className="text-gray-400">أرباح: </span>
-                          <span className="text-green-400">{formatCurrency(perf.profit)}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">مخزون: </span>
-                          <span>{formatCurrency(perf.inventoryValue)}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">منخفض: </span>
-                          <span className="text-red-400">{perf.lowStockCount}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
                 )}
               </div>
             </div>
+          ))}
 
-            {/* AI Insights */}
-            <div className="glass-card p-4">
-              <h3 className="text-xl font-bold text-gold mb-4 flex items-center gap-2">
-                <span>🧠</span>
-                <span>توصيات الذكاء الاصطناعي</span>
-              </h3>
-              <div className="prose prose-invert max-w-none">
-                <div className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
-                  {analysis.aiInsights}
-                </div>
-              </div>
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-gray-400 animate-pulse">
+              <Bot className="w-4 h-4 text-emerald-600" />
+              <span>جاري التحليل والتنفيذ...</span>
             </div>
+          )}
 
-            <div className="text-xs text-gray-500 text-center">
-              تم التحليل في: {new Date(analysis.generatedAt).toLocaleString('ar-SD')}
-            </div>
-          </div>
-        )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Quick Action Chips */}
+        <div className="py-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
+          <span className="text-gray-400 shrink-0 font-bold">أمثلة سريعة:</span>
+          <button
+            onClick={() => setInputMessage('ما هي المنتجات منخفضة المخزون حالياً؟')}
+            className="px-2.5 py-1 rounded-full bg-gray-100 dark:bg-slate-800 hover:bg-amber-500/10 text-gray-700 dark:text-slate-300 transition-colors shrink-0"
+          >
+            🔍 فحص النواقص
+          </button>
+          <button
+            onClick={() => setInputMessage('أعطني ملخص مبيعات اليوم')}
+            className="px-2.5 py-1 rounded-full bg-gray-100 dark:bg-slate-800 hover:bg-amber-500/10 text-gray-700 dark:text-slate-300 transition-colors shrink-0"
+          >
+            📊 مبيعات اليوم
+          </button>
+          <button
+            onClick={() => setInputMessage('كيف أقوم بإجراء جرد للمخزون وتسوية الفوارق؟')}
+            className="px-2.5 py-1 rounded-full bg-gray-100 dark:bg-slate-800 hover:bg-amber-500/10 text-gray-700 dark:text-slate-300 transition-colors shrink-0"
+          >
+            📖 طريقة الجرد
+          </button>
+          <button
+            onClick={() => setInputMessage('أضف منتج جديد باسم عطر ميراندا الملكي بسعر تكلفة 45 وسعر بيع 75 وكمية 20')}
+            className="px-2.5 py-1 rounded-full bg-gray-100 dark:bg-slate-800 hover:bg-amber-500/10 text-gray-700 dark:text-slate-300 transition-colors shrink-0"
+          >
+            ➕ إضافة منتج آلياً
+          </button>
+        </div>
+
+        {/* Input Bar */}
+        <form onSubmit={handleSendMessage} className="flex gap-2 pt-2 border-t border-amber-500/15">
+          <input
+            type="text"
+            placeholder="اكتب سؤالك أو اطلب عملية من المستشار الذكي..."
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            disabled={loading}
+            className="input-atelier flex-1 text-xs"
+          />
+          <button
+            type="submit"
+            disabled={!inputMessage.trim() || loading}
+            className="btn-atelier-primary px-5 py-2 text-xs font-bold disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>إرسال</span>
+          </button>
+        </form>
       </div>
     </div>
   );

@@ -98,6 +98,7 @@ export const MODULE_FLACON_MAP = {
   discounts: FlaconClassic,
   categories: FlaconOudJar,
   notes: FlaconClassic,
+  invoices: FlaconClassic,
   advisor: FlaconEmblem,
   shift: FlaconOudJar,
   settings: FlaconCrystal

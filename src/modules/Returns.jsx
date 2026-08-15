@@ -29,7 +29,8 @@ const returnsRepo = new BaseRepository('returns');
 const ReturnsModule = () => {
   const { showSuccess, showError, showWarning, showInfo } = useUIStore();
 
-  const [recentSales, setRecentSales] = useState([]);
+  const [activeChannel, setActiveChannel] = useState('pos'); // 'pos' | 'online'
+  const [allRecentSales, setAllRecentSales] = useState([]);
   const [selectedSale, setSelectedSale] = useState(null);
   const [saleItems, setSaleItems] = useState([]);
   const [returnItems, setReturnItems] = useState([]);
@@ -52,9 +53,7 @@ const ReturnsModule = () => {
     setLoadingList(true);
     try {
       const thirtyHoursAgo = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
-      const allSales = await salesRepo.getSalesInRange(thirtyHoursAgo, new Date().toISOString());
-      // Filter for in-store retail transactions
-      const sales = allSales.filter(s => s.type !== 'online');
+      const sales = await salesRepo.getSalesInRange(thirtyHoursAgo, new Date().toISOString());
 
       // Attach item count per sale (bounded by the 30-hour window)
       const withCounts = [];
@@ -62,13 +61,20 @@ const ReturnsModule = () => {
         const items = await saleItemsRepo.findAll({ sale_id: sale.id });
         withCounts.push({ ...sale, items_count: items.length });
       }
-      setRecentSales(withCounts);
+      setAllRecentSales(withCounts);
     } catch (error) {
       showError(`خطأ في تحميل الفواتير: ${error.message}`);
     } finally {
       setLoadingList(false);
     }
   }, [showError]);
+
+  const recentSales = useMemo(() => {
+    if (activeChannel === 'pos') {
+      return allRecentSales.filter(s => s.type !== 'online');
+    }
+    return allRecentSales.filter(s => s.type === 'online');
+  }, [allRecentSales, activeChannel]);
 
   // ---------------------------------------------------------------
   // Search a sale by invoice ID
@@ -240,10 +246,36 @@ const ReturnsModule = () => {
       {/* Sales List */}
       <div className="flex-1 flex flex-col glass-card p-6">
         <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
-          <h2 className="text-2xl font-bold text-gold flex items-center gap-2">
-            <span>↩️</span>
-            <span>الفواتير الأخيرة (30 ساعة)</span>
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold text-[#2D2424] dark:text-amber-300 flex items-center gap-2">
+              <span>↩️</span>
+              <span>مرتجعات الفواتير</span>
+            </h2>
+            <div className="inline-flex rounded-full bg-gray-200 dark:bg-slate-800 p-1 border border-amber-500/20">
+              <button
+                type="button"
+                onClick={() => setActiveChannel('pos')}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  activeChannel === 'pos'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-[#5C524F] dark:text-slate-300 hover:text-[#2D2424] dark:hover:text-white'
+                }`}
+              >
+                🏪 مبيعات المحل (POS)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveChannel('online')}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  activeChannel === 'online'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-[#5C524F] dark:text-slate-300 hover:text-[#2D2424] dark:hover:text-white'
+                }`}
+              >
+                🚚 مبيعات الأونلاين
+              </button>
+            </div>
+          </div>
           <div className="flex gap-2">
             <div className="flex gap-2">
               <input
@@ -254,19 +286,19 @@ const ReturnsModule = () => {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') searchSaleById();
                 }}
-                className="bg-gray-800 text-white px-3 py-2 rounded-lg border border-gold/30 w-[160px] focus:outline-none focus:border-gold"
+                className="bg-white dark:bg-slate-800 text-[#2D2424] dark:text-white px-3 py-1.5 rounded-lg border border-amber-500/30 w-[160px] focus:outline-none focus:border-amber-500 text-xs"
               />
               <button
                 onClick={searchSaleById}
                 disabled={searching}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors disabled:opacity-50"
+                className="btn-atelier-primary px-3 py-1 text-xs"
               >
-                {searching ? '⏳' : '🔍'}
+                {searching ? '⏳' : '🔍 بحث'}
               </button>
             </div>
             <button
               onClick={loadRecentSales}
-              className="bg-gray-700 px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors"
+              className="btn-atelier-secondary px-3 py-1 text-xs"
             >
               🔄 تحديث
             </button>

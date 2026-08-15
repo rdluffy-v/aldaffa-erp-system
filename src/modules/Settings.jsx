@@ -28,6 +28,7 @@ import {
   Check
 } from 'lucide-react';
 
+import { SandboxEngine } from '../database/SandboxEngine.js';
 import { SettingsRepository } from '../database/repositories/SettingsRepository.js';
 import { useLabelsStore, DEFAULT_MODULE_LABELS } from '../stores/useLabelsStore.js';
 import { useUIStore } from '../stores/useUIStore.js';
@@ -95,8 +96,12 @@ const SettingsModule = () => {
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [showOpenAiKey, setShowOpenAiKey] = useState(false);
 
+  // Sandbox Demo Data State
+  const [sandboxActive, setSandboxActive] = useState(false);
+  const [togglingSandbox, setTogglingSandbox] = useState(false);
+
   // Updater
-  const [appVersion, setAppVersion] = useState('2.2.1');
+  const [appVersion, setAppVersion] = useState('2.3.0');
   const [ghToken, setGhToken] = useState('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');
   const [showGhToken, setShowGhToken] = useState(false);
   const [updateStatus, setUpdateStatus] = useState({ status: 'idle', message: '' });
@@ -161,8 +166,9 @@ const SettingsModule = () => {
         setAppVersion(verRes.version);
       }
 
-      // Load Archives List
+      // Load Archives List & Sandbox status
       loadArchives();
+      checkSandbox();
     } catch (error) {
       showError('خطأ أثناء تحميل الإعدادات: ' + error.message);
     } finally {
@@ -374,6 +380,33 @@ const SettingsModule = () => {
       showError('خطأ أثناء التفريغ: ' + error.message);
     } finally {
       setShrinking(false);
+    }
+  };
+
+  const checkSandbox = useCallback(async () => {
+    try {
+      const active = await SandboxEngine.isSandboxActive();
+      setSandboxActive(active);
+    } catch (e) {}
+  }, []);
+
+  const handleToggleSandbox = async () => {
+    setTogglingSandbox(true);
+    try {
+      if (sandboxActive) {
+        await SandboxEngine.purgeDemoData();
+        setSandboxActive(false);
+        showSuccess('✅ تم إيقاف وضع التجربة وحذف كافة السجلات الوهمية بأمان.');
+      } else {
+        await SandboxEngine.seedDemoData();
+        setSandboxActive(true);
+        showSuccess('✅ تم تفعيل وضع التجربة وزراعة بيانات وهمية واقعية للمنظومة.');
+      }
+      await loadAllSettings();
+    } catch (err) {
+      showError(`خطأ في وضع التجربة: ${err.message}`);
+    } finally {
+      setTogglingSandbox(false);
     }
   };
 
@@ -1048,6 +1081,44 @@ const SettingsModule = () => {
                   >
                     <RefreshCw className={`w-4 h-4 text-[#38bdf8] ${purgingCache ? 'animate-spin' : ''}`} />
                     {purgingCache ? 'جاري تنظيف الكاش...' : 'تنظيف ملفات الكاش المؤقتة'}
+                  </button>
+                </div>
+
+                {/* Sandbox Demo Data Mode */}
+                <div className="glass-card p-5 border border-amber-500/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-sm font-bold text-[#e6edf3] flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#fbbf24]" />
+                      وضع تجربة المنظومة (بيانات وهمية)
+                    </h2>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      sandboxActive
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-gray-700 text-gray-300'
+                    }`}>
+                      {sandboxActive ? 'الوضع التجريبي مفعّل' : 'الوضع الحقيقي'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#768390] mb-4">
+                    زراعة منتجات، فواتير، وديون وهمية لتجربة كافة وظائف النظام بأمان، مع إمكانية حذفها بنقرة زر دون التأثير على البيانات الحقيقية.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleSandbox}
+                    disabled={togglingSandbox}
+                    className={`text-xs py-2 px-4 rounded-full font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                      sandboxActive
+                        ? 'bg-red-600 hover:bg-red-700 text-white'
+                        : 'btn-atelier-primary'
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    {togglingSandbox
+                      ? 'جاري المعالجة...'
+                      : sandboxActive
+                      ? '🛑 إيقاف وضع التجربة وحذف البيانات الوهمية'
+                      : '✨ تفعيل وضع التجربة وزراعة بيانات وهمية'}
                   </button>
                 </div>
               </div>

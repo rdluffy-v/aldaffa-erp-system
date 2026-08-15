@@ -32,6 +32,7 @@ const POSModule = () => {
     items: cartItems,
     pricingMode,
     discount,
+    discountType,
     paymentMethod,
     customerName,
     notes,
@@ -41,6 +42,7 @@ const POSModule = () => {
     updateQuantity,
     updatePrice,
     setDiscount,
+    setDiscountType,
     setPricingMode,
     setPaymentMethod,
     setCustomerName,
@@ -214,6 +216,7 @@ const POSModule = () => {
         date: saleDate,
         subtotal,
         discount,
+        discount_type: discountType,
         total,
         profit,
         payment_method: paymentMethod,
@@ -538,19 +541,45 @@ const POSModule = () => {
               <span className="font-bold">{formatCurrency(subtotal)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">الخصم:</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-400 text-xs">الخصم:</span>
+                <div className="inline-flex rounded-lg bg-gray-800 p-0.5 border border-amber-500/20">
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('percentage')}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                      discountType === 'percentage'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    %
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('fixed')}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                      discountType === 'fixed'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    د.ل
+                  </button>
+                </div>
+              </div>
               <div className="flex gap-2 items-center">
                 <input
                   type="number"
-                  value={discount}
+                  value={discount || ''}
+                  placeholder="0"
                   onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                  className="w-14 bg-gray-700 text-white px-1.5 py-0.5 rounded text-center focus:outline-none focus:ring-2 focus:ring-gold"
+                  className="w-16 bg-gray-700 text-white px-1.5 py-0.5 rounded text-center focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
                   min="0"
-                  max="100"
-                  step="0.1"
+                  max={discountType === 'percentage' ? 100 : undefined}
+                  step={discountType === 'percentage' ? '0.5' : '1'}
                 />
-                <span className="text-gray-400">%</span>
-                <span className="text-red-400 min-w-[70px] text-left">
+                <span className="text-red-400 min-w-[70px] text-left text-xs">
                   -{formatCurrency(discountAmount)}
                 </span>
               </div>

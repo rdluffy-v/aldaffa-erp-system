@@ -13,7 +13,8 @@ export const useCartStore = create(
       items: [],
       pricingMode: 'retail', // 'retail' | 'wholesale'
       discount: 0,
-      paymentMethod: 'cash', // 'cash' | 'card' | 'bank_transfer'
+      discountType: 'percentage', // 'percentage' | 'fixed'
+      paymentMethod: 'cash', // 'cash' | 'card' | 'bank_transfer' | 'debt'
       customerName: '',
       phone: '',
       notes: '',
@@ -54,7 +55,9 @@ export const useCartStore = create(
         return { items: updated };
       }),
 
-      setDiscount: (discount) => set({ discount: Math.max(0, Math.min(100, discount)) }),
+      setDiscount: (discount) => set({ discount: Math.max(0, discount || 0) }),
+
+      setDiscountType: (discountType) => set({ discountType }),
 
       setPricingMode: (mode) => set({ pricingMode: mode }),
 
@@ -71,6 +74,7 @@ export const useCartStore = create(
       clear: () => set({
         items: [],
         discount: 0,
+        discountType: 'percentage',
         customerName: '',
         phone: '',
         notes: '',
@@ -86,14 +90,17 @@ export const useCartStore = create(
       getDiscountAmount: () => {
         const state = get();
         const subtotal = state.getSubtotal();
-        return subtotal * (state.discount / 100);
+        if (state.discountType === 'fixed') {
+          return Math.min(subtotal, state.discount || 0);
+        }
+        return subtotal * (Math.min(100, state.discount || 0) / 100);
       },
 
       getTotal: () => {
         const state = get();
         const subtotal = state.getSubtotal();
         const discountAmount = state.getDiscountAmount();
-        return subtotal - discountAmount;
+        return Math.max(0, subtotal - discountAmount);
       },
 
       getProfit: () => {

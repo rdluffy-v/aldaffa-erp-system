@@ -3,56 +3,56 @@
 @tailwind utilities;
 
 /* ==========================================================================
-   ORGANIC LUXURY PERFUME ATELIER DESIGN SYSTEM
+   ORGANIC LUXURY PERFUME ATELIER DESIGN SYSTEM (v2.3.0)
    ========================================================================== */
 
 :root,
 [data-theme="atelier"] {
-  /* Canvas & Atmospheric Surfaces - Soft Warm Linen / Sandtone */
-  --bg-primary: #F7F4EE;
-  --bg-secondary: #EFE9E0;
-  --bg-tertiary: #E6DEC3;
-  --bg-canvas: #F4EFEA;
-  --bg-elevated: #FFFFFF;
+  /* Canvas & Atmospheric Surfaces - Warm Sandstone / Muted Linen */
+  --bg-primary: #F5EFEB;
+  --bg-secondary: #EBE3DC;
+  --bg-tertiary: #E1D7CE;
+  --bg-canvas: #F5EFEB;
+  --bg-elevated: #FFFDF9;
 
-  /* Frosted Atelier Surfaces */
-  --surface-card: rgba(255, 255, 255, 0.92);
-  --surface-card-border: #E2D9CE;
-  --glass-bg: rgba(255, 255, 255, 0.88);
-  --border-subtle: rgba(74, 62, 59, 0.12);
-  --border-accent: rgba(212, 163, 89, 0.4);
+  /* Frosted Soft Cream Surfaces */
+  --surface-card: #FFFDF9;
+  --surface-card-border: #E6DDCF;
+  --glass-bg: rgba(255, 253, 249, 0.94);
+  --border-subtle: rgba(78, 63, 58, 0.12);
+  --border-accent: rgba(199, 149, 73, 0.38);
 
-  /* Deep Espresso & Charcoal Typography (High WCAG Contrast) */
-  --text-primary: #2A201E;
-  --text-secondary: #4A3E3B;
-  --text-tertiary: #635754;
-  --text-muted: #807572;
+  /* Deep Warm Espresso & Cocoa Typography (High Contrast, Zero Glare) */
+  --text-primary: #2C211E;
+  --text-secondary: #4E3F3A;
+  --text-tertiary: #695A54;
+  --text-muted: #877771;
 
   /* Organic Atelier Accents */
   --accent-sage: #8BA892;
-  --accent-sage-bg: #D5E2D7;
+  --accent-sage-bg: #D7E4D9;
   --accent-sage-text: #1E3B26;
 
   --accent-rose: #C89288;
-  --accent-rose-bg: #EEDAD5;
+  --accent-rose-bg: #F0DCD7;
   --accent-rose-text: #4C201A;
 
   --accent-amber: #C79549;
-  --accent-amber-bg: #F5E2BD;
+  --accent-amber-bg: #F6E4C1;
   --accent-amber-text: #4E340A;
 
   --accent-lavender: #A7A0BE;
-  --accent-lavender-bg: #DFDCED;
+  --accent-lavender-bg: #E1DFEE;
   --accent-lavender-text: #322C4A;
 
   /* Shadows & Elevation */
-  --shadow-sm: 0 2px 8px rgba(42, 32, 30, 0.05);
-  --shadow-md: 0 8px 24px rgba(42, 32, 30, 0.07);
-  --shadow-lg: 0 16px 36px rgba(42, 32, 30, 0.1);
+  --shadow-sm: 0 2px 8px rgba(44, 33, 30, 0.04);
+  --shadow-md: 0 8px 24px rgba(44, 33, 30, 0.06);
+  --shadow-lg: 0 16px 36px rgba(44, 33, 30, 0.08);
   --shadow-glow: 0 0 24px rgba(199, 149, 73, 0.25);
 
   /* Canopy Gradient Halo */
-  --canopy-gradient: linear-gradient(135deg, rgba(238, 218, 213, 0.95) 0%, rgba(245, 226, 189, 0.9) 30%, rgba(213, 226, 215, 0.9) 70%, rgba(223, 220, 237, 0.95) 100%);
+  --canopy-gradient: linear-gradient(135deg, rgba(240, 220, 215, 0.95) 0%, rgba(246, 228, 193, 0.92) 30%, rgba(215, 228, 217, 0.92) 70%, rgba(225, 223, 238, 0.95) 100%);
   --canopy-border: rgba(199, 149, 73, 0.25);
 }
 
@@ -127,7 +127,7 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Organic Frosted Glass Card */
+/* Organic Soft Cream Card */
 .glass-card,
 .atelier-card {
   background: var(--surface-card);
@@ -200,7 +200,7 @@ body {
   z-index: 0;
   border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
   filter: blur(1px);
-  opacity: 0.55;
+  opacity: 0.45;
   transition: all 0.5s ease;
 }
 
@@ -230,13 +230,13 @@ body {
   transform: scale(0.96);
 }
 
-/* Secondary Button */
+/* Secondary & Sub-Module Action Buttons */
 .btn-atelier-secondary {
-  background: var(--surface-card);
-  border: 1px solid var(--surface-card-border);
+  background: linear-gradient(180deg, rgba(254, 243, 199, 0.4) 0%, rgba(253, 230, 138, 0.25) 100%);
+  border: 1px solid rgba(180, 83, 9, 0.22);
   color: var(--text-primary);
   font-weight: 600;
-  padding: 0.6rem 1.25rem;
+  padding: 0.55rem 1.2rem;
   border-radius: 9999px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -247,7 +247,7 @@ body {
 }
 
 .btn-atelier-secondary:hover {
-  background: var(--bg-secondary);
+  background: linear-gradient(180deg, rgba(254, 243, 199, 0.7) 0%, rgba(253, 230, 138, 0.45) 100%);
   border-color: var(--border-accent);
   transform: translateY(-1px);
 }

@@ -32,6 +32,7 @@ import {
   StickyNote,
   Sparkles,
   Lock,
+  FileText,
   SettingsIcon
 } from 'lucide-react';
 
@@ -45,6 +46,7 @@ import DashboardModule from './modules/Dashboard.jsx';
 import POSModule from './modules/POS.jsx';
 import OnlineSalesModule from './modules/OnlineSales.jsx';
 import ReturnsModule from './modules/Returns.jsx';
+import InvoicesModule from './modules/Invoices.jsx';
 import DebtorsModule from './modules/Debtors.jsx';
 import InventoryFullModule from './modules/InventoryFull.jsx';
 import PurchasesModule from './modules/Purchases.jsx';
@@ -68,6 +70,7 @@ const MODULE_DEFINITIONS = [
   { id: 'pos', defaultLabel: 'نقاط البيع', icon: ShoppingCart, component: POSModule },
   { id: 'online', defaultLabel: 'أونلاين', icon: Smartphone, component: OnlineSalesModule },
   { id: 'returns', defaultLabel: 'المرتجعات', icon: Undo2, component: ReturnsModule },
+  { id: 'invoices', defaultLabel: 'الفواتير', icon: FileText, component: InvoicesModule },
   { id: 'debtors', defaultLabel: 'الديون', icon: CreditCard, component: DebtorsModule },
   { id: 'inventory', defaultLabel: 'المخزون', icon: Package, component: InventoryFullModule },
   { id: 'purchases', defaultLabel: 'المشتريات', icon: ShoppingBag, component: PurchasesModule },
