@@ -137,8 +137,8 @@ const compactNumber = (value) => {
 
 const formatDateTimeShort = (iso) => {
   const d = new Date(iso);
-  const date = d.toLocaleDateString('ar-SD', { day: '2-digit', month: '2-digit' });
-  const time = d.toLocaleTimeString('ar-SD', { hour: '2-digit', minute: '2-digit' });
+  const date = d.toLocaleDateString('ar-LY', { day: '2-digit', month: '2-digit' });
+  const time = d.toLocaleTimeString('ar-LY', { hour: '2-digit', minute: '2-digit' });
   return `${date} · ${time}`;
 };
 
@@ -149,13 +149,6 @@ const formatDateTimeShort = (iso) => {
 const fetchDashboardData = async (range) => {
   const { start, end, prevStart, prevEnd } = getPeriodRange(range);
   const now = new Date();
-
-  // Last 7 days (fixed window for the area chart).
-  const areaStart = new Date(now);
-  areaStart.setHours(0, 0, 0, 0);
-  areaStart.setDate(areaStart.getDate() - 6);
-  const areaEnd = new Date(now);
-  areaEnd.setHours(23, 59, 59, 999);
 
   const [
     summaryRow,
@@ -176,7 +169,7 @@ const fetchDashboardData = async (range) => {
     debtorsRepo.getActiveDebtors(),
     debtorsRepo.getTotalDebt(),
     salesRepo.paginate(1, 10, {}, 'date DESC'),
-    salesRepo.getSalesInRange(areaStart.toISOString(), areaEnd.toISOString())
+    salesRepo.getSalesInRange(start, end)
   ]);
 
   // Coerce nullable aggregate rows into safe zero-filled summaries.
@@ -200,32 +193,77 @@ const fetchDashboardData = async (range) => {
     ? 0
     : (summary.profit / summary.revenue) * 100;
 
-  // Aggregate daily revenue/profit for the last 7 days.
-  const areaMap = {};
-  for (let i = 6; i >= 0; i -= 1) {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - i);
-    areaMap[toLocalDateKey(d)] = { revenue: 0, profit: 0 };
-  }
+  // Dynamic time-series aggregation based on active period:
+  let areaData = [];
 
-  for (const sale of rangeSales) {
-    const key = toLocalDateKey(new Date(sale.date));
-    if (areaMap[key]) {
-      areaMap[key].revenue += sale.total || 0;
-      areaMap[key].profit += sale.profit || 0;
+  if (range === 'today') {
+    // 6 hourly intervals across the day
+    const hourBuckets = [
+      { start: 0, end: 8, label: '08:00 ص' },
+      { start: 9, end: 11, label: '11:00 ص' },
+      { start: 12, end: 14, label: '02:00 م' },
+      { start: 15, end: 17, label: '05:00 م' },
+      { start: 18, end: 20, label: '08:00 م' },
+      { start: 21, end: 23, label: '11:00 م' }
+    ];
+    areaData = hourBuckets.map(b => {
+      const bucketSales = rangeSales.filter(s => {
+        const h = new Date(s.date).getHours();
+        return h >= b.start && h <= b.end;
+      });
+      return {
+        key: b.label,
+        label: b.label,
+        revenue: bucketSales.reduce((sum, s) => sum + (s.total || 0), 0),
+        profit: bucketSales.reduce((sum, s) => sum + (s.profit || 0), 0)
+      };
+    });
+  } else if (range === 'week') {
+    // 7 days ending today
+    const areaMap = {};
+    for (let i = 6; i >= 0; i -= 1) {
+      const d = new Date(now);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - i);
+      areaMap[toLocalDateKey(d)] = { revenue: 0, profit: 0, date: d };
     }
+    for (const sale of rangeSales) {
+      const key = toLocalDateKey(new Date(sale.date));
+      if (areaMap[key]) {
+        areaMap[key].revenue += sale.total || 0;
+        areaMap[key].profit += sale.profit || 0;
+      }
+    }
+    areaData = Object.keys(areaMap).map((key) => {
+      const d = areaMap[key].date;
+      return {
+        key,
+        label: d.toLocaleDateString('ar-LY', { weekday: 'short' }),
+        revenue: areaMap[key].revenue,
+        profit: areaMap[key].profit
+      };
+    });
+  } else {
+    // Month: 4 weekly buckets
+    const weekBuckets = [
+      { startDay: 1, endDay: 7, label: 'أسبوع 1' },
+      { startDay: 8, endDay: 14, label: 'أسبوع 2' },
+      { startDay: 15, endDay: 21, label: 'أسبوع 3' },
+      { startDay: 22, endDay: 31, label: 'أسبوع 4' }
+    ];
+    areaData = weekBuckets.map(b => {
+      const bucketSales = rangeSales.filter(s => {
+        const day = new Date(s.date).getDate();
+        return day >= b.startDay && day <= b.endDay;
+      });
+      return {
+        key: b.label,
+        label: b.label,
+        revenue: bucketSales.reduce((sum, s) => sum + (s.total || 0), 0),
+        profit: bucketSales.reduce((sum, s) => sum + (s.profit || 0), 0)
+      };
+    });
   }
-
-  const areaData = Object.keys(areaMap).map((key) => {
-    const d = new Date(`${key}T00:00:00`);
-    return {
-      key,
-      label: d.toLocaleDateString('ar-SD', { weekday: 'short' }),
-      revenue: areaMap[key].revenue,
-      profit: areaMap[key].profit
-    };
-  });
 
   const paymentMethods = paymentMethodRows.map((row) => ({
     method: row.payment_method,
@@ -883,7 +921,9 @@ const Dashboard = () => {
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
                   <h3 className="font-bold text-[#e6edf3]">الإيرادات والأرباح</h3>
-                  <p className="text-xs text-[#768390] mt-0.5">آخر 7 أيام</p>
+                  <p className="text-xs text-[#768390] mt-0.5">
+                    {range === 'today' ? 'اليوم (توزيع الساعات)' : range === 'week' ? 'آخر 7 أيام' : 'خلال هذا الشهر (أسابيع)'}
+                  </p>
                 </div>
                 <div className="flex items-center gap-4 text-xs">
                   <span className="flex items-center gap-1.5 text-[#adbac7]">

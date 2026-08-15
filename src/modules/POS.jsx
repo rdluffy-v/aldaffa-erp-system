@@ -18,11 +18,13 @@ import { useCartStore } from '../stores/useCartStore.js';
 import { useInventoryStore } from '../stores/useInventoryStore.js';
 import { useUIStore } from '../stores/useUIStore.js';
 import { SalesRepository } from '../database/repositories/SalesRepository.js';
+import { DebtorsRepository } from '../database/repositories/DebtorsRepository.js';
 import { formatCurrency, generateId } from '../utils/helpers.js';
 import PortionModal from '../components/PortionModal.jsx';
 import DateTimePicker from '../components/DateTimePicker.jsx';
 
 const salesRepo = new SalesRepository();
+const debtorsRepo = new DebtorsRepository();
 
 const POSModule = () => {
   // Zustand stores
@@ -194,6 +196,13 @@ const POSModule = () => {
       return;
     }
 
+    if (paymentMethod === 'debt') {
+      if (!customerName || !customerName.trim()) {
+        showError('يرجى إدخال اسم العميل لإتمام عملية البيع بالآجل (دين)');
+        return;
+      }
+    }
+
     setIsProcessingSale(true);
 
     try {
@@ -228,6 +237,34 @@ const POSModule = () => {
       // Create sale with transaction (includes inventory updates)
       const results = await salesRepo.createSaleWithItems(saleData, saleItems);
       const saleId = results[0]?.lastInsertRowid;
+
+      // If payment is debt, update debtor ledger
+      if (paymentMethod === 'debt' && customerName) {
+        try {
+          const cleanName = customerName.trim();
+          let debtor = (await debtorsRepo.findAll({ name: cleanName }))[0];
+          if (!debtor) {
+            const insertRes = await debtorsRepo.create({
+              name: cleanName,
+              phone: null,
+              total_debt: 0,
+              created_at: new Date().toISOString()
+            });
+            debtor = await debtorsRepo.findById(insertRes.lastInsertRowid);
+          }
+          if (debtor) {
+            await debtorsRepo.addDebtTransaction(debtor.id, {
+              debtor_id: debtor.id,
+              type: 'debt',
+              amount: total,
+              date: saleDate || new Date().toISOString(),
+              notes: `فاتورة مبيعات آجل #${saleId}`
+            });
+          }
+        } catch (debtErr) {
+          console.error('Debtor transaction error:', debtErr);
+        }
+      }
 
       // Print receipt (optional - check if IPC is available)
       try {
@@ -525,19 +562,20 @@ const POSModule = () => {
           </div>
 
           {/* Payment Method */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-1.5">
             {[
               { method: 'cash', label: '💵 نقدي' },
               { method: 'card', label: '💳 بطاقة' },
-              { method: 'bank_transfer', label: '🏦 تحويل' }
+              { method: 'bank_transfer', label: '🏦 تحويل' },
+              { method: 'debt', label: '📝 دين (آجل)' }
             ].map(({ method, label }) => (
               <button
                 key={method}
                 onClick={() => setPaymentMethod(method)}
-                className={`py-2 rounded-lg font-bold text-xs transition-all ${
+                className={`py-2 px-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
                   paymentMethod === method
-                    ? 'bg-gradient-to-r from-gold to-gold-dark text-navy shadow-lg scale-105'
-                    : 'bg-gray-700 text-white hover:bg-gray-600'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md scale-105'
+                    : 'bg-gray-700/80 text-white hover:bg-gray-600'
                 }`}
               >
                 {label}

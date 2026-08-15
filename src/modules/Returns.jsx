@@ -52,7 +52,9 @@ const ReturnsModule = () => {
     setLoadingList(true);
     try {
       const thirtyHoursAgo = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
-      const sales = await salesRepo.getSalesInRange(thirtyHoursAgo, new Date().toISOString());
+      const allSales = await salesRepo.getSalesInRange(thirtyHoursAgo, new Date().toISOString());
+      // Filter for in-store retail transactions
+      const sales = allSales.filter(s => s.type !== 'online');
 
       // Attach item count per sale (bounded by the 30-hour window)
       const withCounts = [];

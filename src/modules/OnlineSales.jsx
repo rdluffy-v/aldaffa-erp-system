@@ -38,7 +38,8 @@ const OnlineSalesModule = () => {
 
   const loadRecentOrders = async () => {
     try {
-      const sales = await salesRepo.getRecentSales(15);
+      const thirtyHoursAgo = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
+      const sales = await salesRepo.getSalesInRange(thirtyHoursAgo, new Date().toISOString());
       setRecentOnlineOrders(sales.filter(s => s.type === 'online'));
     } catch (e) {
       console.error(e);

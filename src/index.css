@@ -8,52 +8,52 @@
 
 :root,
 [data-theme="atelier"] {
-  /* Canvas & Atmospheric Surfaces */
-  --bg-primary: #FBF9F5;
-  --bg-secondary: #F4EFE6;
-  --bg-tertiary: #EAE3D6;
-  --bg-canvas: #F8F6F0;
+  /* Canvas & Atmospheric Surfaces - Soft Warm Linen / Sandtone */
+  --bg-primary: #F7F4EE;
+  --bg-secondary: #EFE9E0;
+  --bg-tertiary: #E6DEC3;
+  --bg-canvas: #F4EFEA;
   --bg-elevated: #FFFFFF;
 
   /* Frosted Atelier Surfaces */
-  --surface-card: rgba(255, 255, 255, 0.88);
-  --surface-card-border: rgba(212, 163, 89, 0.18);
-  --glass-bg: rgba(255, 255, 255, 0.82);
-  --border-subtle: rgba(92, 82, 79, 0.1);
-  --border-accent: rgba(212, 163, 89, 0.35);
+  --surface-card: rgba(255, 255, 255, 0.92);
+  --surface-card-border: #E2D9CE;
+  --glass-bg: rgba(255, 255, 255, 0.88);
+  --border-subtle: rgba(74, 62, 59, 0.12);
+  --border-accent: rgba(212, 163, 89, 0.4);
 
-  /* Deep Espresso & Charcoal Typography */
-  --text-primary: #2D2424;
-  --text-secondary: #5C524F;
-  --text-tertiary: #8C827A;
-  --text-muted: #A89F97;
+  /* Deep Espresso & Charcoal Typography (High WCAG Contrast) */
+  --text-primary: #2A201E;
+  --text-secondary: #4A3E3B;
+  --text-tertiary: #635754;
+  --text-muted: #807572;
 
   /* Organic Atelier Accents */
-  --accent-sage: #9EBAA4;
-  --accent-sage-bg: #DCE7DD;
-  --accent-sage-text: #264A30;
+  --accent-sage: #8BA892;
+  --accent-sage-bg: #D5E2D7;
+  --accent-sage-text: #1E3B26;
 
-  --accent-rose: #D8A49B;
-  --accent-rose-bg: #F4E2DE;
-  --accent-rose-text: #5A2A22;
+  --accent-rose: #C89288;
+  --accent-rose-bg: #EEDAD5;
+  --accent-rose-text: #4C201A;
 
-  --accent-amber: #D4A359;
-  --accent-amber-bg: #FBE8C8;
-  --accent-amber-text: #5E4010;
+  --accent-amber: #C79549;
+  --accent-amber-bg: #F5E2BD;
+  --accent-amber-text: #4E340A;
 
-  --accent-lavender: #B8B2CE;
-  --accent-lavender-bg: #E8E5F0;
-  --accent-lavender-text: #3E3859;
+  --accent-lavender: #A7A0BE;
+  --accent-lavender-bg: #DFDCED;
+  --accent-lavender-text: #322C4A;
 
   /* Shadows & Elevation */
-  --shadow-sm: 0 2px 8px rgba(45, 36, 36, 0.04);
-  --shadow-md: 0 8px 24px rgba(45, 36, 36, 0.06);
-  --shadow-lg: 0 16px 36px rgba(45, 36, 36, 0.08);
-  --shadow-glow: 0 0 24px rgba(212, 163, 89, 0.25);
+  --shadow-sm: 0 2px 8px rgba(42, 32, 30, 0.05);
+  --shadow-md: 0 8px 24px rgba(42, 32, 30, 0.07);
+  --shadow-lg: 0 16px 36px rgba(42, 32, 30, 0.1);
+  --shadow-glow: 0 0 24px rgba(199, 149, 73, 0.25);
 
   /* Canopy Gradient Halo */
-  --canopy-gradient: linear-gradient(135deg, rgba(244, 226, 222, 0.9) 0%, rgba(251, 232, 200, 0.85) 30%, rgba(220, 231, 221, 0.85) 70%, rgba(232, 229, 240, 0.9) 100%);
-  --canopy-border: rgba(212, 163, 89, 0.2);
+  --canopy-gradient: linear-gradient(135deg, rgba(238, 218, 213, 0.95) 0%, rgba(245, 226, 189, 0.9) 30%, rgba(213, 226, 215, 0.9) 70%, rgba(223, 220, 237, 0.95) 100%);
+  --canopy-border: rgba(199, 149, 73, 0.25);
 }
 
 [data-theme="dark"] {
@@ -206,14 +206,14 @@ body {
 
 /* Primary Button */
 .btn-atelier-primary {
-  background: linear-gradient(135deg, var(--accent-amber), #B88238);
+  background: linear-gradient(135deg, var(--accent-amber), #9A6926);
   color: #FFFFFF;
   font-weight: 700;
   padding: 0.65rem 1.5rem;
   border-radius: 9999px;
   border: none;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(212, 163, 89, 0.35);
+  box-shadow: 0 4px 14px rgba(199, 149, 73, 0.35);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   display: inline-flex;
   align-items: center;
@@ -223,7 +223,7 @@ body {
 
 .btn-atelier-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(212, 163, 89, 0.45);
+  box-shadow: 0 6px 20px rgba(199, 149, 73, 0.45);
 }
 
 .btn-atelier-primary:active {
@@ -280,12 +280,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(212, 163, 89, 0.25);
+  background: rgba(199, 149, 73, 0.25);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(212, 163, 89, 0.45);
+  background: rgba(199, 149, 73, 0.45);
 }
 
 /* Utility Animations */
