@@ -1346,34 +1346,6 @@ ipcMain.handle('print:inventory-report', async (event, inventoryData) => {
     return { success: false, error: error.message };
   }
 });
-</body>
-</html>`;
-
-    const printWindow = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        nodeIntegration: false
-      }
-    });
-
-    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(reportHtml));
-
-    printWindow.webContents.print({
-      silent: false,
-      printBackground: true
-    }, (success, errorType) => {
-      if (!success) {
-        console.error('Print failed:', errorType);
-      }
-      printWindow.close();
-    });
-
-    return { success: true };
-  } catch (error) {
-    console.error('Print shift report error:', error);
-    return { success: false, error: error.message };
-  }
-});
 
 // Test Thermal Receipt Print (80mm)
 ipcMain.handle('print:test-thermal', async (event, templateConfig = {}) => {
