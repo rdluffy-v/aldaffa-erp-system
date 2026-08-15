@@ -1,11 +1,12 @@
 import { useEffect, useRef, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import useClickOutside from '../../hooks/useClickOutside';
 
 /**
  * Modal.jsx
- * Accessible modal dialog with blurred backdrop, Framer Motion slide-up
+ * Accessible modal dialog with ReactDOM portal, blurred backdrop, Framer Motion slide-up
  * animation, ESC-key close and click-outside close.
  *
  * @param {Object}  props
@@ -48,7 +49,6 @@ const Modal = ({
     if (!open) return undefined;
 
     previousFocusRef.current = document.activeElement;
-    // Give the panel focus so it can receive keyboard events & announce itself.
     const focusTimer = window.setTimeout(() => panelRef.current?.focus(), 0);
 
     const onKeyDown = (e) => {
@@ -66,7 +66,6 @@ const Modal = ({
       window.clearTimeout(focusTimer);
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = originalOverflow;
-      // Restore focus to the trigger element on close.
       previousFocusRef.current?.focus?.();
     };
   }, [open, closeOnEsc, handleClose]);
@@ -78,11 +77,13 @@ const Modal = ({
     xl: 'max-w-4xl'
   };
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return ReactDOM.createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[1000] flex items-center justify-center p-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -91,7 +92,7 @@ const Modal = ({
         >
           {/* Blurred dark backdrop */}
           <div
-            className="absolute inset-0 bg-[#0d1117]/85 backdrop-blur-[8px]"
+            className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
             aria-hidden="true"
           />
 
@@ -104,8 +105,8 @@ const Modal = ({
             tabIndex={-1}
             className={[
               'relative w-full max-h-[90vh] overflow-y-auto outline-none scrollbar-luxury',
-              'bg-[#161b22] border border-white/10 rounded-2xl',
-              'shadow-[0_25px_60px_-12px_rgba(0,0,0,0.7),0_0_40px_rgba(217,119,6,0.06)]',
+              'bg-[#111827] border border-[#d97706]/20 rounded-2xl',
+              'shadow-[0_25px_60px_-12px_rgba(0,0,0,0.8),0_0_40px_rgba(217,119,6,0.08)]',
               sizeClasses[size],
               className
             ].join(' ')}
@@ -115,7 +116,7 @@ const Modal = ({
             transition={{ type: 'spring', stiffness: 340, damping: 28, mass: 0.9 }}
           >
             {title && (
-              <header className="sticky top-0 z-10 flex items-center justify-between gap-4 px-6 py-4 border-b border-white/5 bg-[#161b22]/95 backdrop-blur-sm rounded-t-2xl">
+              <header className="sticky top-0 z-10 flex items-center justify-between gap-4 px-6 py-4 border-b border-white/5 bg-[#111827]/95 backdrop-blur-sm rounded-t-2xl">
                 <h2 className="text-lg font-bold text-[#e6edf3]">{title}</h2>
                 {showCloseButton && (
                   <button
@@ -140,7 +141,8 @@ const Modal = ({
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 };
 

@@ -336,30 +336,58 @@ const POSModule = () => {
               {availableProducts.map(product => (
                 <div
                   key={product.id}
-                  className="glass-card p-4 cursor-pointer hover:scale-105 hover:border-gold/50 transition-all duration-200"
+                  className="glass-card p-3.5 cursor-pointer hover:border-gold/50 transition-all duration-200 flex flex-col justify-between"
                 >
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-bold text-lg text-gold">{product.name}</h3>
-                    <span className={`text-sm px-2 py-1 rounded ${
-                      product.qty <= 10 ? 'bg-red-600/20 text-red-400' : 'bg-gold/20 text-gold'
-                    }`}>
-                      {product.qty} {product.unit}
-                    </span>
+                  <div className="flex gap-3 items-start mb-2">
+                    {/* Thumbnail */}
+                    <div className="w-12 h-12 rounded-lg bg-black/40 border border-white/10 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                      {product.image_url ? (
+                        <img
+                          src={product.image_url}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.style.display = 'none';
+                            e.target.nextSibling.style.display = 'block';
+                          }}
+                        />
+                      ) : null}
+                      <span
+                        className="text-xl"
+                        style={{ display: product.image_url ? 'none' : 'block' }}
+                        aria-hidden="true"
+                      >
+                        🧴
+                      </span>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start gap-1">
+                        <h3 className="font-bold text-base text-gold truncate">{product.name}</h3>
+                        <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
+                          product.qty <= 10 ? 'bg-red-600/20 text-red-400' : 'bg-gold/20 text-gold'
+                        }`}>
+                          {product.qty} {product.unit}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1 font-semibold">
+                        {formatCurrency(pricingMode === 'retail' ? product.price : (product.wholesale_price || product.price))}
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-400 mb-3">
-                    {formatCurrency(pricingMode === 'retail' ? product.price : (product.wholesale_price || product.price))}
-                  </div>
-                  <div className="flex gap-2">
+
+                  <div className="flex gap-2 mt-1">
                     <button
                       onClick={() => handleAddToCart(product)}
-                      className="flex-1 bg-green-600 text-white px-3 py-2 rounded-lg font-bold hover:bg-green-700 transition-colors"
+                      className="flex-1 bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-green-700 transition-colors"
                     >
                       إضافة
                     </button>
                     {product.capacity > 0 && (
                       <button
                         onClick={() => setShowPortionModal(product)}
-                        className="bg-blue-600 text-white px-3 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors"
+                        className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors"
                         title="جرعة مخصصة"
                       >
                         📏
@@ -374,8 +402,8 @@ const POSModule = () => {
       </div>
 
       {/* Cart Panel */}
-      <div className="w-[450px] flex flex-col glass-card p-6">
-        <div className="flex justify-between items-center mb-4">
+      <div className="w-[450px] flex flex-col glass-card p-6 h-full overflow-hidden">
+        <div className="flex justify-between items-center mb-4 shrink-0">
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold text-gold">السلة</h2>
             {cartItems.length > 0 && (
@@ -393,8 +421,8 @@ const POSModule = () => {
           </button>
         </div>
 
-        {/* Cart Items */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin mb-4 space-y-2">
+        {/* Cart Items - Scrollable */}
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin mb-4 space-y-2">
           {cartItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
               <div className="text-5xl mb-3">🛒</div>
@@ -447,93 +475,96 @@ const POSModule = () => {
           )}
         </div>
 
-        {/* Customer Info */}
-        <div className="space-y-3 mb-4">
-          <input
-            type="text"
-            placeholder="اسم العميل (اختياري)"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            className="w-full bg-gray-800 text-white px-4 py-2 rounded-lg border border-gold/30 focus:outline-none focus:border-gold"
-          />
-          <textarea
-            placeholder="ملاحظات..."
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="w-full bg-gray-800 text-white px-4 py-2 rounded-lg border border-gold/30 h-16 resize-none focus:outline-none focus:border-gold"
-          />
-        </div>
-
-        {/* Totals */}
-        <div className="space-y-2 mb-4 bg-gray-800 p-4 rounded-lg">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-400">المجموع الجزئي:</span>
-            <span className="font-bold">{formatCurrency(subtotal)}</span>
+        {/* Customer Info & Totals & Actions - Pinned */}
+        <div className="shrink-0 space-y-3">
+          <div className="space-y-2">
+            <input
+              type="text"
+              placeholder="اسم العميل (اختياري)"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="w-full bg-gray-800 text-white px-3.5 py-1.5 text-sm rounded-lg border border-gold/30 focus:outline-none focus:border-gold"
+            />
+            <input
+              type="text"
+              placeholder="ملاحظات..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full bg-gray-800 text-white px-3.5 py-1.5 text-sm rounded-lg border border-gold/30 focus:outline-none focus:border-gold"
+            />
           </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-400">الخصم:</span>
-            <div className="flex gap-2 items-center">
-              <input
-                type="number"
-                value={discount}
-                onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                className="w-16 bg-gray-700 text-white px-2 py-1 rounded text-center focus:outline-none focus:ring-2 focus:ring-gold"
-                min="0"
-                max="100"
-                step="0.1"
-              />
-              <span className="text-gray-400">%</span>
-              <span className="text-red-400 min-w-[70px] text-left">
-                -{formatCurrency(discountAmount)}
-              </span>
+
+          {/* Totals */}
+          <div className="space-y-1.5 bg-gray-800 p-3 rounded-lg text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-400">المجموع الجزئي:</span>
+              <span className="font-bold">{formatCurrency(subtotal)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">الخصم:</span>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="number"
+                  value={discount}
+                  onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                  className="w-14 bg-gray-700 text-white px-1.5 py-0.5 rounded text-center focus:outline-none focus:ring-2 focus:ring-gold"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                />
+                <span className="text-gray-400">%</span>
+                <span className="text-red-400 min-w-[70px] text-left">
+                  -{formatCurrency(discountAmount)}
+                </span>
+              </div>
+            </div>
+            <div className="flex justify-between text-lg font-bold text-gold border-t border-gold/30 pt-1.5">
+              <span>الإجمالي:</span>
+              <span>{formatCurrency(total)}</span>
             </div>
           </div>
-          <div className="flex justify-between text-xl font-bold text-gold border-t border-gold/30 pt-2">
-            <span>الإجمالي:</span>
-            <span>{formatCurrency(total)}</span>
+
+          {/* Payment Method */}
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { method: 'cash', label: '💵 نقدي' },
+              { method: 'card', label: '💳 بطاقة' },
+              { method: 'bank_transfer', label: '🏦 تحويل' }
+            ].map(({ method, label }) => (
+              <button
+                key={method}
+                onClick={() => setPaymentMethod(method)}
+                className={`py-2 rounded-lg font-bold text-xs transition-all ${
+                  paymentMethod === method
+                    ? 'bg-gradient-to-r from-gold to-gold-dark text-navy shadow-lg scale-105'
+                    : 'bg-gray-700 text-white hover:bg-gray-600'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-        </div>
 
-        {/* Payment Method */}
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          {[
-            { method: 'cash', label: '💵 نقدي' },
-            { method: 'card', label: '💳 بطاقة' },
-            { method: 'bank_transfer', label: '🏦 تحويل' }
-          ].map(({ method, label }) => (
-            <button
-              key={method}
-              onClick={() => setPaymentMethod(method)}
-              className={`py-3 rounded-lg font-bold transition-all ${
-                paymentMethod === method
-                  ? 'bg-gradient-to-r from-gold to-gold-dark text-navy shadow-lg scale-105'
-                  : 'bg-gray-700 text-white hover:bg-gray-600'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+          {/* Complete Sale Button */}
+          <button
+            onClick={handleCompleteSale}
+            disabled={cartItems.length === 0 || isProcessingSale}
+            className="btn-gold w-full py-3.5 text-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-xl shrink-0"
+          >
+            {isProcessingSale ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="animate-spin">⏳</span>
+                جاري المعالجة...
+              </span>
+            ) : (
+              `✅ إتمام البيع (F3)`
+            )}
+          </button>
 
-        {/* Complete Sale Button */}
-        <button
-          onClick={handleCompleteSale}
-          disabled={cartItems.length === 0 || isProcessingSale}
-          className="btn-gold w-full py-4 text-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-xl"
-        >
-          {isProcessingSale ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="animate-spin">⏳</span>
-              جاري المعالجة...
-            </span>
-          ) : (
-            `✅ إتمام البيع (F3)`
-          )}
-        </button>
-
-        {/* Keyboard Shortcuts Help */}
-        <div className="mt-3 text-xs text-gray-500 text-center space-y-1">
-          <div>F1: بحث | F2: مسح السلة | F3: إتمام البيع</div>
+          {/* Keyboard Shortcuts Help */}
+          <div className="text-[11px] text-gray-500 text-center">
+            F1: بحث | F2: مسح السلة | F3: إتمام البيع
+          </div>
         </div>
       </div>
 

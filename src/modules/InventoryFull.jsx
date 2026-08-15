@@ -25,7 +25,8 @@ const EMPTY_FORM = {
   price: '0',
   wholesale_price: '0',
   unit: 'piece',
-  capacity: '0'
+  capacity: '0',
+  image_url: ''
 };
 
 const isLowStock = (product) => safeParseFloat(product.qty) <= LOW_STOCK_THRESHOLD;
@@ -179,6 +180,24 @@ const InventoryFullModule = () => {
     setFormOpen(true);
   };
 
+  const handlePrintStockSheet = async () => {
+    try {
+      if (window.electronAPI) {
+        await window.electronAPI.invoke('print:inventory-report', {
+          products: filtered,
+          totalCost: stats.totalStockValue,
+          totalRetail: stats.totalRetailValue,
+          lowStockCount: stats.lowStockCount
+        });
+        showSuccess('تم إرسال كشف الجرد إلى الطباعة');
+      } else {
+        window.print();
+      }
+    } catch (err) {
+      showError(`فشل طباعة كشف الجرد: ${err.message}`);
+    }
+  };
+
   const openEditForm = (product) => {
     setEditingProduct(product);
     setFormData({
@@ -189,7 +208,8 @@ const InventoryFullModule = () => {
       price: String(product.price ?? ''),
       wholesale_price: String(product.wholesale_price ?? ''),
       unit: product.unit || 'piece',
-      capacity: String(product.capacity ?? '')
+      capacity: String(product.capacity ?? ''),
+      image_url: product.image_url || ''
     });
     setFormErrors({});
     setFormOpen(true);
@@ -214,6 +234,20 @@ const InventoryFullModule = () => {
     if (formErrors[field]) {
       setFormErrors((prev) => ({ ...prev, [field]: undefined }));
     }
+  };
+
+  const handleImageFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      showWarning('حجم الصورة يجب أن لا يتجاوز 2 ميغابايت');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateFormField('image_url', reader.result);
+    };
+    reader.readAsDataURL(file);
   };
 
   // ---- Validation: name required, prices >= 0 ----
@@ -257,7 +291,8 @@ const InventoryFullModule = () => {
       price: safeParseFloat(formData.price),
       wholesale_price: safeParseFloat(formData.wholesale_price),
       unit: formData.unit,
-      capacity: safeParseFloat(formData.capacity)
+      capacity: safeParseFloat(formData.capacity),
+      image_url: formData.image_url || null
     };
 
     try {
@@ -390,6 +425,15 @@ const InventoryFullModule = () => {
           <span>إدارة المخزون</span>
         </h2>
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handlePrintStockSheet}
+            className="px-4 py-2 bg-[#161b22] text-[#fbbf24] border border-[#fbbf24]/30 font-bold rounded-lg hover:bg-[#fbbf24]/10 transition-all cursor-pointer flex items-center gap-1.5"
+            title="طباعة كشف جرد المخزون A4"
+          >
+            <span>🖨️</span>
+            <span>كشف الجرد (A4)</span>
+          </button>
           <button
             type="button"
             onClick={handleExportCSV}
@@ -526,57 +570,82 @@ const InventoryFullModule = () => {
                 className="glass-card p-4 hover:border-gold/50 transition-all"
               >
                 <div className="flex flex-wrap justify-between items-start gap-3 mb-3">
-                  <div className="flex-1 min-w-[220px]">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <h3 className="text-xl font-bold text-gold truncate">
-                        {product.name}
-                      </h3>
-                      {isLowStock(product) && (
-                        <span className="badge badge-danger" title="الكمية أقل من أو تساوي 10">
-                          ⚠️ مخزون منخفض
-                        </span>
-                      )}
-                      {product.category && (
-                        <span className="text-xs bg-blue-600/20 text-blue-400 px-2 py-1 rounded">
-                          📁 {product.category}
-                        </span>
+                  <div className="flex gap-3 flex-1 min-w-[220px]">
+                    {/* Product Image Thumbnail */}
+                    <div className="w-16 h-16 rounded-xl bg-[#161b22] border border-white/10 flex-shrink-0 flex items-center justify-center overflow-hidden shadow-inner">
+                      {product.image_url ? (
+                        <img
+                          src={product.image_url}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.style.display = 'none';
+                            e.target.nextSibling.style.display = 'block';
+                          }}
+                        />
+                      ) : null}
+                      <span
+                        className="text-2xl"
+                        style={{ display: product.image_url ? 'none' : 'block' }}
+                        aria-hidden="true"
+                      >
+                        🧴
+                      </span>
+                    </div>
+
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <h3 className="text-xl font-bold text-gold truncate">
+                          {product.name}
+                        </h3>
+                        {isLowStock(product) && (
+                          <span className="badge badge-danger" title="الكمية أقل من أو تساوي 10">
+                            ⚠️ مخزون منخفض
+                          </span>
+                        )}
+                        {product.category && (
+                          <span className="text-xs bg-blue-600/20 text-blue-400 px-2 py-1 rounded">
+                            📁 {product.category}
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mt-2">
+                        <div>
+                          <span className="text-gray-400">الكمية: </span>
+                          <span
+                            className={`font-bold ${
+                              isLowStock(product) ? 'text-red-400' : 'text-green-400'
+                            }`}
+                          >
+                            {safeParseFloat(product.qty)} {product.unit || 'قطعة'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">التكلفة: </span>
+                          <span className="font-bold">
+                            {formatCurrency(safeParseFloat(product.cost))}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">التجزئة: </span>
+                          <span className="font-bold text-gold">
+                            {formatCurrency(safeParseFloat(product.price))}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">الجملة: </span>
+                          <span className="font-bold">
+                            {formatCurrency(safeParseFloat(product.wholesale_price))}
+                          </span>
+                        </div>
+                      </div>
+                      {safeParseFloat(product.capacity) > 0 && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          السعة: {safeParseFloat(product.capacity)}ml
+                        </div>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mt-2">
-                      <div>
-                        <span className="text-gray-400">الكمية: </span>
-                        <span
-                          className={`font-bold ${
-                            isLowStock(product) ? 'text-red-400' : 'text-green-400'
-                          }`}
-                        >
-                          {safeParseFloat(product.qty)} {product.unit || 'قطعة'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-400">التكلفة: </span>
-                        <span className="font-bold">
-                          {formatCurrency(safeParseFloat(product.cost))}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-400">التجزئة: </span>
-                        <span className="font-bold text-gold">
-                          {formatCurrency(safeParseFloat(product.price))}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-400">الجملة: </span>
-                        <span className="font-bold">
-                          {formatCurrency(safeParseFloat(product.wholesale_price))}
-                        </span>
-                      </div>
-                    </div>
-                    {safeParseFloat(product.capacity) > 0 && (
-                      <div className="text-xs text-gray-500 mt-1">
-                        السعة: {safeParseFloat(product.capacity)}ml
-                      </div>
-                    )}
                   </div>
 
                   {/* Actions */}
@@ -872,6 +941,66 @@ const InventoryFullModule = () => {
                 {formErrors.capacity}
               </p>
             )}
+          </div>
+
+          {/* Product Image Ingestion (File & URL) */}
+          <div className="bg-[#0d1117] border border-white/10 p-3.5 rounded-xl space-y-3">
+            <label className="text-sm font-bold text-gold block">
+              🖼️ صورة المنتج (محلي أو رابط ويب)
+            </label>
+            
+            <div className="flex items-center gap-3">
+              {formData.image_url ? (
+                <div className="relative w-16 h-16 rounded-xl border border-gold/40 overflow-hidden bg-black/40 flex-shrink-0">
+                  <img
+                    src={formData.image_url}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateFormField('image_url', '')}
+                    className="absolute top-0 right-0 bg-red-600/90 text-white w-5 h-5 text-xs flex items-center justify-center rounded-bl"
+                    title="حذف الصورة"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <div className="w-16 h-16 rounded-xl border border-dashed border-white/20 flex flex-col items-center justify-center text-gray-500 text-xs flex-shrink-0">
+                  <span>لا توجد</span>
+                  <span>صورة</span>
+                </div>
+              )}
+
+              <div className="flex-1 space-y-2">
+                <input
+                  type="text"
+                  placeholder="رابط الصورة المباشر (https://...)"
+                  value={formData.image_url}
+                  onChange={(e) => updateFormField('image_url', e.target.value)}
+                  className="input-luxury !py-1.5 !text-xs text-left"
+                  dir="ltr"
+                />
+                
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer px-3 py-1 bg-[#161b22] text-[#adbac7] hover:text-white border border-white/10 hover:border-white/30 rounded-lg text-xs font-semibold transition-all inline-flex items-center gap-1.5">
+                    <span>📁 اختيار ملف من الجهاز</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                  <span className="text-[11px] text-gray-500">يدعم PNG, JPG, WebP</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Profit margin preview */}

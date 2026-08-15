@@ -39,7 +39,8 @@ function initDatabase() {
       original_price REAL DEFAULT 0,
       unit TEXT DEFAULT 'piece',
       discount_rate REAL DEFAULT 0,
-      capacity REAL DEFAULT 0
+      capacity REAL DEFAULT 0,
+      image_url TEXT
     );
 
     CREATE TABLE IF NOT EXISTS sales (
@@ -171,7 +172,79 @@ function initDatabase() {
   `;
 
   db.exec(schema);
-  console.log('Database schema initialized');
+
+  // Non-destructive column migrations
+  try {
+    db.exec(`ALTER TABLE inventory ADD COLUMN image_url TEXT;`);
+  } catch (e) {
+    // image_url already exists
+  }
+
+  // Performance Indexes for high traffic querying
+  const indexes = `
+    CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(date);
+    CREATE INDEX IF NOT EXISTS idx_sales_customer ON sales(customer_name);
+    CREATE INDEX IF NOT EXISTS idx_sales_debtor ON sales(debtor_id);
+    CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
+    CREATE INDEX IF NOT EXISTS idx_sale_items_product ON sale_items(product_id);
+    CREATE INDEX IF NOT EXISTS idx_inventory_category ON inventory(category);
+    CREATE INDEX IF NOT EXISTS idx_inventory_name ON inventory(name);
+    CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(date);
+    CREATE INDEX IF NOT EXISTS idx_losses_date ON losses(date);
+    CREATE INDEX IF NOT EXISTS idx_withdrawals_date ON withdrawals(date);
+    CREATE INDEX IF NOT EXISTS idx_debt_history_debtor ON debt_history(debtor_id);
+    CREATE INDEX IF NOT EXISTS idx_returns_sale ON returns(sale_id);
+  `;
+  db.exec(indexes);
+
+  console.log('Database schema & performance indexes initialized');
+}
+
+// Helper to fetch live print template settings from SQLite
+function getPrintSettings() {
+  const defaults = {
+    printMode: 'thermal',
+    storeName: 'الدفة للعطور',
+    storeSubtitle: 'Aldaffa Perfumes - لأرقى العطور والخلطات',
+    storePhone: '0123456789',
+    storeAddress: 'الخرطوم، السودان',
+    receiptGreeting: 'شكراً لتسوقكم معنا .. نسعد بخدمتكم دائماً',
+    receiptPolicy: 'سياسة الاستبدال والاسترجاع: خلال 30 ساعة مع الفاتورة الأصلية. المنتجات المفتوحة لا تسترجع.',
+    showLogo: true,
+    showBarcode: true,
+    showCashier: true,
+    showPhone: true,
+    logoBase64: ''
+  };
+
+  try {
+    if (!db) return defaults;
+    const rows = db.prepare(`SELECT key, value FROM settings WHERE key IN (
+      'print_mode', 'store_name', 'store_subtitle', 'store_phone', 'store_address',
+      'receipt_greeting', 'receipt_policy', 'show_logo', 'show_barcode',
+      'show_cashier', 'show_phone', 'logo_base64'
+    )`).all();
+
+    const map = {};
+    rows.forEach(r => { map[r.key] = r.value; });
+
+    return {
+      printMode: map['print_mode'] || defaults.printMode,
+      storeName: map['store_name'] || defaults.storeName,
+      storeSubtitle: map['store_subtitle'] || defaults.storeSubtitle,
+      storePhone: map['store_phone'] || defaults.storePhone,
+      storeAddress: map['store_address'] || defaults.storeAddress,
+      receiptGreeting: map['receipt_greeting'] || defaults.receiptGreeting,
+      receiptPolicy: map['receipt_policy'] || defaults.receiptPolicy,
+      showLogo: map['show_logo'] !== undefined ? map['show_logo'] === 'true' : defaults.showLogo,
+      showBarcode: map['show_barcode'] !== undefined ? map['show_barcode'] === 'true' : defaults.showBarcode,
+      showCashier: map['show_cashier'] !== undefined ? map['show_cashier'] === 'true' : defaults.showCashier,
+      showPhone: map['show_phone'] !== undefined ? map['show_phone'] === 'true' : defaults.showPhone,
+      logoBase64: map['logo_base64'] || ''
+    };
+  } catch (e) {
+    return defaults;
+  }
 }
 
 function createWindow() {
@@ -498,10 +571,11 @@ ipcMain.handle('db:get', async (event, { sql, params = [] }) => {
   }
 });
 
-// Thermal receipt printing (80mm)
+// Thermal & A4 Receipt Printing
 ipcMain.handle('print:receipt', async (event, receiptData) => {
   try {
     const { saleId, date, items, subtotal, discount, total, paymentMethod, customerName } = receiptData;
+    const settings = getPrintSettings();
 
     const formatCurrency = (amount) => {
       return new Intl.NumberFormat('ar-SD', {
@@ -531,35 +605,40 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
     @page { size: 80mm auto; margin: 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Courier New', monospace;
+      font-family: 'Courier New', monospace, sans-serif;
       width: 80mm;
-      padding: 5mm;
+      padding: 4mm;
       font-size: 12px;
       line-height: 1.4;
+      background: #fff;
+      color: #000;
     }
     .center { text-align: center; }
     .bold { font-weight: bold; }
     .large { font-size: 16px; }
-    .logo {
-      width: 60mm;
-      height: 20mm;
-      margin: 0 auto 5mm;
-      background: linear-gradient(135deg, #fbbf24, #f59e0b);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 5px;
+    .logo-container {
+      text-align: center;
+      margin-bottom: 3mm;
     }
-    .logo-text {
-      font-size: 24px;
+    .logo-img {
+      max-width: 50mm;
+      max-height: 25mm;
+      object-fit: contain;
+    }
+    .logo-fallback {
+      background: #fbbf24;
+      color: #000;
+      padding: 6px;
+      font-size: 18px;
       font-weight: bold;
-      color: #030712;
+      border-radius: 4px;
+      display: inline-block;
     }
     .divider {
       border-top: 1px dashed #000;
       margin: 3mm 0;
     }
-    table { width: 100%; border-collapse: collapse; }
+    table { width: 100%; border-collapse: collapse; margin: 2mm 0; }
     td { padding: 2px 0; }
     .item-row td { vertical-align: top; }
     .right { text-align: right; }
@@ -567,32 +646,34 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
     .total-row { font-size: 14px; font-weight: bold; }
     .barcode {
       text-align: center;
-      margin: 5mm 0;
+      margin: 4mm 0 2mm;
       font-size: 10px;
       letter-spacing: 2px;
     }
     .policy {
       font-size: 9px;
       text-align: center;
-      margin-top: 5mm;
-      color: #666;
+      margin-top: 3mm;
+      color: #333;
     }
   </style>
 </head>
 <body>
-  <div class="logo">
-    <div class="logo-text">الدفة للعطور</div>
+  ${settings.showLogo ? `
+  <div class="logo-container">
+    ${settings.logoBase64 ? `<img src="${settings.logoBase64}" class="logo-img" alt="Logo" />` : `<div class="logo-fallback">${settings.storeName}</div>`}
   </div>
+  ` : ''}
 
-  <div class="center bold">Aldaffa Perfumes</div>
-  <div class="center">الخرطوم، السودان</div>
-  <div class="center">📱 0123456789</div>
+  <div class="center bold large">${settings.storeName}</div>
+  ${settings.storeSubtitle ? `<div class="center" style="font-size:10px; color:#444;">${settings.storeSubtitle}</div>` : ''}
+  ${settings.showPhone && settings.storePhone ? `<div class="center" style="font-size:11px;">📱 ${settings.storePhone}</div>` : ''}
+  ${settings.storeAddress ? `<div class="center" style="font-size:10px; color:#555;">📍 ${settings.storeAddress}</div>` : ''}
 
   <div class="divider"></div>
+  <div class="center bold">فاتورة بيع</div>
 
-  <div class="center bold large">فاتورة بيع</div>
-
-  <table style="margin: 3mm 0;">
+  <table style="margin: 2mm 0;">
     <tr>
       <td class="bold">رقم الفاتورة:</td>
       <td class="right">#${saleId}</td>
@@ -605,6 +686,12 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
     <tr>
       <td class="bold">العميل:</td>
       <td class="right">${customerName}</td>
+    </tr>
+    ` : ''}
+    ${settings.showCashier ? `
+    <tr>
+      <td class="bold">الكاشير:</td>
+      <td class="right">المسؤول</td>
     </tr>
     ` : ''}
     <tr>
@@ -655,24 +742,24 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
     </tr>
   </table>
 
+  ${settings.showBarcode ? `
   <div class="barcode">
+    <div>||| | ||||| ||| |||| |||| ||</div>
     <div>*${saleId.toString().padStart(8, '0')}*</div>
-    <div>${saleId.toString().padStart(8, '0')}</div>
   </div>
+  ` : ''}
 
-  <div class="divider"></div>
-
+  ${settings.receiptPolicy ? `
   <div class="policy">
-    سياسة الاسترجاع: يمكن استرجاع المنتجات خلال 30 ساعة من تاريخ الشراء
-    مع الاحتفاظ بالفاتورة الأصلية. المنتجات المفتوحة لا يمكن استرجاعها.
+    ${settings.receiptPolicy}
   </div>
+  ` : ''}
 
-  <div class="center bold" style="margin-top: 5mm;">
-    شكراً لتسوقكم معنا
+  ${settings.receiptGreeting ? `
+  <div class="center bold" style="margin-top: 3mm; font-size: 11px;">
+    ${settings.receiptGreeting}
   </div>
-  <div class="center" style="margin-top: 2mm;">
-    نسعد بخدمتكم دائماً
-  </div>
+  ` : ''}
 </body>
 </html>`;
 
@@ -705,10 +792,11 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
   }
 });
 
-// A4 purchase order printing
+// A4 Purchase Order Printing
 ipcMain.handle('print:purchase-order', async (event, orderData) => {
   try {
     const { orderId, date, supplier, items, total, notes } = orderData;
+    const settings = getPrintSettings();
 
     const formatCurrency = (amount) => {
       return new Intl.NumberFormat('ar-SD', {
@@ -727,55 +815,64 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
     @page { size: A4; margin: 15mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Arial', sans-serif;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       font-size: 12px;
       line-height: 1.6;
+      color: #111827;
+      background: #fff;
     }
     .header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       border-bottom: 3px solid #fbbf24;
-      padding-bottom: 10mm;
-      margin-bottom: 10mm;
+      padding-bottom: 8mm;
+      margin-bottom: 8mm;
     }
-    .logo { font-size: 32px; font-weight: bold; color: #fbbf24; }
-    .company-info { text-align: left; }
+    .logo-area { display: flex; align-items: center; gap: 12px; }
+    .logo-img { max-height: 45px; object-fit: contain; }
+    .logo-text { font-size: 24px; font-weight: bold; color: #92400e; }
+    .company-info { text-align: left; font-size: 11px; color: #4b5563; }
     .title {
       text-align: center;
-      font-size: 24px;
+      font-size: 22px;
       font-weight: bold;
-      margin-bottom: 10mm;
+      margin-bottom: 6mm;
+      color: #1f2937;
     }
-    table { width: 100%; border-collapse: collapse; margin: 5mm 0; }
-    th, td { padding: 3mm; text-align: right; border: 1px solid #ddd; }
-    th { background: #f5f5f5; font-weight: bold; }
-    .total-row { font-weight: bold; background: #fff9e6; }
+    table { width: 100%; border-collapse: collapse; margin: 4mm 0; }
+    th, td { padding: 8px 10px; text-align: right; border: 1px solid #e5e7eb; }
+    th { background: #f3f4f6; font-weight: bold; }
+    .total-row { font-weight: bold; background: #fffbeb; color: #92400e; }
     .footer {
-      margin-top: 15mm;
-      padding-top: 5mm;
-      border-top: 1px solid #ddd;
+      margin-top: 12mm;
+      padding-top: 4mm;
+      border-top: 1px solid #e5e7eb;
       text-align: center;
-      color: #666;
+      color: #6b7280;
+      font-size: 11px;
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <div>
-      <div class="logo">الدفة للعطور</div>
-      <div>Aldaffa Perfumes</div>
+    <div class="logo-area">
+      ${settings.showLogo && settings.logoBase64 ? `<img src="${settings.logoBase64}" class="logo-img" alt="Logo" />` : ''}
+      <div>
+        <div class="logo-text">${settings.storeName}</div>
+        <div style="font-size: 11px; color: #6b7280;">${settings.storeSubtitle}</div>
+      </div>
     </div>
     <div class="company-info">
-      <div>الخرطوم، السودان</div>
-      <div>📱 0123456789</div>
-      <div>📧 info@aldaffa.sd</div>
+      <div>📍 ${settings.storeAddress}</div>
+      <div>📱 ${settings.storePhone}</div>
+      <div>📅 ${new Date(date).toLocaleDateString('ar-SD')}</div>
     </div>
   </div>
 
-  <div class="title">طلب شراء - Purchase Order</div>
+  <div class="title">طلب شراء وتوريد - Purchase Order</div>
 
-  <table style="width: 60%; margin-bottom: 10mm;">
+  <table style="width: 55%; margin-bottom: 6mm;">
     <tr>
       <td style="width: 40%; font-weight: bold;">رقم الطلب:</td>
       <td>#${orderId}</td>
@@ -818,9 +915,9 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
   </table>
 
   ${notes ? `
-  <div style="margin-top: 10mm;">
+  <div style="margin-top: 6mm;">
     <div style="font-weight: bold; margin-bottom: 2mm;">ملاحظات:</div>
-    <div style="border: 1px solid #ddd; padding: 3mm; background: #f9f9f9;">
+    <div style="border: 1px solid #e5e7eb; padding: 3mm; background: #f9fafb; border-radius: 4px;">
       ${notes}
     </div>
   </div>
@@ -828,16 +925,15 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
 
   <div style="margin-top: 15mm; display: flex; justify-content: space-between;">
     <div style="text-align: center; width: 40%;">
-      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 15mm;">توقيع المورد</div>
+      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 12mm;">توقيع المورد</div>
     </div>
     <div style="text-align: center; width: 40%;">
-      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 15mm;">توقيع المسؤول</div>
+      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 12mm;">توقيع المسؤول المعتمد</div>
     </div>
   </div>
 
   <div class="footer">
-    <div>الدفة للعطور - Aldaffa Perfumes</div>
-    <div>شكراً لتعاونكم</div>
+    <div>${settings.storeName} — شكراً لتعاونكم</div>
   </div>
 </body>
 </html>`;
@@ -868,10 +964,11 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
   }
 });
 
-// Shift report printing
+// Shift Report Printing (A4)
 ipcMain.handle('print:shift-report', async (event, reportData) => {
   try {
     const { period, sales, profit, expenses, capital, cash } = reportData;
+    const settings = getPrintSettings();
 
     const formatCurrency = (amount) => {
       return new Intl.NumberFormat('ar-SD', {
@@ -890,34 +987,54 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
     @page { size: A4; margin: 15mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Arial', sans-serif;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       font-size: 12px;
       line-height: 1.6;
+      color: #111827;
+      background: #fff;
     }
     .header {
-      text-align: center;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       border-bottom: 3px solid #fbbf24;
-      padding-bottom: 10mm;
-      margin-bottom: 10mm;
+      padding-bottom: 8mm;
+      margin-bottom: 6mm;
     }
-    .logo { font-size: 32px; font-weight: bold; color: #fbbf24; margin-bottom: 5mm; }
-    .title { font-size: 24px; font-weight: bold; margin-bottom: 5mm; }
-    table { width: 100%; border-collapse: collapse; margin: 5mm 0; }
-    th, td { padding: 3mm; text-align: right; border: 1px solid #ddd; }
-    th { background: #f5f5f5; font-weight: bold; }
-    .section { margin: 8mm 0; }
-    .section-title { font-size: 16px; font-weight: bold; margin-bottom: 3mm; background: #f0f0f0; padding: 2mm; }
-    .total-row { font-weight: bold; background: #fff9e6; }
-    .highlight { background: #fffacd; }
-    .variance-positive { color: #0a0; font-weight: bold; }
-    .variance-negative { color: #c00; font-weight: bold; }
+    .logo-area { display: flex; align-items: center; gap: 12px; }
+    .logo-img { max-height: 45px; object-fit: contain; }
+    .logo-text { font-size: 24px; font-weight: bold; color: #92400e; }
+    .title { font-size: 22px; font-weight: bold; text-align: center; margin-bottom: 4mm; }
+    table { width: 100%; border-collapse: collapse; margin: 3mm 0; }
+    th, td { padding: 6px 8px; text-align: right; border: 1px solid #e5e7eb; }
+    th { background: #f3f4f6; font-weight: bold; }
+    .section { margin: 5mm 0; }
+    .section-title { font-size: 14px; font-weight: bold; margin-bottom: 2mm; background: #f9fafb; padding: 4px 8px; border-right: 3px solid #fbbf24; }
+    .total-row { font-weight: bold; background: #fffbeb; }
+    .highlight { background: #fffdf5; }
+    .variance-positive { color: #059669; font-weight: bold; }
+    .variance-negative { color: #dc2626; font-weight: bold; }
   </style>
 </head>
 <body>
   <div class="header">
-    <div class="logo">الدفة للعطور</div>
-    <div class="title">تقرير إغلاق الوردية</div>
-    <div>من ${new Date(period.start).toLocaleDateString('ar-SD')} إلى ${new Date(period.end).toLocaleDateString('ar-SD')}</div>
+    <div class="logo-area">
+      ${settings.showLogo && settings.logoBase64 ? `<img src="${settings.logoBase64}" class="logo-img" alt="Logo" />` : ''}
+      <div>
+        <div class="logo-text">${settings.storeName}</div>
+        <div style="font-size: 11px; color: #6b7280;">${settings.storeSubtitle}</div>
+      </div>
+    </div>
+    <div style="text-align: left; font-size: 11px; color: #4b5563;">
+      <div>📍 ${settings.storeAddress}</div>
+      <div>📱 ${settings.storePhone}</div>
+      <div>تاريخ التقرير: ${new Date().toLocaleDateString('ar-SD')}</div>
+    </div>
+  </div>
+
+  <div class="title">تقرير إغلاق الوردية والحسابات</div>
+  <div style="text-align: center; font-size: 12px; color: #6b7280; margin-bottom: 6mm;">
+    من ${new Date(period.start).toLocaleDateString('ar-SD')} إلى ${new Date(period.end).toLocaleDateString('ar-SD')}
   </div>
 
   <div class="section">
@@ -929,7 +1046,7 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
       </tr>
       <tr class="highlight">
         <td>إجمالي المبيعات</td>
-        <td style="font-weight: bold; color: #0a0;">${formatCurrency(sales.total)}</td>
+        <td style="font-weight: bold; color: #059669;">${formatCurrency(sales.total)}</td>
       </tr>
       <tr>
         <td style="padding-right: 10mm;">نقدي</td>
@@ -950,8 +1067,8 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
     <div class="section-title">الربحية</div>
     <table>
       <tr class="total-row">
-        <td style="width: 60%; font-size: 14px;">صافي الربح</td>
-        <td style="font-size: 14px; color: #0a0;">${formatCurrency(profit)}</td>
+        <td style="width: 60%; font-size: 13px;">صافي الربح</td>
+        <td style="font-size: 13px; color: #059669;">${formatCurrency(profit)}</td>
       </tr>
     </table>
   </div>
@@ -961,23 +1078,23 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
     <table>
       <tr>
         <td style="width: 60%;">المشتريات</td>
-        <td style="color: #c00;">${formatCurrency(expenses.purchases)}</td>
+        <td style="color: #dc2626;">${formatCurrency(expenses.purchases)}</td>
       </tr>
       <tr>
         <td>السحوبات النقدية</td>
-        <td style="color: #c00;">${formatCurrency(expenses.withdrawals)}</td>
+        <td style="color: #dc2626;">${formatCurrency(expenses.withdrawals)}</td>
       </tr>
       <tr>
         <td>الخسائر والتالف</td>
-        <td style="color: #c00;">${formatCurrency(expenses.losses)}</td>
+        <td style="color: #dc2626;">${formatCurrency(expenses.losses)}</td>
       </tr>
       <tr>
         <td>الهدايا والعينات</td>
-        <td style="color: #c00;">${formatCurrency(expenses.gifts)}</td>
+        <td style="color: #dc2626;">${formatCurrency(expenses.gifts)}</td>
       </tr>
       <tr class="total-row">
         <td>إجمالي المصروفات</td>
-        <td style="color: #c00;">${formatCurrency(expenses.purchases + expenses.withdrawals + expenses.losses + expenses.gifts)}</td>
+        <td style="color: #dc2626;">${formatCurrency(expenses.purchases + expenses.withdrawals + expenses.losses + expenses.gifts)}</td>
       </tr>
     </table>
   </div>
@@ -988,14 +1105,14 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
     <table>
       <tr class="highlight">
         <td style="width: 60%;">إجمالي الضخ</td>
-        <td style="font-weight: bold; color: #00a;">${formatCurrency(capital)}</td>
+        <td style="font-weight: bold; color: #2563eb;">${formatCurrency(capital)}</td>
       </tr>
     </table>
   </div>
   ` : ''}
 
   <div class="section">
-    <div class="section-title">تسوية النقد</div>
+    <div class="section-title">تسوية النقد في الصندوق</div>
     <table>
       <tr>
         <td style="width: 60%;">النقد المتوقع في الدرج</td>
@@ -1006,25 +1123,229 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
         <td style="font-weight: bold;">${formatCurrency(cash.actual)}</td>
       </tr>
       <tr class="total-row ${cash.variance >= 0 ? 'variance-positive' : 'variance-negative'}">
-        <td style="font-size: 14px;">الفرق (${cash.variance >= 0 ? 'فائض' : 'عجز'})</td>
-        <td style="font-size: 14px;">${cash.variance >= 0 ? '+' : ''}${formatCurrency(cash.variance)}</td>
+        <td style="font-size: 13px;">الفرق (${cash.variance >= 0 ? 'فائض' : 'عجز'})</td>
+        <td style="font-size: 13px;">${cash.variance >= 0 ? '+' : ''}${formatCurrency(cash.variance)}</td>
       </tr>
     </table>
   </div>
 
-  <div style="margin-top: 20mm; display: flex; justify-content: space-between;">
+  <div style="margin-top: 15mm; display: flex; justify-content: space-between;">
     <div style="text-align: center; width: 45%;">
-      <div style="border-top: 2px solid #000; padding-top: 3mm; margin-top: 15mm;">توقيع المدير</div>
+      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 12mm;">توقيع المدير</div>
     </div>
     <div style="text-align: center; width: 45%;">
-      <div style="border-top: 2px solid #000; padding-top: 3mm; margin-top: 15mm;">توقيع المحاسب</div>
+      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 12mm;">توقيع المحاسب</div>
     </div>
   </div>
 
-  <div style="text-align: center; margin-top: 15mm; font-size: 10px; color: #666;">
-    <div>الدفة للعطور - Aldaffa Perfumes</div>
-    <div>تم الطباعة: ${new Date().toLocaleString('ar-SD')}</div>
+  <div style="text-align: center; margin-top: 10mm; font-size: 10px; color: #6b7280;">
+    <div>${settings.storeName} — تم الطباعة: ${new Date().toLocaleString('ar-SD')}</div>
   </div>
+</body>
+</html>`;
+
+    const printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        nodeIntegration: false
+      }
+    });
+
+    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(reportHtml));
+
+    printWindow.webContents.print({
+      silent: false,
+      printBackground: true
+    }, (success, errorType) => {
+      if (!success) {
+        console.error('Print failed:', errorType);
+      }
+      printWindow.close();
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Print shift report error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// A4 Stock / Inventory Report Printing
+ipcMain.handle('print:inventory-report', async (event, inventoryData) => {
+  try {
+    const { products = [], totalCost = 0, totalRetail = 0, lowStockCount = 0 } = inventoryData;
+    const settings = getPrintSettings();
+
+    const formatCurrency = (amount) => {
+      return new Intl.NumberFormat('ar-SD', {
+        style: 'currency',
+        currency: 'SDG',
+        minimumFractionDigits: 0
+      }).format(amount);
+    };
+
+    const reportHtml = `
+<!DOCTYPE html>
+<html dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { size: A4; margin: 12mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #111827;
+      background: #fff;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #fbbf24;
+      padding-bottom: 6mm;
+      margin-bottom: 6mm;
+    }
+    .logo-area { display: flex; align-items: center; gap: 10px; }
+    .logo-img { max-height: 40px; object-fit: contain; }
+    .logo-text { font-size: 22px; font-weight: bold; color: #92400e; }
+    .title { font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 4mm; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 3mm;
+      margin-bottom: 5mm;
+    }
+    .summary-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 6px 10px;
+      text-align: center;
+    }
+    .summary-card .label { font-size: 10px; color: #6b7280; }
+    .summary-card .value { font-size: 14px; font-weight: bold; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 2mm; font-size: 10px; }
+    th, td { padding: 5px 6px; text-align: right; border: 1px solid #e5e7eb; }
+    th { background: #f3f4f6; font-weight: bold; color: #1f2937; }
+    tr:nth-child(even) { background: #fafafa; }
+    .low-stock { background: #fee2e2 !important; color: #b91c1c; font-weight: bold; }
+    .total-row { font-weight: bold; background: #fffbeb; }
+    .footer {
+      margin-top: 10mm;
+      padding-top: 3mm;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+      color: #6b7280;
+      font-size: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-area">
+      ${settings.showLogo && settings.logoBase64 ? `<img src="${settings.logoBase64}" class="logo-img" alt="Logo" />` : ''}
+      <div>
+        <div class="logo-text">${settings.storeName}</div>
+        <div style="font-size: 10px; color: #6b7280;">${settings.storeSubtitle}</div>
+      </div>
+    </div>
+    <div style="text-align: left; font-size: 10px; color: #4b5563;">
+      <div>📍 ${settings.storeAddress}</div>
+      <div>📱 ${settings.storePhone}</div>
+      <div>تاريخ الجرد: ${new Date().toLocaleDateString('ar-SD')}</div>
+    </div>
+  </div>
+
+  <div class="title">كشف جرد المخزون العام والتقييم المالي</div>
+
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="label">إجمالي الأصناف</div>
+      <div class="value">${products.length} صنف</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">أصناف منخفضة المخزون</div>
+      <div class="value" style="color: #dc2626;">${lowStockCount} صنف</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">إجمالي تكلفة المخزون</div>
+      <div class="value" style="color: #92400e;">${formatCurrency(totalCost)}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">القيمة البيعية المتوقعة</div>
+      <div class="value" style="color: #059669;">${formatCurrency(totalRetail)}</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 5%;">#</th>
+        <th style="width: 35%;">اسم الصنف / المنتج</th>
+        <th style="width: 15%;">التصنيف</th>
+        <th style="width: 10%;">الكمية</th>
+        <th style="width: 10%;">الوحدة</th>
+        <th style="width: 12%;">التكلفة</th>
+        <th style="width: 13%;">سعر البيع</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${products.map((p, idx) => `
+      <tr class="${p.qty <= 10 ? 'low-stock' : ''}">
+        <td>${idx + 1}</td>
+        <td>${p.name}</td>
+        <td>${p.category || '-'}</td>
+        <td>${p.qty}</td>
+        <td>${p.unit || 'حبة'}</td>
+        <td>${formatCurrency(p.cost)}</td>
+        <td>${formatCurrency(p.price)}</td>
+      </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div style="margin-top: 12mm; display: flex; justify-content: space-between;">
+    <div style="text-align: center; width: 40%;">
+      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 10mm;">توقيع مسؤول المخزن</div>
+    </div>
+    <div style="text-align: center; width: 40%;">
+      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 10mm;">اعتماد الإدارة</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div>${settings.storeName} — تقرير معتمد &copy; ${new Date().getFullYear()}</div>
+  </div>
+</body>
+</html>`;
+
+    const printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        nodeIntegration: false
+      }
+    });
+
+    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(reportHtml));
+
+    printWindow.webContents.print({
+      silent: false,
+      printBackground: true
+    }, (success, errorType) => {
+      if (!success) {
+        console.error('Print inventory report failed:', errorType);
+      }
+      printWindow.close();
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Print inventory report error:', error);
+    return { success: false, error: error.message };
+  }
+});
 </body>
 </html>`;
 

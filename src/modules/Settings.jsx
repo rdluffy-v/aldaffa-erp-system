@@ -657,33 +657,44 @@ const SettingsModule = () => {
                 <div className="glass-card p-5">
                   <h2 className="text-sm font-bold text-[#e6edf3] mb-4">الشعار وخيارات العرض</h2>
                   
-                  {/* Logo Selector */}
-                  <div className="mb-5 flex items-center gap-4">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoUpload}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="btn-secondary text-xs flex items-center gap-2"
-                    >
-                      <ImageIcon className="w-4 h-4 text-[#fbbf24]" />
-                      اختيار شعار الفاتورة
-                    </button>
-                    {printSettings.logoBase64 && (
+                  {/* Logo Selector (Dual: File + URL) */}
+                  <div className="mb-5 space-y-3 bg-[#161b22] border border-white/5 p-3.5 rounded-xl">
+                    <label className="block text-xs font-bold text-[#adbac7]">شعار المتجر (ملف محلي أو رابط مباشر):</label>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        className="hidden"
+                      />
                       <button
                         type="button"
-                        onClick={() => setPrintSettings((p) => ({ ...p, logoBase64: '' }))}
-                        className="text-xs text-[#ef4444] hover:underline flex items-center gap-1"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="btn-secondary text-xs flex items-center gap-2"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        حذف الشعار
+                        <ImageIcon className="w-4 h-4 text-[#fbbf24]" />
+                        اختيار ملف من الجهاز
                       </button>
-                    )}
+                      <input
+                        type="text"
+                        placeholder="أو ضع رابط الشعار (https://...)"
+                        value={printSettings.logoBase64?.startsWith('data:') ? '' : printSettings.logoBase64}
+                        onChange={(e) => setPrintSettings((p) => ({ ...p, logoBase64: e.target.value }))}
+                        className="flex-1 min-w-[200px] bg-[#0d1117] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-[#e6edf3] focus:border-[#fbbf24] focus:outline-none"
+                        dir="ltr"
+                      />
+                      {printSettings.logoBase64 && (
+                        <button
+                          type="button"
+                          onClick={() => setPrintSettings((p) => ({ ...p, logoBase64: '' }))}
+                          className="text-xs text-[#ef4444] hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          حذف الشعار
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Switches */}

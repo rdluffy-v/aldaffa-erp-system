@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { formatCurrency } from '../db';
+import ReactDOM from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, FlaskConical, Check, DollarSign } from 'lucide-react';
+import { formatCurrency } from '../utils/helpers.js';
 
 const PortionModal = ({ product, pricingMode, onSelect, onClose }) => {
   const [selectedPortion, setSelectedPortion] = useState(null);
@@ -78,147 +81,176 @@ const PortionModal = ({ product, pricingMode, onSelect, onClose }) => {
   const profit = activePortion ? calculateProfit(activePortion, activePrice) : 0;
   const profitMargin = activePrice > 0 ? ((profit / activePrice) * 100) : 0;
 
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" dir="rtl">
-      <div className="glass-card p-6 w-[600px] max-h-[90vh] overflow-y-auto scrollbar-thin">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h2 className="text-2xl font-bold text-gold">اختيار الجرعة</h2>
-            <p className="text-gray-400">{product.name}</p>
-            <p className="text-sm text-gray-500">
-              السعة الكاملة: {product.capacity}ml
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white text-3xl"
-          >
-            ×
-          </button>
-        </div>
+  if (typeof document === 'undefined') return null;
 
-        {/* Predefined Portions */}
-        <div className="mb-4">
-          <h3 className="text-sm text-gray-400 mb-2">الجرعات المحددة مسبقاً:</h3>
-          <div className="grid grid-cols-5 gap-2">
-            {predefinedPortions.map(ml => (
-              <button
-                key={ml}
-                onClick={() => {
-                  setSelectedPortion(ml);
-                  setCustomMl('');
+  return ReactDOM.createPortal(
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        dir="rtl"
+      >
+        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={onClose} />
+
+        <motion.div
+          className="relative w-full max-w-lg bg-[#111827] border border-[#d97706]/20 rounded-2xl p-6 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar text-[#e6edf3]"
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        >
+          {/* Header */}
+          <div className="flex justify-between items-start mb-5 border-b border-white/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-[#fbbf24]/10 text-[#fbbf24] border border-[#fbbf24]/20">
+                <FlaskConical className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-[#e6edf3]">اختيار جرعة الزيت / العطر</h2>
+                <p className="text-xs text-[#fbbf24] font-semibold">{product.name}</p>
+                <p className="text-[11px] text-[#768390]">السعة الإجمالية للعبوة: {product.capacity} مل</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-[#768390] hover:text-[#e6edf3] hover:bg-white/5 transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Predefined Portions */}
+          <div className="mb-4">
+            <label className="block text-xs font-bold text-[#adbac7] mb-2">الجرعات القياسية الجاهزة:</label>
+            <div className="grid grid-cols-5 gap-2">
+              {predefinedPortions.map((ml) => (
+                <button
+                  key={ml}
+                  type="button"
+                  onClick={() => {
+                    setSelectedPortion(ml);
+                    setCustomMl('');
+                    setCustomPrice('');
+                  }}
+                  disabled={ml > product.capacity}
+                  className={`py-2.5 rounded-xl font-bold text-xs transition-all border ${
+                    selectedPortion === ml
+                      ? 'bg-gradient-to-l from-[#fbbf24] to-[#f59e0b] text-[#0d1117] border-[#fbbf24] shadow-[0_0_12px_rgba(251,191,36,0.3)]'
+                      : ml > product.capacity
+                      ? 'bg-[#161b22]/50 text-[#545d68] border-transparent cursor-not-allowed'
+                      : 'bg-[#161b22] text-[#adbac7] border-white/5 hover:border-white/20'
+                  }`}
+                >
+                  {ml} مل
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom Portion */}
+          <div className="mb-4">
+            <label className="block text-xs font-bold text-[#adbac7] mb-1.5">أو جرعة مخصصة (بالمل):</label>
+            <div className="relative">
+              <input
+                type="number"
+                placeholder={`أدخل الكمية (الحد الأقصى ${product.capacity} مل)`}
+                value={customMl}
+                onChange={(e) => {
+                  setCustomMl(e.target.value);
+                  setSelectedPortion('custom');
                   setCustomPrice('');
                 }}
-                disabled={ml > product.capacity}
-                className={`py-3 rounded-lg font-bold transition-all ${
-                  selectedPortion === ml
-                    ? 'bg-gradient-to-r from-gold to-gold-dark text-navy'
-                    : ml > product.capacity
-                    ? 'bg-gray-800 text-gray-600 cursor-not-allowed'
-                    : 'bg-gray-700 text-white hover:bg-gray-600'
-                }`}
-              >
-                {ml}ml
-              </button>
-            ))}
+                className="w-full bg-[#161b22] text-[#e6edf3] px-3.5 py-2.5 rounded-xl border border-white/10 text-xs focus:border-[#fbbf24] focus:outline-none"
+                min="1"
+                max={product.capacity}
+              />
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-[#768390] font-bold">مل</span>
+            </div>
           </div>
-        </div>
 
-        {/* Custom Portion */}
-        <div className="mb-4">
-          <h3 className="text-sm text-gray-400 mb-2">جرعة مخصصة:</h3>
-          <div className="flex gap-2">
+          {/* Quantity */}
+          <div className="mb-4">
+            <label className="block text-xs font-bold text-[#adbac7] mb-1.5">عدد العبوات المطلوبة:</label>
             <input
               type="number"
-              placeholder="أدخل الكمية بالمل"
-              value={customMl}
-              onChange={(e) => {
-                setCustomMl(e.target.value);
-                setSelectedPortion('custom');
-                setCustomPrice('');
-              }}
-              className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
+              value={quantity}
+              onChange={(e) => setQuantity(Math.max(1, parseFloat(e.target.value) || 1))}
+              className="w-full bg-[#161b22] text-[#e6edf3] px-3.5 py-2 rounded-xl border border-white/10 text-xs focus:border-[#fbbf24] focus:outline-none"
               min="1"
-              max={product.capacity}
+              step="1"
             />
-            <span className="flex items-center text-gray-400">ml</span>
           </div>
-        </div>
 
-        {/* Quantity */}
-        <div className="mb-4">
-          <h3 className="text-sm text-gray-400 mb-2">عدد العبوات:</h3>
-          <input
-            type="number"
-            value={quantity}
-            onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
-            className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
-            min="1"
-            step="1"
-          />
-        </div>
-
-        {/* Price Calculation */}
-        {activePortion && (
-          <div className="bg-gray-800 p-4 rounded-lg mb-4 space-y-2">
-            <div className="flex justify-between">
-              <span className="text-gray-400">الجرعة المحددة:</span>
-              <span className="font-bold">{activePortion}ml</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">السعر المحسوب:</span>
-              <span className="font-bold">{formatCurrency(calculatePortionPrice(activePortion))}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">التكلفة:</span>
-              <span>{formatCurrency(calculatePortionCost(activePortion))}</span>
-            </div>
-            <div className="border-t border-gray-700 pt-2">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-gray-400">السعر النهائي:</span>
-                <input
-                  type="number"
-                  value={customPrice || calculatePortionPrice(activePortion)}
-                  onChange={(e) => setCustomPrice(e.target.value)}
-                  className="w-32 bg-gray-700 text-white px-3 py-1 rounded text-left"
-                  step="0.01"
-                />
+          {/* Dynamic Cost & Pricing Calculation */}
+          {activePortion ? (
+            <div className="bg-[#161b22] border border-white/10 p-4 rounded-xl mb-5 space-y-2 text-xs">
+              <div className="flex justify-between text-[#adbac7]">
+                <span>الجرعة المحددة:</span>
+                <span className="font-bold text-[#e6edf3]">{activePortion} مل</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">الربح:</span>
-                <span className={profit > 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
-                  {formatCurrency(profit)} ({profitMargin.toFixed(1)}%)
+              <div className="flex justify-between text-[#adbac7]">
+                <span>السعر النسبي المحسوب:</span>
+                <span className="font-bold text-[#e6edf3]">{formatCurrency(calculatePortionPrice(activePortion))}</span>
+              </div>
+              <div className="flex justify-between text-[#adbac7]">
+                <span>تكلفة الجرعة:</span>
+                <span>{formatCurrency(calculatePortionCost(activePortion))}</span>
+              </div>
+
+              <div className="border-t border-white/10 pt-2 mt-2">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[#adbac7] font-bold">تعديل سعر البيع يدوياً:</span>
+                  <input
+                    type="number"
+                    value={customPrice || calculatePortionPrice(activePortion)}
+                    onChange={(e) => setCustomPrice(e.target.value)}
+                    className="w-32 bg-[#0d1117] text-[#e6edf3] px-2.5 py-1.5 rounded-lg border border-white/10 text-left text-xs font-bold focus:border-[#fbbf24] focus:outline-none"
+                    step="0.01"
+                  />
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#adbac7]">هامش الربح التقديري:</span>
+                  <span className={`font-bold ${profit >= 0 ? 'text-[#10b981]' : 'text-[#ef4444]'}`}>
+                    {formatCurrency(profit)} ({profitMargin.toFixed(1)}%)
+                  </span>
+                </div>
+              </div>
+
+              <div className="border-t border-[#fbbf24]/30 pt-2 flex justify-between items-center text-sm font-bold mt-2">
+                <span className="text-[#fbbf24]">الإجمالي النهائي:</span>
+                <span className="text-base font-extrabold text-[#fbbf24]">
+                  {formatCurrency(activePrice * quantity)}
                 </span>
               </div>
             </div>
-            <div className="border-t border-gold/30 pt-2 flex justify-between text-xl">
-              <span className="text-gold">الإجمالي:</span>
-              <span className="font-bold text-gold">
-                {formatCurrency(activePrice * quantity)}
-              </span>
-            </div>
-          </div>
-        )}
+          ) : null}
 
-        {/* Actions */}
-        <div className="flex gap-3">
-          <button
-            onClick={handleConfirm}
-            disabled={!activePortion}
-            className="flex-1 btn-gold py-3 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            ✅ إضافة للسلة
-          </button>
-          <button
-            onClick={onClose}
-            className="flex-1 bg-gray-700 text-white px-4 py-3 rounded-lg font-bold hover:bg-gray-600"
-          >
-            إلغاء
-          </button>
-        </div>
-      </div>
-    </div>
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={!activePortion}
+              className="flex-1 btn-primary text-xs flex items-center justify-center gap-2 py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Check className="w-4 h-4" />
+              إضافة الجرعة للسلة
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 btn-secondary text-xs py-2.5"
+            >
+              إلغاء
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body
   );
 };
 
 export default PortionModal;
+

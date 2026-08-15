@@ -90,9 +90,13 @@ const ShiftCloseModule = () => {
 
       setReport(reportData);
 
-      // Print report (keep existing IPC feature)
+      // Print report via unified Electron IPC
       try {
-        await window.require('electron').ipcRenderer.invoke('print:shift-report', reportData);
+        if (window.electronAPI) {
+          await window.electronAPI.invoke('print:shift-report', reportData);
+        } else if (window.require) {
+          await window.require('electron').ipcRenderer.invoke('print:shift-report', reportData);
+        }
       } catch (printError) {
         console.warn('Print shift report failed:', printError);
       }
@@ -106,65 +110,69 @@ const ShiftCloseModule = () => {
   return (
     <div className="h-full flex gap-6">
       {/* Form Panel */}
-      <div className="w-[400px] flex flex-col glass-card p-6">
-        <h2 className="text-2xl font-bold text-gold mb-4 flex items-center gap-2">
-          <span>🔒</span>
-          <span>إغلاق الوردية</span>
-        </h2>
+      <div className="w-[400px] flex flex-col glass-card p-6 h-full justify-between overflow-y-auto">
+        <div>
+          <h2 className="text-2xl font-bold text-gold mb-4 flex items-center gap-2">
+            <span>📊</span>
+            <span>إغلاق الوردية والحسابات</span>
+          </h2>
 
-        <div className="space-y-4 mb-6">
-          <div>
-            <label className="text-sm text-gray-400 mb-1 block">من تاريخ</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
-            />
-          </div>
+          <div className="space-y-4 mb-6">
+            <div>
+              <label className="text-sm text-gray-400 mb-1 block">من تاريخ</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
+              />
+            </div>
 
-          <div>
-            <label className="text-sm text-gray-400 mb-1 block">إلى تاريخ</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
-            />
-          </div>
+            <div>
+              <label className="text-sm text-gray-400 mb-1 block">إلى تاريخ</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
+              />
+            </div>
 
-          <div>
-            <label className="text-sm text-gray-400 mb-1 block">الرصيد المتوقع (اختياري)</label>
-            <input
-              type="number"
-              placeholder="0.00"
-              value={expectedCash}
-              onChange={(e) => setExpectedCash(e.target.value)}
-              className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
-              step="0.01"
-            />
-          </div>
+            <div>
+              <label className="text-sm text-gray-400 mb-1 block">الرصيد المتوقع (اختياري)</label>
+              <input
+                type="number"
+                placeholder="0.00"
+                value={expectedCash}
+                onChange={(e) => setExpectedCash(e.target.value)}
+                className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
+                step="0.01"
+              />
+            </div>
 
-          <div>
-            <label className="text-sm text-gray-400 mb-1 block">النقد الفعلي في الدرج</label>
-            <input
-              type="number"
-              placeholder="0.00"
-              value={actualCash}
-              onChange={(e) => setActualCash(e.target.value)}
-              className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
-              step="0.01"
-            />
+            <div>
+              <label className="text-sm text-gray-400 mb-1 block">النقد الفعلي في الدرج</label>
+              <input
+                type="number"
+                placeholder="0.00"
+                value={actualCash}
+                onChange={(e) => setActualCash(e.target.value)}
+                className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
+                step="0.01"
+              />
+            </div>
           </div>
         </div>
 
-        <button
-          onClick={generateReport}
-          disabled={loading}
-          className="btn-gold w-full py-4 text-xl disabled:opacity-50"
-        >
-          {loading ? '⏳ جاري الإعداد...' : '📄 إنشاء التقرير'}
-        </button>
+        <div className="shrink-0 pt-3">
+          <button
+            onClick={generateReport}
+            disabled={loading}
+            className="btn-gold w-full py-4 text-xl disabled:opacity-50 shadow-lg cursor-pointer"
+          >
+            {loading ? '⏳ جاري الإعداد...' : '📄 إنشاء التقرير'}
+          </button>
+        </div>
       </div>
 
       {/* Report Preview Panel */}
