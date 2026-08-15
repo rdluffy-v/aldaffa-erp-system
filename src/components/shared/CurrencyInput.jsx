@@ -21,12 +21,12 @@ import { AlertCircle, BadgeCheck } from 'lucide-react';
  * @param {boolean} [props.validated] - Show green check when value is valid
  */
 
-const currencyFormatter = new Intl.NumberFormat('ar-SD', {
-  style: 'currency',
-  currency: 'SDG',
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2
-});
+const currencyFormatter = {
+  format: (amount) => {
+    const val = Number(amount) || 0;
+    return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
+  }
+};
 
 /** Keep only digits and a single decimal separator (supports '.' and '٫'). */
 const sanitizeNumeric = (raw) => {
@@ -145,12 +145,12 @@ const CurrencyInput = ({
             inputClassName
           ].join(' ')}
         />
-        {/* SDG suffix badge */}
+        {/* Libyan Dinar suffix badge */}
         <span
           className="absolute end-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#768390] pointer-events-none bg-[#0d1117]/40 px-1.5 py-0.5 rounded"
           aria-hidden="true"
         >
-          SDG
+          د.ل
         </span>
       </div>
 

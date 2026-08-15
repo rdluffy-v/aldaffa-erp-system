@@ -207,7 +207,7 @@ function getPrintSettings() {
     storeName: 'الدفة للعطور',
     storeSubtitle: 'Aldaffa Perfumes - لأرقى العطور والخلطات',
     storePhone: '0123456789',
-    storeAddress: 'الخرطوم، السودان',
+    storeAddress: 'ليبيا - مصراتة',
     receiptGreeting: 'شكراً لتسوقكم معنا .. نسعد بخدمتكم دائماً',
     receiptPolicy: 'سياسة الاستبدال والاسترجاع: خلال 30 ساعة مع الفاتورة الأصلية. المنتجات المفتوحة لا تسترجع.',
     showLogo: true,
@@ -578,15 +578,12 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
     const settings = getPrintSettings();
 
     const formatCurrency = (amount) => {
-      return new Intl.NumberFormat('ar-SD', {
-        style: 'currency',
-        currency: 'SDG',
-        minimumFractionDigits: 0
-      }).format(amount);
+      const val = Number(amount) || 0;
+      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
     };
 
     const formatDate = (dateStr) => {
-      return new Intl.DateTimeFormat('ar-SD', {
+      return new Intl.DateTimeFormat('ar-LY', {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -799,11 +796,8 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
     const settings = getPrintSettings();
 
     const formatCurrency = (amount) => {
-      return new Intl.NumberFormat('ar-SD', {
-        style: 'currency',
-        currency: 'SDG',
-        minimumFractionDigits: 0
-      }).format(amount);
+      const val = Number(amount) || 0;
+      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
     };
 
     const orderHtml = `
@@ -971,11 +965,8 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
     const settings = getPrintSettings();
 
     const formatCurrency = (amount) => {
-      return new Intl.NumberFormat('ar-SD', {
-        style: 'currency',
-        currency: 'SDG',
-        minimumFractionDigits: 0
-      }).format(amount);
+      const val = Number(amount) || 0;
+      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
     };
 
     const reportHtml = `
@@ -1177,11 +1168,8 @@ ipcMain.handle('print:inventory-report', async (event, inventoryData) => {
     const settings = getPrintSettings();
 
     const formatCurrency = (amount) => {
-      return new Intl.NumberFormat('ar-SD', {
-        style: 'currency',
-        currency: 'SDG',
-        minimumFractionDigits: 0
-      }).format(amount);
+      const val = Number(amount) || 0;
+      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
     };
 
     const reportHtml = `

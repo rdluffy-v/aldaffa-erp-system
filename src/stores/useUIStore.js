@@ -7,7 +7,37 @@ import { create } from 'zustand';
 
 let toastIdCounter = 0;
 
+// Get initial theme from localStorage or default to 'atelier' (Organic Daylight Atelier)
+const initialTheme = (() => {
+  try {
+    const saved = localStorage.getItem('aldaffa_theme');
+    if (saved === 'dark' || saved === 'atelier') return saved;
+  } catch (e) {}
+  return 'atelier';
+})();
+
+if (typeof document !== 'undefined') {
+  document.documentElement.setAttribute('data-theme', initialTheme);
+}
+
 export const useUIStore = create((set, get) => ({
+  // Theme state: 'atelier' (Daylight Organic Atelier) | 'dark' (Nocturne Obsidian)
+  theme: initialTheme,
+  setTheme: (newTheme) => {
+    try {
+      localStorage.setItem('aldaffa_theme', newTheme);
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-theme', newTheme);
+      }
+    } catch (e) {}
+    set({ theme: newTheme });
+  },
+  toggleTheme: () => {
+    const current = get().theme;
+    const next = current === 'atelier' ? 'dark' : 'atelier';
+    get().setTheme(next);
+  },
+
   // State
   sidebarOpen: false,
   activeModal: null,

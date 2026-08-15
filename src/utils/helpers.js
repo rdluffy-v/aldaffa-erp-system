@@ -13,25 +13,22 @@ export const generateId = () => {
 };
 
 /**
- * Format currency to Sudanese Pound
+ * Format currency to Libyan Dinar (د.ل)
  * @param {number} amount - Amount to format
  * @returns {string} Formatted currency
  */
 export const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('ar-SD', {
-    style: 'currency',
-    currency: 'SDG',
-    minimumFractionDigits: 0
-  }).format(amount);
+  const val = Number(amount) || 0;
+  return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
 };
 
 /**
- * Format date to Arabic locale
+ * Format date to Libyan Arabic locale
  * @param {string|Date} date - Date to format
  * @returns {string} Formatted date
  */
 export const formatDate = (date) => {
-  return new Intl.DateTimeFormat('ar-SD', {
+  return new Intl.DateTimeFormat('ar-LY', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -46,7 +43,7 @@ export const formatDate = (date) => {
  * @returns {string} Formatted date
  */
 export const formatDateShort = (date) => {
-  return new Intl.DateTimeFormat('ar-SD', {
+  return new Intl.DateTimeFormat('ar-LY', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'

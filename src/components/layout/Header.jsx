@@ -1,31 +1,34 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useUIStore } from '../../stores/useUIStore.js';
+import { FlaconEmblem } from '../ui/FlaconIcons.jsx';
+import { Sun, Moon } from 'lucide-react';
 
 /**
- * Header.jsx
- * Dark luxury top header: brand, live Arabic (ar-SD) date & time,
- * and an optional children slot for header actions.
- *
- * @param {Object} props
- * @param {React.ReactNode} [props.children] - Right-side action area
+ * Organic Atelier Canopy Header
+ * Features:
+ * - Live Arabic Libyan Date/Time clock
+ * - Organic luxury flacon brand emblem
+ * - Theme Switcher (Daylight Atelier ☀️ / Nocturne Obsidian 🌙)
+ * - Actions slot
  */
 const Header = ({ children }) => {
   const [now, setNow] = useState(() => new Date());
+  const theme = useUIStore((state) => state.theme);
+  const toggleTheme = useUIStore((state) => state.toggleTheme);
 
-  // Refresh the clock every 30 seconds.
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  // Formatting with the Sudanese Arabic locale via native Intl.
-  const dateFormatter = new Intl.DateTimeFormat('ar-SD', {
+  const dateFormatter = new Intl.DateTimeFormat('ar-LY', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric'
   });
 
-  const timeFormatter = new Intl.DateTimeFormat('ar-SD', {
+  const timeFormatter = new Intl.DateTimeFormat('ar-LY', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true
@@ -35,47 +38,56 @@ const Header = ({ children }) => {
   const timeText = timeFormatter.format(now);
 
   return (
-    <header className="relative w-full bg-gradient-to-l from-[#0d1117] via-[#161b22] to-[#0d1117] border-b border-white/5 px-6 py-4">
-      {/* Luxurious gold accent hairline at the bottom edge */}
-      <div
-        className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-l from-transparent via-[#d97706]/60 to-transparent"
-        aria-hidden="true"
-      />
-      {/* Subtle top glow */}
-      <div
-        className="absolute inset-x-0 top-0 h-px bg-gradient-to-l from-transparent via-[#fbbf24]/30 to-transparent"
-        aria-hidden="true"
-      />
-
-      <div className="relative flex items-center justify-between gap-6">
-        {/* Brand */}
-        <div className="flex items-center gap-3">
-          <span
-            className="text-2xl leading-none drop-shadow-[0_0_12px_rgba(251,191,36,0.55)]"
-            aria-hidden="true"
-          >
-            🌟
-          </span>
-          <div className="leading-tight">
-            <h1 className="text-xl font-bold text-[#e6edf3] tracking-wide">
-              الدفة للعطور
-            </h1>
-            <p className="text-[11px] text-[#768390] uppercase tracking-[0.18em]">
-              Aldaffa Perfumes ERP
-            </p>
-          </div>
-        </div>
-
-        {/* Date / time + custom actions */}
-        <div className="flex items-center gap-6">
-          <div className="text-end select-none">
-            <p className="text-sm font-semibold text-[#fbbf24]">{dateText}</p>
-            <p className="text-xs text-[#adbac7] tabular-nums mt-0.5">{timeText}</p>
-          </div>
-          {children && <div className="flex items-center gap-3">{children}</div>}
+    <div className="w-full flex items-center justify-between px-6 pt-3 pb-2 select-none">
+      {/* Date & Time Clock (Left in RTL) */}
+      <div className="flex items-center gap-3">
+        <div className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-amber-900/10 dark:border-amber-500/20 shadow-sm flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-xs font-semibold text-[#2D2424] dark:text-amber-300">{dateText}</span>
+          <span className="text-[11px] text-[#5C524F] dark:text-slate-400 font-mono">({timeText})</span>
         </div>
       </div>
-    </header>
+
+      {/* Brand Identity & Theme Toggle (Right in RTL) */}
+      <div className="flex items-center gap-4">
+        {children && <div className="flex items-center gap-2">{children}</div>}
+
+        {/* Theme Switcher */}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          title={theme === 'atelier' ? 'التبديل إلى الوضع الليلي' : 'التبديل إلى وضع النهار الفاخر'}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/70 dark:bg-slate-900/70 border border-amber-900/10 dark:border-amber-500/20 text-xs font-semibold text-[#2D2424] dark:text-amber-300 shadow-sm hover:scale-105 active:scale-95 transition-all cursor-pointer"
+        >
+          {theme === 'atelier' ? (
+            <>
+              <Sun className="w-3.5 h-3.5 text-amber-600" />
+              <span>النهار</span>
+            </>
+          ) : (
+            <>
+              <Moon className="w-3.5 h-3.5 text-amber-400" />
+              <span>الليل</span>
+            </>
+          )}
+        </button>
+
+        {/* Brand Logo & Emblem */}
+        <div className="flex items-center gap-2.5">
+          <div className="text-right leading-tight">
+            <h1 className="text-base font-extrabold text-[#2D2424] dark:text-[#F3F4F6] tracking-tight">
+              الدفة للعطور
+            </h1>
+            <p className="text-[9px] font-bold text-[#8C827A] dark:text-amber-400/70 tracking-[0.2em] uppercase">
+              ALDAFFA PERFUMES ERP
+            </p>
+          </div>
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-100 to-amber-200 dark:from-amber-950 dark:to-slate-900 border border-amber-400/40 shadow-sm flex items-center justify-center">
+            <FlaconEmblem className="w-6 h-6 text-amber-700 dark:text-amber-300" />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

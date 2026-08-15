@@ -1,14 +1,10 @@
+import React from 'react';
 import { motion } from 'framer-motion';
+import { MODULE_FLACON_MAP } from '../ui/FlaconIcons.jsx';
 
 /**
- * Navigation.jsx
- * Horizontally scrollable module tab bar with an animated gold active
- * indicator (Framer Motion layout animation).
- *
- * @param {Object}  props
- * @param {Array<{ id: string, label: string, icon?: React.ComponentType }>} props.modules
- * @param {string}  [props.activeModule] - Currently active module id
- * @param {Function} props.onSelect(id)  - Selection callback
+ * Organic Atelier Navigation Tabs
+ * Displays horizontal pill chips with delicate line-art flacon icons above each tab.
  */
 const Navigation = ({ modules = [], activeModule, onSelect, className = '' }) => {
   return (
@@ -16,13 +12,13 @@ const Navigation = ({ modules = [], activeModule, onSelect, className = '' }) =>
       role="tablist"
       aria-label="التنقل الرئيسي"
       className={[
-        'relative flex items-center gap-1 overflow-x-auto scrollbar-luxury px-2 py-2',
+        'relative flex items-center justify-center gap-1.5 overflow-x-auto scrollbar-none px-4 pb-2 pt-0.5',
         className
       ].join(' ')}
     >
       {modules.map((mod) => {
         const isActive = activeModule === mod.id;
-        const Icon = mod.icon;
+        const FlaconIcon = MODULE_FLACON_MAP[mod.id];
 
         return (
           <motion.button
@@ -31,32 +27,40 @@ const Navigation = ({ modules = [], activeModule, onSelect, className = '' }) =>
             role="tab"
             aria-selected={isActive}
             onClick={() => onSelect?.(mod.id)}
-            whileTap={{ scale: 0.95 }}
+            whileHover={{ y: -1 }}
+            whileTap={{ scale: 0.96 }}
             className={[
-              'relative shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold',
-              'transition-colors duration-200 cursor-pointer no-select',
+              'relative shrink-0 flex flex-col items-center gap-0.5 py-1 px-3 rounded-full cursor-pointer no-select transition-all',
               isActive
-                ? 'text-[#0d1117]'
-                : 'text-[#adbac7] hover:text-[#e6edf3] hover:bg-white/5'
+                ? 'text-[#2D2424] dark:text-slate-900 font-bold'
+                : 'text-[#5C524F] dark:text-slate-300 hover:text-[#2D2424] dark:hover:text-white font-medium hover:bg-white/40 dark:hover:bg-white/10'
             ].join(' ')}
           >
-            {/* Animated active pill (shared layoutId glides between tabs) */}
+            {/* Smooth animated active pill background */}
             {isActive && (
               <motion.span
-                layoutId="navigation-active-indicator"
-                className="absolute inset-0 rounded-lg bg-gradient-to-l from-[#fbbf24] to-[#f59e0b] shadow-[0_0_18px_rgba(217,119,6,0.5)]"
-                transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                layoutId="canopy-active-pill"
+                className="absolute inset-0 rounded-full bg-gradient-to-r from-[#D4A359] via-[#FBDF9D] to-[#9EBAA4] dark:from-amber-400 dark:to-amber-500 shadow-[0_4px_12px_rgba(212,163,89,0.35)]"
+                transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                 aria-hidden="true"
               />
             )}
 
-            {Icon && (
-              <Icon
-                className="relative z-10 w-4 h-4 shrink-0"
+            {/* Delicate Flacon Icon */}
+            {FlaconIcon && (
+              <FlaconIcon
+                className={[
+                  'relative z-10 w-4 h-4 transition-transform duration-200',
+                  isActive ? 'scale-110 text-[#2D2424] dark:text-slate-950' : 'text-[#8C827A] dark:text-slate-400'
+                ].join(' ')}
                 aria-hidden="true"
               />
             )}
-            <span className="relative z-10 whitespace-nowrap">{mod.label}</span>
+
+            {/* Label */}
+            <span className="relative z-10 text-[11px] whitespace-nowrap leading-none mt-0.5">
+              {mod.label}
+            </span>
           </motion.button>
         );
       })}

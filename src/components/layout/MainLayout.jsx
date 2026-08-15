@@ -1,25 +1,14 @@
+import React from 'react';
 import Header from './Header.jsx';
 import Navigation from './Navigation.jsx';
 import ErrorBoundary from '../ErrorBoundary.jsx';
 
 /**
- * ============================================================================
- * MainLayout.jsx
- * ============================================================================
- * Application shell layout: luxury Header on top, horizontally scrollable
- * Navigation tab bar, and a scrollable main content area.
- *
- * Every rendered child is wrapped in an <ErrorBoundary> so a crash in any
- * module shows the themed fallback UI instead of a blank screen.
- *
- * @param {Object}  props
- * @param {Array<{ id: string, label: string, icon?: React.ComponentType }>} props.modules
- *   - Module definitions passed straight through to <Navigation>.
- * @param {string}  props.activeModule - Currently active module id
- * @param {Function} props.onSelect(id) - Module selection callback
- * @param {React.ReactNode} props.children - Active module content
- * @param {React.ReactNode} [props.headerActions] - Optional actions rendered
- *   inside the header (children slot of <Header>).
+ * Organic Atelier MainLayout
+ * Features:
+ * - Curved canopy header with gradient arch
+ * - Ambient organic decorative petals
+ * - Smooth content container
  */
 const MainLayout = ({
   modules = [],
@@ -30,27 +19,42 @@ const MainLayout = ({
 }) => {
   return (
     <div
-      className="h-screen flex flex-col overflow-hidden"
+      className="h-screen flex flex-col overflow-hidden relative"
       style={{ background: 'var(--bg-primary)' }}
       dir="rtl"
     >
-      {/* Luxury header with optional actions */}
-      <Header>{headerActions}</Header>
-
-      {/* Module navigation tab bar */}
-      <Navigation
-        modules={modules}
-        activeModule={activeModule}
-        onSelect={onSelect}
+      {/* Background Ambient Organic Petals */}
+      <div
+        className="ambient-petal w-72 h-96 -left-16 top-28 rotate-12 opacity-40 dark:opacity-10"
+        style={{
+          background: 'linear-gradient(135deg, #9EBAA4 0%, #DCE7DD 100%)',
+          borderRadius: '50% 50% 45% 55% / 40% 60% 40% 60%'
+        }}
+        aria-hidden="true"
+      />
+      <div
+        className="ambient-petal w-64 h-80 -left-10 top-72 -rotate-12 opacity-35 dark:opacity-10"
+        style={{
+          background: 'linear-gradient(135deg, #FBE8C8 0%, #D4A359 100%)',
+          borderRadius: '45% 55% 60% 40% / 55% 45% 55% 45%'
+        }}
+        aria-hidden="true"
       />
 
-      {/* Main content area */}
-      <main
-        className="flex-1 overflow-hidden p-6"
-        style={{ background: 'var(--bg-primary)' }}
-      >
+      {/* Organic Canopy Header */}
+      <header className="canopy-header z-20 shrink-0">
+        <Header>{headerActions}</Header>
+        <Navigation
+          modules={modules}
+          activeModule={activeModule}
+          onSelect={onSelect}
+        />
+      </header>
+
+      {/* Main Content Pane */}
+      <main className="flex-1 overflow-hidden p-4 relative z-10">
         <ErrorBoundary>
-          <div className="h-full">{children}</div>
+          <div className="h-full w-full">{children}</div>
         </ErrorBoundary>
       </main>
     </div>

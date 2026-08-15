@@ -766,35 +766,108 @@ const Dashboard = () => {
         </div>
       )}
 
-      {/* --------------------------- Summary cards ----------------------- */}
+      {/* --------------------------- Summary cards (Organic Atelier Pebble Row) ----------------------- */}
       <motion.div
         variants={containerVariants}
-        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
+        className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3"
       >
-        {summaryCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <motion.div key={card.id} variants={itemVariants}>
-              <Card className="h-full">
-                <div className="flex items-start justify-between gap-3 mb-5">
-                  <div
-                    className={`w-11 h-11 rounded-xl bg-gradient-to-br flex items-center justify-center shrink-0 ${card.iconBg}`}
-                  >
-                    <Icon className="w-5 h-5" aria-hidden="true" />
-                  </div>
-                  {card.delta !== undefined
-                    ? renderDelta(card.delta)
-                    : card.badge && <span className="badge badge-primary">{card.badge}</span>}
-                </div>
-                <p className="text-xs font-semibold text-[#768390] mb-1">{card.label}</p>
-                <p className="text-2xl font-extrabold text-[#e6edf3] tabular-nums leading-tight mb-1">
-                  {card.value}
-                </p>
-                <p className="text-xs text-[#545d68]">{card.deltaLabel || card.subtitle}</p>
-              </Card>
-            </motion.div>
-          );
-        })}
+        {/* 1. إجمالي المبيعات */}
+        <motion.div variants={itemVariants} className="flex flex-col items-center">
+          <div className="w-full aspect-square rounded-[2rem] bg-white/85 dark:bg-slate-900/85 border border-amber-500/30 p-3 flex flex-col items-center justify-between text-center shadow-sm hover:scale-105 transition-all">
+            <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 flex items-center justify-center">
+              <Banknote className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-[#5C524F] dark:text-slate-300">إجمالي المبيعات</p>
+              <p className="text-sm font-extrabold text-[#2D2424] dark:text-amber-300 tabular-nums">{formatCurrency(summary.revenue)}</p>
+            </div>
+            <div className="text-[10px] text-[#8C827A] dark:text-slate-400">{renderDelta(summary.changePct)}</div>
+          </div>
+        </motion.div>
+
+        {/* 2. الإيرادات */}
+        <motion.div variants={itemVariants} className="flex flex-col items-center">
+          <div className="w-full aspect-square rounded-[2rem] bg-white/85 dark:bg-slate-900/85 border border-emerald-500/30 p-3 flex flex-col items-center justify-between text-center shadow-sm hover:scale-105 transition-all">
+            <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 flex items-center justify-center">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-[#5C524F] dark:text-slate-300">الإيرادات</p>
+              <p className="text-sm font-extrabold text-[#2D2424] dark:text-emerald-300 tabular-nums">{formatCurrency(summary.revenue)}</p>
+            </div>
+            <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">{summary.salesCount} طلبات</div>
+          </div>
+        </motion.div>
+
+        {/* 3. الربح */}
+        <motion.div variants={itemVariants} className="flex flex-col items-center">
+          <div className="w-full aspect-square rounded-[2rem] bg-white/85 dark:bg-slate-900/85 border border-rose-500/30 p-3 flex flex-col items-center justify-between text-center shadow-sm hover:scale-105 transition-all">
+            <div className="w-8 h-8 rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-400 flex items-center justify-center">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-[#5C524F] dark:text-slate-300">الربح</p>
+              <p className="text-sm font-extrabold text-[#2D2424] dark:text-rose-300 tabular-nums">{formatCurrency(summary.profit)}</p>
+            </div>
+            <div className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">{summary.marginPct.toFixed(1)}% هامش</div>
+          </div>
+        </motion.div>
+
+        {/* 4. صافي الربح */}
+        <motion.div variants={itemVariants} className="flex flex-col items-center">
+          <div className="w-full aspect-square rounded-[2rem] bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-slate-900 border-2 border-emerald-500 p-3 flex flex-col items-center justify-between text-center shadow-md hover:scale-105 transition-all">
+            <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-sm">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[11px] font-extrabold text-emerald-800 dark:text-emerald-200">صافي الربح</p>
+              <p className="text-sm font-black text-emerald-900 dark:text-emerald-300 tabular-nums">{formatCurrency(summary.profit)}</p>
+            </div>
+            <div className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold">كفاءة عالية</div>
+          </div>
+        </motion.div>
+
+        {/* 5. التكلفة */}
+        <motion.div variants={itemVariants} className="flex flex-col items-center">
+          <div className="w-full aspect-square rounded-[2rem] bg-white/85 dark:bg-slate-900/85 border border-purple-500/30 p-3 flex flex-col items-center justify-between text-center shadow-sm hover:scale-105 transition-all">
+            <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400 flex items-center justify-center">
+              <Banknote className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-[#5C524F] dark:text-slate-300">التكلفة</p>
+              <p className="text-sm font-extrabold text-[#2D2424] dark:text-purple-300 tabular-nums">{formatCurrency(summary.revenue - summary.profit)}</p>
+            </div>
+            <div className="text-[10px] text-[#8C827A] dark:text-slate-400">تكلفة البضاعة</div>
+          </div>
+        </motion.div>
+
+        {/* 6. مخزون منخفض */}
+        <motion.div variants={itemVariants} className="flex flex-col items-center">
+          <div className="w-full aspect-square rounded-[2rem] bg-white/85 dark:bg-slate-900/85 border border-amber-500/30 p-3 flex flex-col items-center justify-between text-center shadow-sm hover:scale-105 transition-all">
+            <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 flex items-center justify-center">
+              <PackageOpen className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-[#5C524F] dark:text-slate-300">مخزون منخفض</p>
+              <p className="text-sm font-extrabold text-amber-600 dark:text-amber-400 tabular-nums">{formatNumber(data.lowStockCount)}</p>
+            </div>
+            <div className="text-[10px] text-[#8C827A] dark:text-slate-400">يحتاج طلب</div>
+          </div>
+        </motion.div>
+
+        {/* 7. عملاء ديون */}
+        <motion.div variants={itemVariants} className="flex flex-col items-center">
+          <div className="w-full aspect-square rounded-[2rem] bg-white/85 dark:bg-slate-900/85 border border-rose-500/30 p-3 flex flex-col items-center justify-between text-center shadow-sm hover:scale-105 transition-all">
+            <div className="w-8 h-8 rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-400 flex items-center justify-center">
+              <Users className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-[#5C524F] dark:text-slate-300">عملاء ديون</p>
+              <p className="text-sm font-extrabold text-rose-600 dark:text-rose-400 tabular-nums">{formatCurrency(data.totalDebt)}</p>
+            </div>
+            <div className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">{data.activeDebtorsCount} عملاء</div>
+          </div>
+        </motion.div>
       </motion.div>
 
       {/* ------------------------------ Charts --------------------------- */}
