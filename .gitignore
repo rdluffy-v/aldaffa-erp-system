@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Built assets
+dist/
+release/
+build/
+
+# Environment variables
+.env
+.env.*
+
+# Logs
+*.log
+audit_log.md
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw*
+
+# Electron packaging
+**/electron-builder.yml
+**/builder-debug.yml
+**/app.asar
+**/app.asar.unpacked
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vite
+.vite/
+
+# Misc
+*.tmp
+*.bak
