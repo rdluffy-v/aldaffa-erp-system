@@ -25,7 +25,23 @@ import {
   FolderArchive,
   ArrowRight,
   Info,
-  Check
+  Check,
+  BookOpen,
+  Package,
+  ShoppingCart,
+  ShoppingBag,
+  Lock,
+  HelpCircle,
+  Layers,
+  Undo2,
+  FlaskConical,
+  TrendingUp,
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  Shield,
+  Clock,
+  Compass
 } from 'lucide-react';
 
 import { SandboxEngine } from '../database/SandboxEngine.js';
@@ -54,11 +70,278 @@ const DEFAULT_PRINT_SETTINGS = {
   logoBase64: ''
 };
 
+const GUIDE_STAGES = [
+  {
+    id: 1,
+    title: 'المرحلة 1: التثبيت والتهيئة الأولية وتخصيص المتجر',
+    subtitle: 'إعداد الهوية التجارية، قوالب الطباعة الحرارية، وتسميات الأقسام',
+    icon: Sliders,
+    badge: 'الخطوة الأولى',
+    steps: [
+      {
+        heading: '1. ضبط بيانات وهوية المتجر',
+        text: 'من تبويب "استوديو وقوالب الطباعة"، أدخل اسم المتجر (الدفة للعطور)، الشعار الرسمي (Logo)، العنوان التفصيلي (ليبيا - مصراتة)، ورقم هاتف خدمة العملاء لتظهر تلقائياً في ترويسة الفواتير.'
+      },
+      {
+        heading: '2. إعداد نوع وقالب الطباعة',
+        text: 'اختر نمط الطباعة الافتراضي: إما إيصالات حرارية سريعة (80mm) لكاشير المحل، أو مستندات قياسية (A4) لكشوفات الحساب وتقارير الإدارة والموردين. قم أيضاً بكتابة سياسة الاستبدال والاسترجاع (المعتمدة: خلال 30 ساعة مع الفاتورة الأصلية).'
+      },
+      {
+        heading: '3. التعديل الحر لمسميات الأقسام',
+        text: 'من تبويب "التعديل الحر للمسميات"، يمكنك إعادة تسمية أي تبويب أو قسم في القبة العلوية للمنظومة بما يتناسب تماماً مع أسلوب العمل في متجرك.'
+      }
+    ],
+    tips: '💡 تلميح: يمكنك طباعة إيصال تجريبي 80mm أو مستند A4 بنقرة واحدة من استوديو الطباعة لمعاينة المظهر الحقيقي قبل بدء البيع.'
+  },
+  {
+    id: 2,
+    title: 'المرحلة 2: بناء المخزون وإدخال الأصناف الافتتاحية والباركود',
+    subtitle: 'تسجيل العطور، الزيوت، الزجاجات، البخور، والتسعير وحدود الأمان',
+    icon: Package,
+    badge: 'تأسيس المخزون',
+    steps: [
+      {
+        heading: '1. إضافة المنتجات وتصنيفها',
+        text: 'توجه لقسم "المخزون" واضغط على "➕ إضافة منتج". اكتب اسم الصنف بوضوح (مثال: عطر مسك الدفة الملكي 100ml، أو زيت صندل فرنسي)، وحدد تصنيفه (عطور شرقية، عطور غربية، زيوت خام، زجاجات ومستلزمات، بخور ومباخر).'
+      },
+      {
+        heading: '2. التسعير ووحدات القياس',
+        text: 'أدخل سعر التكلفة الفعلي (سعر الشراء)، وسعر البيع القطاعي للمستهلك، وسعر الجملة، والكمية الافتتاحية المتوفرة على الرفوف، ووحدة القياس (قطعة، مل، تولة، جرام).'
+      },
+      {
+        heading: '3. ربط وتوليد الباركود وحد الأمان',
+        text: 'يمكنك مسح باركود العبوة بقارئ الباركود أو الضغط على "توليد باركود تلقائي" لينشئ النظام باركوداً فريداً لكل صنف. حدد أيضاً "حد النواقص" (مثل 5 قطع) ليقوم النظام بتنبيهك تلقائياً عند اقتراب نفاد الكمية.'
+      }
+    ],
+    tips: '🏷️ تلميح: يمكنك أيضاً إضافة أي منتج جديد وحقنه وتوليد باركوده فورياً أثناء تسجيل فواتير الشراء دون الحاجة للذهاب للمخزون أولاً.'
+  },
+  {
+    id: 3,
+    title: 'المرحلة 3: دورة المشتريات والتوريد وحساب متوسط التكلفة (WAC)',
+    subtitle: 'تسجيل فواتير الموردين، حساب متوسط التكلفة المرجح، وطباعة ملصقات الباركود',
+    icon: ShoppingBag,
+    badge: 'التوريد والشراء',
+    steps: [
+      {
+        heading: '1. تسجيل فاتورة شراء جديدة',
+        text: 'ادخل لقسم "المشتريات" واضغط "طلب شراء جديد". أدخل اسم المورد، رقم مرجع الفاتورة، تاريخ الفاتورة، وطريقة الدفع (نقدي أو آجل دين للمورد).'
+      },
+      {
+        heading: '2. إضافة أصناف موجودة أو جديدة كلياً',
+        text: 'أضف الأصناف المشتراة، كما يمكنك النقر على "➕ إضافة منتج جديد تماماً" لكتابة اسم صنف جديد وتكلفته وسعر بيعه وحقنه في المخزون وتوليد باركوده تلقائياً في ثوانٍ معدودة.'
+      },
+      {
+        heading: '3. حساب متوسط التكلفة المرجح (WAC)',
+        text: 'عند شراء شحنة جديدة بسعر تكلفة مختلف، يطبق النظام معادلة (Weighted Average Cost) لتحديث تكلفة الوحدة في المخزون بدقة تامة وضمان صحة حساب الأرباح.'
+      },
+      {
+        heading: '4. طباعة ملصقات الباركود للكميات المشتراة',
+        text: 'اضغط على زر "🏷️ طباعة باركود الكميات" ليقوم النظام بتجهيز وطباعة ملصقات باركود حرارية بعدد القطع المشتراة فوراً للصقها على العبوات والزجاجات.'
+      }
+    ],
+    tips: '🤖 تلميح ذكي: يدعم قسم المشتريات ميزة قراءة الفواتير الورقية المصورة عبر الذكاء الاصطناعي (OCR) لاستخراج الأصناف والكميات والأسعار تلقائياً.'
+  },
+  {
+    id: 4,
+    title: 'المرحلة 4: عمليات البيع اليومية وشاشة الكاشير السريعة (POS)',
+    subtitle: 'البيع بالباركود، الخصومات المزدوجة، الدفع النقدي والآجل، والإيصال الحراري',
+    icon: ShoppingCart,
+    badge: 'الكاشير والمبيعات',
+    steps: [
+      {
+        heading: '1. مسح وإضافة المنتجات للسلة',
+        text: 'في شاشة نقاط البيع (POS)، مرر قارئ الباركود على المنتج أو اضغط (F1) للبحث، أو تصفح المنتجات والتصنيفات لإضافتها فوراً لسلة المشتريات.'
+      },
+      {
+        heading: '2. تطبيق أنماط الخصم المزدوجة',
+        text: 'يدعم النظام التبديل السريع بين الخصم المئوي (%) والخصم المقطوع المباشر بالدينار (د.ل) مع التحقق الأوتوماتيكي وحساب الضريبة والإجمالي لحظياً.'
+      },
+      {
+        heading: '3. تعدد طرق السداد (نقدي / بطاقة / تحويل / دين آجل)',
+        text: 'اختر طريقة السداد: نقدي، بطاقة مصرفية، تحويل، أو "دين (آجل)" حيث يتم اختيار العميل وترحيل المبلغ المتبقي آلياً لحساب ديونه مع تحديث كشف حسابه.'
+      },
+      {
+        heading: '4. الحفظ والطباعة الفورية (F3)',
+        text: 'بمجرد النقر على "حفظ وطباعة" (أو اختصار F3)، يخرج الإيصال الحراري فوراً وتُخصم الكميات من المخزون ويُسجل صافي الربح في النظام.'
+      }
+    ],
+    tips: '⚡ اختصارات الكاشير: F1 للبحث والباركود، F3 للحفظ والطباعة السريعة، F4 لتفريغ السلة.'
+  },
+  {
+    id: 5,
+    title: 'المرحلة 5: مبيعات الأونلاين والتوصيل والشحن',
+    subtitle: 'تتبع طلبيات التوصيل لجميع المدن والمناطق وتسوية حسابات شركات الشحن',
+    icon: Smartphone,
+    badge: 'الشحن والتوصيل',
+    steps: [
+      {
+        heading: '1. تسجيل طلبية أونلاين',
+        text: 'في قسم "أونلاين"، أدخل اسم العميل، رقم هاتفه، المدينة (طرابلس، بنغازي، مصراتة، الزاوية، وغيرها)، تكلفة الشحن، والمنتجات المطلوبة.'
+      },
+      {
+        heading: '2. نافذة التعديل المرنة (30 ساعة)',
+        text: 'يتيح النظام فترة سماح مدتها 30 ساعة لتعديل تفاصيل الطلب أو أصنافه أو إلغائه قبل إتمام تسليمه لشركة التوصيل.'
+      },
+      {
+        heading: '3. متابعة التحصيل وتسوية حسابات المندوبين',
+        text: 'تتبع حالة الشحنات (قيد التجهيز، خرجت للتوصيل، تم التسليم) وتوثيق استلام المبالغ من شركات الشحن وتحديث الإيرادات.'
+      }
+    ],
+    tips: '🚚 تلميح: تظهر فواتير الأونلاين بتبويب مستقل في مركز الفواتير والمرتجعات لتفادي اختلاطها بمبيعات المحل المباشرة.'
+  },
+  {
+    id: 6,
+    title: 'المرحلة 6: إدارة المرتجعات واسترجاع الفواتير',
+    subtitle: 'استرجاع فواتير المحل والأونلاين جزئياً أو كلياً وإعادة الكميات للمخزون آلياً',
+    icon: Undo2,
+    badge: 'المرتجعات',
+    steps: [
+      {
+        heading: '1. البحث عن الفاتورة الأصلية',
+        text: 'في قسم "المرتجعات"، اختر تبويب "فواتير المحل (POS)" أو "فواتير الأونلاين"، وابحث برقم الفاتورة أو اسم العميل لاستعراض أصنافها.'
+      },
+      {
+        heading: '2. تحديد الأصناف والكميات المسترجعة',
+        text: 'حدد الصنف والكمية المراد استرجاعها سواء كان استرجاعاً كلياً للفاتورة أو جزئياً لبعض الأصناف فقط مع ذكر سبب الإرجاع.'
+      },
+      {
+        heading: '3. إعادة المخزون وتحديث الأرباح',
+        text: 'يقوم النظام تلقائياً بإعادة الكميات المستلمة إلى رصيد المخزون، وخصم قيمة المرتجع وأرباحه من تقارير اليومية وتعديل الحسابات المالية فوراً.'
+      }
+    ],
+    tips: '🛡️ سياسة الإرجاع: تضمن المنظومة حماية التاجر بالتأكد من صلاحية الفاتورة وعدم تكرار استرجاع الصنف ذاته أكثر من مرة.'
+  },
+  {
+    id: 7,
+    title: 'المرحلة 7: مختبر تركيب العطور والخلطات الخاصة (Perfume Mix Lab)',
+    subtitle: 'تصنيع خلطات عطرية مخصصة، حساب نسب الزيت والكحول، وحسم المكونات آلياً',
+    icon: FlaskConical,
+    badge: 'مختبر التركيب',
+    steps: [
+      {
+        heading: '1. اختيار حجم العبوة والزجاجة',
+        text: 'ادخل لقسم "المختبر" وحدد حجم الزجاجة المراد تركيبها (مثل: 30ml، 50ml، أو 100ml) من المخزون.'
+      },
+      {
+        heading: '2. دمج الزيوت العطرية والكحول',
+        text: 'أضف الزيوت العطرية بنسبها المحددة بالملليتر أو النسبة المئوية (مثل 30% مسك + 20% لافندر)، وأضف الكحول الإيثيلي المقطر لإكمال الحجم.'
+      },
+      {
+        heading: '3. حساب التكلفة الآلي وتحديد سعر البيع',
+        text: 'يحسب النظام تكلفة المللي لكل زيت مضاف + تكلفة الكحول + سعر الزجاجة، ويقترح سعر البيع بناءً على هامش الربح المطلوب.'
+      },
+      {
+        heading: '4. الخصم الآلي من المخزون عند البيع',
+        text: 'عند اعتماد وحفظ التركيبة وبيعها في الكاشير، يخصم النظام كميات الزيوت بالمللي والكحول والزجاجة الفارغة مباشرة من أرصدة المخزون.'
+      }
+    ],
+    tips: '🧪 تلميح: يمكنك حفظ الوصفات الناجحة في المختبر لإعادة تركيبها للعملاء لاحقاً بنفس الجودة والنسب.'
+  },
+  {
+    id: 8,
+    title: 'المرحلة 8: إغلاق الوردية واليومية وتسوية الخزينة (Shift Close)',
+    subtitle: 'مطابقة النقدية في الدرج مع الحركة الدفترية، كشف الفوارق، وحفظ الإغلاق',
+    icon: Lock,
+    badge: 'تسوية النقدية',
+    steps: [
+      {
+        heading: '1. عد النقدية الفعلية في الدرج',
+        text: 'في نهاية دوام الكاشير أو نهاية اليوم، ادخل لقسم "إغلاق الوردية" وأدخل اسم الكاشير والنقد الفعلي المعدود في الدرج.'
+      },
+      {
+        heading: '2. حساب النقد المتوقع آلياً',
+        text: 'يجمع النظام تلقائياً: (المبيعات النقدية + الضخ الرأسمالي) - (السحوبات النقدية والمصاريف) = النقد المتوقع وجوده في الخزينة.'
+      },
+      {
+        heading: '3. كشف فارق التسوية (مطابقة / عجز / فائض)',
+        text: 'يقارن النظام بين الفعلي والمتوقع: إذا تطابقا يظهر "متطابق تماماً"، وإذا كان هناك فرق يظهر "فائض نقدي" باللون الأخضر أو "عجز نقدي" باللون الأحمر.'
+      },
+      {
+        heading: '4. حفظ وإغلاق الوردية نهائياً وطباعة الإيصال',
+        text: 'اضغط على زر "🔒 حفظ وإغلاق الوردية نهائياً" ليتم توثيق التقرير المالي في سجل الورديات الدائم وطباعة سند تسوية معتمد.'
+      }
+    ],
+    tips: '📊 تلميح: يمكنك استعراض وطباعة أي تقرير وردية سابقة في أي وقت من تبويب "سجل الورديات السابقة".'
+  },
+  {
+    id: 9,
+    title: 'المرحلة 9: الجرد الفعلي للمخزون وتسوية الفوارق (Stocktaking)',
+    subtitle: 'التحقق الدوري من مطابقة المخزون الفعلي مع الدفتري ومعالجة التوالف والفوارق',
+    icon: Layers,
+    badge: 'الجرد الدوري',
+    steps: [
+      {
+        heading: '1. اختيار نمط وفترة الجرد',
+        text: 'من قسم "المخزون"، ادخل لتبويب "الجرد" واختر نوع الجرد: جرد شامل لكامل المحل، أو جرد لتصنيف محدد (مثل الزيوت فقط أو العطور الشرقية).'
+      },
+      {
+        heading: '2. مسح الباركود وعد الكميات الفعلية',
+        text: 'مرر قارئ الباركود على المنتجات الموجودة فعلياً على الرفوف وأدخل الكميات المعدودة يدوياً.'
+      },
+      {
+        heading: '3. حصر الفوارق وتسجيل التوالف والخسائر',
+        text: 'يقارن النظام بين الكميات المسجلة والفعلية: في حال وجود نقص (كسر زجاجة، عطر تالف، أو فقد)، يتم تسجيله واعتماده ونقله تلقائياً لقسم "الخسائر" لتوثيقه محاسبياً.'
+      },
+      {
+        heading: '4. اعتماد الجرد وتحديث الأرصدة الدفترية',
+        text: 'بالضغط على "اعتماد التسوية"، تصبح الأرقام الدفترية مطابقة 100% للواقع الفعلي، ويكون المحل جاهزاً لدورة عمل جديدة دقيقة.'
+      }
+    ],
+    tips: '🔍 تلميح: يفضل إجراء الجرد الدوري في أوقات هدوء المبيعات أو بعد إغلاق الوردية لضمان ثبات الأرقام أثناء العد.'
+  },
+  {
+    id: 10,
+    title: 'المرحلة 10: ماذا يعني ترحيل المنظومة؟ وماذا يحدث بعد الجرد والترحيل؟',
+    subtitle: 'مفهوم أرشفة وترحيل البيانات القديمة، وتصفية السجلات مع الحفاظ على الأرصدة الافتتاحية',
+    icon: Database,
+    badge: 'الترحيل والأرشفة',
+    steps: [
+      {
+        heading: '1. ما هو ترحيل المنظومة (Data Archiving & Migration)؟',
+        text: 'مع مرور الوقت وتراكم آلاف الفواتير والعمليات القديمة، يزداد حجم قاعدة البيانات. "الترحيل" هو استخراج نسخة مؤرشفة مستقلة ومضغوطة من الفواتير والعمليات المنتهية السابقة وحفظها في ملف أرشيف آمن، ثم تفريغ مساحة القرص وتخفيف الحمل على النظام ليظل فائق السرعة وخفيفاً.'
+      },
+      {
+        heading: '2. ماذا يحدث بعد الجرد والترحيل؟ (مرحلة ما بعد الترحيل)',
+        text: 'بعد ترحيل الفترة السابقة: (أ) تظل كميات المخزون الفعلية الناتجة عن الجرد، وأسعار المنتجات وتصنيفاتها، وبيانات ديون العملاء محفوظة 100% وتعتبر "أرصدة افتتاحية" للمرحلة الجديدة. (ب) يتم تصفير حركات المبيعات المنتهية المنقولة للأرشيف لتبدأ المنظومة صفحة عمل جديدة سريعة وخفيفة.'
+      },
+      {
+        heading: '3. استعراض الأرشيف في أي وقت دون أي فقدان',
+        text: 'لا يُحذف أي سجل تجاري نهائياً؛ حيث يمكنك في أي لحظة الدخول لتبويب "الترحيل وصيانة المنظومة" واستعراض كافة الفواتير والسجلات والتقارير التاريخية التي تم ترحيلها بكل تفاصيلها الأصلية.'
+      }
+    ],
+    tips: '⭐ قاعدة ذهبية: الترحيل لا يحذف أصناف المخزون ولا ديون العملاء، بل ينقل فقط الفواتير القديمة المكتملة إلى الأرشيف التاريخي لتسريع النظام.'
+  },
+  {
+    id: 11,
+    title: 'المرحلة 11: الأمان، النسخ الاحتياطي التلقائي، والتحديثات الخفيفة',
+    subtitle: 'العمل 100% دون إنترنت، النسخ الاحتياطي اليومي، وحماية البيانات أثناء التحديثات',
+    icon: Shield,
+    badge: 'الأمان والنسخ',
+    steps: [
+      {
+        heading: '1. العمل دون إنترنت (100% Offline Architecture)',
+        text: 'كافة أقسام المنظومة الـ 18، وقاعدة بيانات SQLite، وإصدار الإيصالات، والطباعة، وإغلاق الوردية تعمل محلياً على جهازك دون الحاجة لأي اتصال بالإنترنت.'
+      },
+      {
+        heading: '2. النسخ الاحتياطي اليومي التلقائي',
+        text: 'تقوم المنظومة تلقائياً بعمل لقطة احتياطية يومية من قاعدة البيانات وحفظها في مجلد backups لحماية كافة بياناتك من أي طارئ.'
+      },
+      {
+        heading: '3. التحديثات الخفيفة والآمنة (Zero Data Loss Updates)',
+        text: 'عند إصدار ميزات وتحسينات جديدة، يتم تحديث أكواد وواجهات النظام ومخططات الجداول بشكل غير مدمر، دون المساس إطلاقاً بقاعدة بياناتك أو تعديل أي سجلات حقيقية تخص تجارتك.'
+      }
+    ],
+    tips: '🔒 أمان تام: يمكنك في أي وقت تصدير نسخة احتياطية إضافية يدوياً وحفظها على قرص خارجي أو فلاش ميموري من تبويب الصيانة.'
+  }
+];
+
 const SettingsModule = () => {
   const { showSuccess, showError, showWarning, showInfo } = useUIStore();
   const { labels: customLabels, setLabel, setAllLabels, resetLabels } = useLabelsStore();
 
-  const [activeTab, setActiveTab] = useState('print'); // 'print' | 'labels' | 'archive' | 'ai_updates'
+  const [activeTab, setActiveTab] = useState('guide'); // 'guide' | 'print' | 'labels' | 'archive' | 'ai_updates'
+  const [openGuideStage, setOpenGuideStage] = useState(1);
+  const [guideSearchTerm, setGuideSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -101,7 +384,7 @@ const SettingsModule = () => {
   const [togglingSandbox, setTogglingSandbox] = useState(false);
 
   // Updater
-  const [appVersion, setAppVersion] = useState('2.3.1');
+  const [appVersion, setAppVersion] = useState('2.3.2');
   const [ghToken, setGhToken] = useState('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');
   const [showGhToken, setShowGhToken] = useState(false);
   const [updateStatus, setUpdateStatus] = useState({ status: 'idle', message: '' });
@@ -512,6 +795,7 @@ const SettingsModule = () => {
 
   // Tab configurations
   const TABS = [
+    { id: 'guide', label: '📘 كيف تعمل المنظومة؟ (دليل دورة الحياة)', icon: BookOpen },
     { id: 'print', label: 'استوديو وقوالب الطباعة', icon: Printer },
     { id: 'labels', label: 'التعديل الحر للمسميات', icon: Type },
     { id: 'archive', label: 'الترحيل وصيانة المنظومة', icon: Database },
@@ -542,7 +826,7 @@ const SettingsModule = () => {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   isActive
                     ? 'bg-gradient-to-l from-[#fbbf24] to-[#f59e0b] text-[#0d1117] shadow-[0_0_12px_rgba(251,191,36,0.35)]'
                     : 'text-[#adbac7] hover:text-[#e6edf3] hover:bg-white/5'
@@ -559,6 +843,164 @@ const SettingsModule = () => {
       {/* Main Content Area */}
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
         <AnimatePresence mode="wait">
+          {/* ========================================================================= */}
+          {/* TAB 0: COMPREHENSIVE ERP LIFECYCLE GUIDE (كيف تعمل المنظومة؟) */}
+          {/* ========================================================================= */}
+          {activeTab === 'guide' && (
+            <motion.div
+              key="guide-tab"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 pb-8"
+            >
+              {/* Hero Banner */}
+              <div className="glass-card p-6 border border-amber-500/30 bg-gradient-to-l from-amber-500/10 via-[#161b22] to-[#0d1117] rounded-3xl shadow-xl">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center font-bold text-2xl shadow-lg shrink-0">
+                      📘
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-extrabold text-[#e6edf3] flex items-center gap-2">
+                        دليل دورة حياة منظومة الدفة للعطور
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          11 مرحلة متسلسلة
+                        </span>
+                      </h2>
+                      <p className="text-xs text-[#adbac7] mt-1 leading-relaxed max-w-3xl">
+                        دليل تفاعلي شامل يشرح بالتفصيل دورة العمل اليومية والسنوية: من التهيئة الأولية وإضافة المخزون والباركود، إلى البيع والكاشير، والمشتريات، وإغلاق الوردية، والجرد الفعلي، وماذا يعني ترحيل المنظومة وما بعد الجرد.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative w-full md:w-72 shrink-0">
+                    <input
+                      type="text"
+                      placeholder="بحث في مواضيع وشروحات الدليل..."
+                      value={guideSearchTerm}
+                      onChange={(e) => setGuideSearchTerm(e.target.value)}
+                      className="w-full bg-[#0d1117] border border-amber-500/30 rounded-full px-4 py-2 text-xs text-[#e6edf3] focus:border-amber-400 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Quick Stage Pills */}
+                <div className="mt-5 pt-4 border-t border-white/10 flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar text-xs">
+                  <span className="text-gray-400 font-bold shrink-0 ml-1">الانتقال السريع:</span>
+                  {GUIDE_STAGES.map((stg) => (
+                    <button
+                      key={stg.id}
+                      type="button"
+                      onClick={() => setOpenGuideStage(stg.id)}
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold shrink-0 transition-all cursor-pointer ${
+                        openGuideStage === stg.id
+                          ? 'bg-amber-500 text-slate-950 shadow-md'
+                          : 'bg-[#0d1117] text-gray-300 border border-white/10 hover:border-amber-500/40'
+                      }`}
+                    >
+                      {stg.id}. {stg.badge}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Lifecycle Stages Cards */}
+              <div className="space-y-4">
+                {GUIDE_STAGES.filter((stg) => {
+                  if (!guideSearchTerm.trim()) return true;
+                  const term = guideSearchTerm.toLowerCase();
+                  return (
+                    stg.title.toLowerCase().includes(term) ||
+                    stg.subtitle.toLowerCase().includes(term) ||
+                    stg.steps.some(
+                      (s) =>
+                        s.heading.toLowerCase().includes(term) ||
+                        s.text.toLowerCase().includes(term)
+                    ) ||
+                    stg.tips.toLowerCase().includes(term)
+                  );
+                }).map((stage) => {
+                  const isOpen = openGuideStage === stage.id;
+                  const StageIcon = stage.icon;
+
+                  return (
+                    <div
+                      key={stage.id}
+                      className={`glass-card rounded-2xl border transition-all overflow-hidden ${
+                        isOpen
+                          ? 'border-amber-500/50 bg-[#161b22]/90 shadow-xl'
+                          : 'border-white/10 bg-[#161b22]/50 hover:border-white/20'
+                      }`}
+                    >
+                      {/* Stage Header Accordion Button */}
+                      <button
+                        type="button"
+                        onClick={() => setOpenGuideStage(isOpen ? null : stage.id)}
+                        className="w-full p-4 text-right flex items-center justify-between gap-4 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 transition-all ${
+                              isOpen
+                                ? 'bg-amber-500 text-slate-950 shadow-md'
+                                : 'bg-white/5 text-amber-400 border border-white/10'
+                            }`}
+                          >
+                            <StageIcon className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-extrabold text-[#e6edf3]">{stage.title}</h3>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/25">
+                                {stage.badge}
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#768390] mt-0.5">{stage.subtitle}</p>
+                          </div>
+                        </div>
+
+                        <div className="text-gray-400">
+                          {isOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                        </div>
+                      </button>
+
+                      {/* Stage Expanded Body */}
+                      {isOpen && (
+                        <div className="px-5 pb-5 pt-1 border-t border-white/10 space-y-4 text-xs animate-in fade-in duration-200">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-2">
+                            {stage.steps.map((step, sIdx) => (
+                              <div
+                                key={sIdx}
+                                className="p-4 rounded-xl bg-[#0d1117]/80 border border-white/5 hover:border-amber-500/20 transition-all space-y-2 flex flex-col justify-between"
+                              >
+                                <h4 className="font-bold text-amber-400 text-xs flex items-center gap-1.5">
+                                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  <span>{step.heading}</span>
+                                </h4>
+                                <p className="text-gray-300 text-[11px] leading-relaxed flex-1">
+                                  {step.text}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Pro-Tips Box */}
+                          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2.5">
+                            <span className="text-base shrink-0">💡</span>
+                            <span className="leading-relaxed font-medium">{stage.tips}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+
           {/* ========================================================================= */}
           {/* TAB 1: PRINT & TEMPLATE STUDIO */}
           {/* ========================================================================= */}

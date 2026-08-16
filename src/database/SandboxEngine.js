@@ -9,10 +9,71 @@ import { generateId } from '../utils/helpers.js';
 
 export class SandboxEngine {
   /**
+   * Ensure all non-destructive schema columns exist across tables
+   */
+  static async ensureSchema() {
+    const migrationStatements = [
+      "ALTER TABLE inventory ADD COLUMN barcode TEXT",
+      "ALTER TABLE inventory ADD COLUMN min_qty REAL DEFAULT 5",
+      "ALTER TABLE inventory ADD COLUMN is_demo INTEGER DEFAULT 0",
+      "ALTER TABLE inventory ADD COLUMN image_url TEXT",
+      "ALTER TABLE inventory ADD COLUMN discount_rate REAL DEFAULT 0",
+      "ALTER TABLE inventory ADD COLUMN wholesale_price REAL DEFAULT 0",
+      "ALTER TABLE inventory ADD COLUMN original_price REAL DEFAULT 0",
+      "ALTER TABLE inventory ADD COLUMN capacity REAL DEFAULT 0",
+      "ALTER TABLE sales ADD COLUMN discount_type TEXT DEFAULT 'percentage'",
+      "ALTER TABLE sales ADD COLUMN is_demo INTEGER DEFAULT 0",
+      "ALTER TABLE sales ADD COLUMN type TEXT DEFAULT 'store'",
+      "ALTER TABLE sales ADD COLUMN debtor_id TEXT",
+      "ALTER TABLE sales ADD COLUMN customer_name TEXT",
+      "ALTER TABLE sales ADD COLUMN phone TEXT",
+      "ALTER TABLE sales ADD COLUMN notes TEXT",
+      "ALTER TABLE sale_items ADD COLUMN is_demo INTEGER DEFAULT 0",
+      "ALTER TABLE sale_items ADD COLUMN unit_cost REAL DEFAULT 0",
+      "ALTER TABLE sale_items ADD COLUMN portion_ml REAL",
+      "ALTER TABLE purchases ADD COLUMN invoice_ref TEXT",
+      "ALTER TABLE purchases ADD COLUMN payment_type TEXT DEFAULT 'cash'",
+      "ALTER TABLE purchases ADD COLUMN notes TEXT",
+      "ALTER TABLE purchases ADD COLUMN is_demo INTEGER DEFAULT 0",
+      "ALTER TABLE debtors ADD COLUMN is_demo INTEGER DEFAULT 0",
+      "ALTER TABLE debt_history ADD COLUMN is_demo INTEGER DEFAULT 0",
+      "ALTER TABLE debt_history ADD COLUMN invoice_id INTEGER"
+    ];
+
+    for (const sql of migrationStatements) {
+      try {
+        await db.run(sql);
+      } catch (e) {
+        // Column already exists or table not ready, safely continue
+      }
+    }
+
+    try {
+      await db.run(`
+        CREATE TABLE IF NOT EXISTS shift_reports (
+          id TEXT PRIMARY KEY,
+          cashier_name TEXT,
+          start_date TEXT,
+          end_date TEXT,
+          expected_cash REAL,
+          actual_cash REAL,
+          variance REAL,
+          total_sales REAL,
+          total_profit REAL,
+          report_data_json TEXT,
+          created_at TEXT,
+          is_demo INTEGER DEFAULT 0
+        )
+      `);
+    } catch (e) {}
+  }
+
+  /**
    * Check if sandbox demo data is currently active
    */
   static async isSandboxActive() {
     try {
+      await this.ensureSchema();
       const res = await db.get("SELECT COUNT(*) as count FROM inventory WHERE is_demo = 1");
       return (res?.count || 0) > 0;
     } catch (e) {
@@ -24,15 +85,8 @@ export class SandboxEngine {
    * Seed realistic mock data tagged with is_demo = 1
    */
   static async seedDemoData() {
-    // 1. Ensure is_demo column exists in relevant tables
-    const tables = ['inventory', 'sales', 'sale_items', 'debtors', 'debt_history', 'purchases', 'shift_reports'];
-    for (const table of tables) {
-      try {
-        await db.execute(`ALTER TABLE ${table} ADD COLUMN is_demo INTEGER DEFAULT 0`);
-      } catch (e) {
-        // column already exists, safe to ignore
-      }
-    }
+    // 1. Ensure columns exist
+    await this.ensureSchema();
 
     const queries = [];
     const now = new Date();
@@ -48,8 +102,8 @@ export class SandboxEngine {
 
     for (const prod of demoProducts) {
       queries.push({
-        sql: `INSERT INTO inventory (name, category, cost, price, qty, unit, barcode, min_qty, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, 5, 1)`,
-        params: [prod.name, prod.category, prod.cost, prod.price, prod.qty, prod.unit, prod.barcode]
+        sql: `INSERT INTO inventory (id, name, category, cost, price, qty, unit, barcode, min_qty, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 5, 1)`,
+        params: [generateId(), prod.name, prod.category, prod.cost, prod.price, prod.qty, prod.unit, prod.barcode]
       });
     }
 
@@ -62,8 +116,8 @@ export class SandboxEngine {
 
     for (const d of demoDebtors) {
       queries.push({
-        sql: `INSERT INTO debtors (name, phone, total_debt, created_at, is_demo) VALUES (?, ?, ?, ?, 1)`,
-        params: [d.name, d.phone, d.total_debt, now.toISOString()]
+        sql: `INSERT INTO debtors (id, name, phone, total_debt, is_demo) VALUES (?, ?, ?, ?, 1)`,
+        params: [generateId(), d.name, d.phone, d.total_debt]
       });
     }
 
@@ -120,16 +174,15 @@ export class SandboxEngine {
    * Safely purge only demo records (is_demo = 1) without touching real production data
    */
   static async purgeDemoData() {
+    await this.ensureSchema();
     const tables = ['inventory', 'sales', 'sale_items', 'debtors', 'debt_history', 'purchases', 'shift_reports'];
     const queries = [];
 
     for (const table of tables) {
-      try {
-        queries.push({
-          sql: `DELETE FROM ${table} WHERE is_demo = 1`,
-          params: []
-        });
-      } catch (e) {}
+      queries.push({
+        sql: `DELETE FROM ${table} WHERE is_demo = 1`,
+        params: []
+      });
     }
 
     await db.transaction(queries);

@@ -50,6 +50,13 @@ class DatabaseConnection {
   }
 
   /**
+   * Alias for run (execute arbitrary SQL)
+   */
+  async execute(sql, params = []) {
+    return await this.run(sql, params);
+  }
+
+  /**
    * Get single row
    */
   async get(sql, params = []) {

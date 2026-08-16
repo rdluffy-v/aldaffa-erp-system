@@ -173,12 +173,56 @@ function initDatabase() {
 
   db.exec(schema);
 
-  // Non-destructive column migrations
-  try {
-    db.exec(`ALTER TABLE inventory ADD COLUMN image_url TEXT;`);
-  } catch (e) {
-    // image_url already exists
-  }
+  // Non-destructive column migrations & index extensions
+  const migrations = [
+    "ALTER TABLE inventory ADD COLUMN barcode TEXT;",
+    "ALTER TABLE inventory ADD COLUMN min_qty REAL DEFAULT 5;",
+    "ALTER TABLE inventory ADD COLUMN is_demo INTEGER DEFAULT 0;",
+    "ALTER TABLE inventory ADD COLUMN image_url TEXT;",
+    "ALTER TABLE inventory ADD COLUMN discount_rate REAL DEFAULT 0;",
+    "ALTER TABLE inventory ADD COLUMN wholesale_price REAL DEFAULT 0;",
+    "ALTER TABLE inventory ADD COLUMN original_price REAL DEFAULT 0;",
+    "ALTER TABLE inventory ADD COLUMN capacity REAL DEFAULT 0;",
+    "ALTER TABLE sales ADD COLUMN discount_type TEXT DEFAULT 'percentage';",
+    "ALTER TABLE sales ADD COLUMN is_demo INTEGER DEFAULT 0;",
+    "ALTER TABLE sales ADD COLUMN type TEXT DEFAULT 'store';",
+    "ALTER TABLE sales ADD COLUMN debtor_id TEXT;",
+    "ALTER TABLE sales ADD COLUMN customer_name TEXT;",
+    "ALTER TABLE sales ADD COLUMN phone TEXT;",
+    "ALTER TABLE sales ADD COLUMN notes TEXT;",
+    "ALTER TABLE sale_items ADD COLUMN is_demo INTEGER DEFAULT 0;",
+    "ALTER TABLE sale_items ADD COLUMN unit_cost REAL DEFAULT 0;",
+    "ALTER TABLE sale_items ADD COLUMN portion_ml REAL;",
+    "ALTER TABLE purchases ADD COLUMN invoice_ref TEXT;",
+    "ALTER TABLE purchases ADD COLUMN payment_type TEXT DEFAULT 'cash';",
+    "ALTER TABLE purchases ADD COLUMN notes TEXT;",
+    "ALTER TABLE purchases ADD COLUMN is_demo INTEGER DEFAULT 0;",
+    "ALTER TABLE debtors ADD COLUMN is_demo INTEGER DEFAULT 0;",
+    "ALTER TABLE debt_history ADD COLUMN is_demo INTEGER DEFAULT 0;",
+    "ALTER TABLE debt_history ADD COLUMN invoice_id INTEGER;",
+    `CREATE TABLE IF NOT EXISTS shift_reports (
+      id TEXT PRIMARY KEY,
+      cashier_name TEXT,
+      start_date TEXT,
+      end_date TEXT,
+      expected_cash REAL,
+      actual_cash REAL,
+      variance REAL,
+      total_sales REAL,
+      total_profit REAL,
+      report_data_json TEXT,
+      created_at TEXT,
+      is_demo INTEGER DEFAULT 0
+    );`
+  ];
+
+  migrations.forEach((sql) => {
+    try {
+      db.exec(sql);
+    } catch (e) {
+      // Column/table already exists, safe to ignore
+    }
+  });
 
   // Performance Indexes for high traffic querying
   const indexes = `
@@ -189,6 +233,7 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_sale_items_product ON sale_items(product_id);
     CREATE INDEX IF NOT EXISTS idx_inventory_category ON inventory(category);
     CREATE INDEX IF NOT EXISTS idx_inventory_name ON inventory(name);
+    CREATE INDEX IF NOT EXISTS idx_inventory_barcode ON inventory(barcode);
     CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(date);
     CREATE INDEX IF NOT EXISTS idx_losses_date ON losses(date);
     CREATE INDEX IF NOT EXISTS idx_withdrawals_date ON withdrawals(date);
@@ -197,7 +242,22 @@ function initDatabase() {
   `;
   db.exec(indexes);
 
-  console.log('Database schema & performance indexes initialized');
+  // Automatic Safe Database Snapshot Backup
+  try {
+    const backupsDir = path.join(userDataPath, 'backups');
+    if (!fs.existsSync(backupsDir)) {
+      fs.mkdirSync(backupsDir, { recursive: true });
+    }
+    const backupTarget = path.join(backupsDir, `aldaffa_autobackup_${new Date().toISOString().split('T')[0]}.db`);
+    if (!fs.existsSync(backupTarget)) {
+      fs.copyFileSync(dbPath, backupTarget);
+      console.log('Automated daily database snapshot backup created:', backupTarget);
+    }
+  } catch (backupErr) {
+    console.warn('Daily database snapshot backup warning:', backupErr);
+  }
+
+  console.log('Database schema, migrations & performance indexes initialized');
 }
 
 // Helper to fetch live print template settings from SQLite
