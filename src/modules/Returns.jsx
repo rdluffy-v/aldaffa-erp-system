@@ -14,7 +14,7 @@
  * ============================================================================
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { SalesRepository } from '../database/repositories/SalesRepository.js';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
 import { BaseRepository } from '../database/repositories/BaseRepository.js';

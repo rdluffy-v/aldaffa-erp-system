@@ -101,7 +101,7 @@ const SettingsModule = () => {
   const [togglingSandbox, setTogglingSandbox] = useState(false);
 
   // Updater
-  const [appVersion, setAppVersion] = useState('2.3.0');
+  const [appVersion, setAppVersion] = useState('2.3.1');
   const [ghToken, setGhToken] = useState('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');
   const [showGhToken, setShowGhToken] = useState(false);
   const [updateStatus, setUpdateStatus] = useState({ status: 'idle', message: '' });
