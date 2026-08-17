@@ -2,23 +2,14 @@ import { useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
-import useClickOutside from '../../hooks/useClickOutside';
 
 /**
  * Modal.jsx
- * Accessible modal dialog with ReactDOM portal, blurred backdrop, Framer Motion slide-up
- * animation, ESC-key close and click-outside close.
+ * Accessible modal dialog with ReactDOM portal, blurred backdrop, Framer Motion animations,
+ * ESC-key close and click-outside close.
  *
- * @param {Object}  props
- * @param {boolean} [props.open=false]             - Controlled visibility
- * @param {Function} props.onClose                  - Close callback
- * @param {React.ReactNode} [props.title]           - Dialog title
- * @param {React.ReactNode} [props.children]        - Dialog body
- * @param {React.ReactNode} [props.footer]          - Dialog footer slot
- * @param {string}  [props.size='md']               - sm | md | lg | xl
- * @param {boolean} [props.closeOnBackdrop=true]    - Click outside closes
- * @param {boolean} [props.closeOnEsc=true]         - ESC closes
- * @param {boolean} [props.showCloseButton=true]    - Show the X button
+ * Fixed: Focus management is strictly isolated to the open transition and NEVER steals focus
+ * during user keystrokes in form inputs.
  */
 const Modal = ({
   open = false,
@@ -34,22 +25,29 @@ const Modal = ({
 }) => {
   const panelRef = useRef(null);
   const previousFocusRef = useRef(null);
+  const onCloseRef = useRef(onClose);
 
-  const handleClose = useCallback(() => {
-    onClose?.();
+  // Keep latest onClose callback reference without re-triggering effects
+  useEffect(() => {
+    onCloseRef.current = onClose;
   }, [onClose]);
 
-  // Click-outside to close (capture-phase mousedown, works with RTL).
-  useClickOutside(() => {
-    if (closeOnBackdrop) handleClose();
-  }, [panelRef], open);
+  const handleClose = useCallback(() => {
+    onCloseRef.current?.();
+  }, []);
 
-  // ESC key + focus management + scroll lock while open.
+  // ESC key listener & body scroll lock (only toggles on open boolean change)
   useEffect(() => {
     if (!open) return undefined;
 
     previousFocusRef.current = document.activeElement;
-    const focusTimer = window.setTimeout(() => panelRef.current?.focus(), 0);
+
+    // Set initial focus ONLY once when opened, if nothing inside is focused
+    const focusTimer = window.setTimeout(() => {
+      if (panelRef.current && !panelRef.current.contains(document.activeElement)) {
+        panelRef.current.focus();
+      }
+    }, 50);
 
     const onKeyDown = (e) => {
       if (e.key === 'Escape' && closeOnEsc) {
@@ -66,9 +64,17 @@ const Modal = ({
       window.clearTimeout(focusTimer);
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = originalOverflow;
-      previousFocusRef.current?.focus?.();
+      if (previousFocusRef.current && typeof previousFocusRef.current.focus === 'function') {
+        previousFocusRef.current.focus();
+      }
     };
   }, [open, closeOnEsc, handleClose]);
+
+  const handleBackdropClick = (e) => {
+    if (closeOnBackdrop && e.target === e.currentTarget) {
+      handleClose();
+    }
+  };
 
   const sizeClasses = {
     sm: 'max-w-sm',
@@ -87,8 +93,9 @@ const Modal = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.18, ease: 'easeOut' }}
+          transition={{ duration: 0.15, ease: 'easeOut' }}
           role="presentation"
+          onClick={handleBackdropClick}
         >
           {/* Blurred dark backdrop */}
           <div
@@ -103,27 +110,30 @@ const Modal = ({
             aria-modal="true"
             aria-label={typeof title === 'string' ? title : 'نافذة الحوار'}
             tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
             className={[
               'relative w-full max-h-[90vh] overflow-y-auto outline-none scrollbar-luxury',
-              'bg-[#111827] border border-[#d97706]/20 rounded-2xl',
-              'shadow-[0_25px_60px_-12px_rgba(0,0,0,0.8),0_0_40px_rgba(217,119,6,0.08)]',
+              'bg-[#111827] dark:bg-slate-900 border border-amber-500/30 rounded-2xl',
+              'shadow-[0_25px_60px_-12px_rgba(0,0,0,0.8),0_0_40px_rgba(217,119,6,0.12)]',
               sizeClasses[size],
               className
             ].join(' ')}
-            initial={{ opacity: 0, y: 28, scale: 0.97 }}
+            initial={{ opacity: 0, y: 20, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 18, scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 340, damping: 28, mass: 0.9 }}
+            exit={{ opacity: 0, y: 15, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 350, damping: 30 }}
           >
             {title && (
-              <header className="sticky top-0 z-10 flex items-center justify-between gap-4 px-6 py-4 border-b border-white/5 bg-[#111827]/95 backdrop-blur-sm rounded-t-2xl">
-                <h2 className="text-lg font-bold text-[#e6edf3]">{title}</h2>
+              <header className="sticky top-0 z-10 flex items-center justify-between gap-4 px-6 py-4 border-b border-amber-500/20 bg-[#111827]/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-t-2xl">
+                <h2 className="text-lg font-bold text-[#e6edf3] dark:text-white flex items-center gap-2">
+                  {title}
+                </h2>
                 {showCloseButton && (
                   <button
                     type="button"
                     onClick={handleClose}
                     aria-label="إغلاق النافذة"
-                    className="p-1.5 rounded-lg text-[#768390] hover:text-[#e6edf3] hover:bg-white/5 transition-colors duration-150 cursor-pointer"
+                    className="p-1.5 rounded-lg text-[#768390] hover:text-[#e6edf3] hover:bg-white/10 transition-colors duration-150 cursor-pointer"
                   >
                     <X className="w-5 h-5" aria-hidden="true" />
                   </button>
@@ -134,7 +144,7 @@ const Modal = ({
             <div className="px-6 py-5">{children}</div>
 
             {footer && (
-              <footer className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/5 rounded-b-2xl">
+              <footer className="flex items-center justify-end gap-3 px-6 py-4 border-t border-amber-500/20 rounded-b-2xl bg-black/10">
                 {footer}
               </footer>
             )}

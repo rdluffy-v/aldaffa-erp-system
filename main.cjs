@@ -274,7 +274,11 @@ function getPrintSettings() {
     showBarcode: true,
     showCashier: true,
     showPhone: true,
-    logoBase64: ''
+    logoBase64: '',
+    receiptTheme: 'luxury_gold', // 'classic' | 'luxury_gold' | 'modern_minimal' | 'ornate_box'
+    receiptBorder: 'dashed', // 'dashed' | 'solid' | 'double' | 'none'
+    receiptWatermarkBase64: '',
+    fontSize: 'md' // 'sm' | 'md' | 'lg'
   };
 
   try {
@@ -282,7 +286,8 @@ function getPrintSettings() {
     const rows = db.prepare(`SELECT key, value FROM settings WHERE key IN (
       'print_mode', 'store_name', 'store_subtitle', 'store_phone', 'store_address',
       'receipt_greeting', 'receipt_policy', 'show_logo', 'show_barcode',
-      'show_cashier', 'show_phone', 'logo_base64'
+      'show_cashier', 'show_phone', 'logo_base64', 'receipt_theme', 'receipt_border',
+      'receipt_watermark_base64', 'font_size'
     )`).all();
 
     const map = {};
@@ -300,7 +305,11 @@ function getPrintSettings() {
       showBarcode: map['show_barcode'] !== undefined ? map['show_barcode'] === 'true' : defaults.showBarcode,
       showCashier: map['show_cashier'] !== undefined ? map['show_cashier'] === 'true' : defaults.showCashier,
       showPhone: map['show_phone'] !== undefined ? map['show_phone'] === 'true' : defaults.showPhone,
-      logoBase64: map['logo_base64'] || ''
+      logoBase64: map['logo_base64'] || '',
+      receiptTheme: map['receipt_theme'] || defaults.receiptTheme,
+      receiptBorder: map['receipt_border'] || defaults.receiptBorder,
+      receiptWatermarkBase64: map['receipt_watermark_base64'] || '',
+      fontSize: map['font_size'] || defaults.fontSize
     };
   } catch (e) {
     return defaults;
@@ -655,6 +664,18 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
     };
 
     // Build HTML receipt for 80mm thermal printer
+    const isBox = settings.receiptTheme === 'ornate_box';
+    const isMinimal = settings.receiptTheme === 'modern_minimal';
+    const isGold = settings.receiptTheme === 'luxury_gold';
+
+    const fontStyle = isMinimal ? "'Segoe UI', 'Tajawal', sans-serif" : "'Courier New', monospace, sans-serif";
+    const bodySize = settings.fontSize === 'lg' ? '13px' : settings.fontSize === 'sm' ? '11px' : '12px';
+
+    const dividerStyle =
+      settings.receiptBorder === 'solid' ? '1.5px solid #000' :
+      settings.receiptBorder === 'double' ? '3px double #000' :
+      settings.receiptBorder === 'none' ? 'none' : '1px dashed #000';
+
     const receiptHtml = `
 <!DOCTYPE html>
 <html dir="rtl">
@@ -664,17 +685,38 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
     @page { size: 80mm auto; margin: 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Courier New', monospace, sans-serif;
+      font-family: ${fontStyle};
       width: 80mm;
-      padding: 4mm;
-      font-size: 12px;
+      padding: ${isBox ? '3mm' : '4mm'};
+      font-size: ${bodySize};
       line-height: 1.4;
       background: #fff;
       color: #000;
+      position: relative;
+      ${isBox ? 'border: 2px solid #000; border-radius: 4px;' : ''}
+    }
+    .watermark-bg {
+      position: absolute;
+      top: 25%;
+      left: 10%;
+      width: 80%;
+      opacity: 0.08;
+      pointer-events: none;
+      z-index: 0;
+      text-align: center;
+    }
+    .watermark-bg img {
+      max-width: 100%;
+      max-height: 50mm;
+      object-fit: contain;
+    }
+    .content-layer {
+      position: relative;
+      z-index: 1;
     }
     .center { text-align: center; }
     .bold { font-weight: bold; }
-    .large { font-size: 16px; }
+    .large { font-size: ${settings.fontSize === 'lg' ? '17px' : '15px'}; }
     .logo-container {
       text-align: center;
       margin-bottom: 3mm;
@@ -688,14 +730,14 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
       background: #fbbf24;
       color: #000;
       padding: 6px;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: bold;
       border-radius: 4px;
       display: inline-block;
     }
     .divider {
-      border-top: 1px dashed #000;
-      margin: 3mm 0;
+      border-top: ${dividerStyle};
+      margin: 2.5mm 0;
     }
     table { width: 100%; border-collapse: collapse; margin: 2mm 0; }
     td { padding: 2px 0; }
@@ -718,107 +760,115 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
   </style>
 </head>
 <body>
-  ${settings.showLogo ? `
-  <div class="logo-container">
-    ${settings.logoBase64 ? `<img src="${settings.logoBase64}" class="logo-img" alt="Logo" />` : `<div class="logo-fallback">${settings.storeName}</div>`}
+  ${settings.receiptWatermarkBase64 ? `
+  <div class="watermark-bg">
+    <img src="${settings.receiptWatermarkBase64}" alt="Watermark" />
   </div>
   ` : ''}
 
-  <div class="center bold large">${settings.storeName}</div>
-  ${settings.storeSubtitle ? `<div class="center" style="font-size:10px; color:#444;">${settings.storeSubtitle}</div>` : ''}
-  ${settings.showPhone && settings.storePhone ? `<div class="center" style="font-size:11px;">📱 ${settings.storePhone}</div>` : ''}
-  ${settings.storeAddress ? `<div class="center" style="font-size:10px; color:#555;">📍 ${settings.storeAddress}</div>` : ''}
-
-  <div class="divider"></div>
-  <div class="center bold">فاتورة بيع</div>
-
-  <table style="margin: 2mm 0;">
-    <tr>
-      <td class="bold">رقم الفاتورة:</td>
-      <td class="right">#${saleId}</td>
-    </tr>
-    <tr>
-      <td class="bold">التاريخ:</td>
-      <td class="right">${formatDate(date)}</td>
-    </tr>
-    ${customerName ? `
-    <tr>
-      <td class="bold">العميل:</td>
-      <td class="right">${customerName}</td>
-    </tr>
+  <div class="content-layer">
+    ${settings.showLogo ? `
+    <div class="logo-container">
+      ${settings.logoBase64 ? `<img src="${settings.logoBase64}" class="logo-img" alt="Logo" />` : `<div class="logo-fallback">${settings.storeName}</div>`}
+    </div>
     ` : ''}
-    ${settings.showCashier ? `
-    <tr>
-      <td class="bold">الكاشير:</td>
-      <td class="right">المسؤول</td>
-    </tr>
-    ` : ''}
-    <tr>
-      <td class="bold">الدفع:</td>
-      <td class="right">${paymentMethod === 'cash' ? 'نقدي' : paymentMethod === 'card' ? 'بطاقة' : 'تحويل'}</td>
-    </tr>
-  </table>
 
-  <div class="divider"></div>
+    <div class="center bold large">${settings.storeName}</div>
+    ${settings.storeSubtitle ? `<div class="center" style="font-size:10px; color:#444;">${settings.storeSubtitle}</div>` : ''}
+    ${settings.showPhone && settings.storePhone ? `<div class="center" style="font-size:11px;">📱 ${settings.storePhone}</div>` : ''}
+    ${settings.storeAddress ? `<div class="center" style="font-size:10px; color:#555;">📍 ${settings.storeAddress}</div>` : ''}
 
-  <table>
-    <thead>
-      <tr class="bold">
-        <td>المنتج</td>
-        <td class="center">الكمية</td>
-        <td class="right">السعر</td>
-        <td class="right">المجموع</td>
+    <div class="divider"></div>
+    <div class="center bold">فاتورة بيع ${isGold ? '⭐ الدفة للعطور ⭐' : ''}</div>
+
+    <table style="margin: 2mm 0;">
+      <tr>
+        <td class="bold">رقم الفاتورة:</td>
+        <td class="right">#${saleId}</td>
       </tr>
-    </thead>
-    <tbody>
-      ${items.map(item => `
-      <tr class="item-row">
-        <td>${item.name}${item.portion_ml ? ` (${item.portion_ml}ml)` : ''}</td>
-        <td class="center">${item.cart_qty}</td>
-        <td class="right">${formatCurrency(item.final_price)}</td>
-        <td class="right">${formatCurrency(item.final_price * item.cart_qty)}</td>
+      <tr>
+        <td class="bold">التاريخ:</td>
+        <td class="right">${formatDate(date)}</td>
       </tr>
-      `).join('')}
-    </tbody>
-  </table>
+      ${customerName ? `
+      <tr>
+        <td class="bold">العميل:</td>
+        <td class="right">${customerName}</td>
+      </tr>
+      ` : ''}
+      ${settings.showCashier ? `
+      <tr>
+        <td class="bold">الكاشير:</td>
+        <td class="right">المسؤول</td>
+      </tr>
+      ` : ''}
+      <tr>
+        <td class="bold">الدفع:</td>
+        <td class="right">${paymentMethod === 'cash' ? 'نقدي' : paymentMethod === 'card' ? 'بطاقة' : paymentMethod === 'debt' ? 'دين (آجل)' : 'تحويل'}</td>
+      </tr>
+    </table>
 
-  <div class="divider"></div>
+    <div class="divider"></div>
 
-  <table>
-    <tr>
-      <td class="bold">المجموع الجزئي:</td>
-      <td class="right">${formatCurrency(subtotal)}</td>
-    </tr>
-    ${discount > 0 ? `
-    <tr>
-      <td class="bold">الخصم (${discount}%):</td>
-      <td class="right">-${formatCurrency(subtotal * discount / 100)}</td>
-    </tr>
+    <table>
+      <thead>
+        <tr class="bold">
+          <td>المنتج</td>
+          <td class="center">الكمية</td>
+          <td class="right">السعر</td>
+          <td class="right">المجموع</td>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map(item => `
+        <tr class="item-row">
+          <td>${item.name}${item.portion_ml ? ` (${item.portion_ml}ml)` : ''}</td>
+          <td class="center">${item.cart_qty}</td>
+          <td class="right">${formatCurrency(item.final_price)}</td>
+          <td class="right">${formatCurrency(item.final_price * item.cart_qty)}</td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+
+    <div class="divider"></div>
+
+    <table>
+      <tr>
+        <td class="bold">المجموع الجزئي:</td>
+        <td class="right">${formatCurrency(subtotal)}</td>
+      </tr>
+      ${discount > 0 ? `
+      <tr>
+        <td class="bold">الخصم:</td>
+        <td class="right">-${formatCurrency(subtotal * discount / 100)}</td>
+      </tr>
+      ` : ''}
+      <tr class="total-row">
+        <td>الإجمالي:</td>
+        <td class="right">${formatCurrency(total)}</td>
+      </tr>
+    </table>
+
+    ${settings.showBarcode ? `
+    <div class="barcode">
+      <div>||| | ||||| ||| |||| |||| ||</div>
+      <div>*${saleId.toString().padStart(8, '0')}*</div>
+    </div>
     ` : ''}
-    <tr class="total-row">
-      <td>الإجمالي:</td>
-      <td class="right">${formatCurrency(total)}</td>
-    </tr>
-  </table>
 
-  ${settings.showBarcode ? `
-  <div class="barcode">
-    <div>||| | ||||| ||| |||| |||| ||</div>
-    <div>*${saleId.toString().padStart(8, '0')}*</div>
-  </div>
-  ` : ''}
+    ${settings.receiptPolicy ? `
+    <div class="policy">
+      ${settings.receiptPolicy}
+    </div>
+    ` : ''}
 
-  ${settings.receiptPolicy ? `
-  <div class="policy">
-    ${settings.receiptPolicy}
+    ${settings.receiptGreeting ? `
+    <div class="center bold" style="margin-top: 3mm; font-size: 11px;">
+      ${settings.receiptGreeting}
+    </div>
+    ` : ''}
   </div>
-  ` : ''}
-
-  ${settings.receiptGreeting ? `
-  <div class="center bold" style="margin-top: 3mm; font-size: 11px;">
-    ${settings.receiptGreeting}
-  </div>
-  ` : ''}
 </body>
 </html>`;
 
@@ -1544,15 +1594,15 @@ ipcMain.handle('print:test-thermal', async (event, templateConfig = {}) => {
   <table>
     <tr>
       <td class="bold">المجموع الفرعي:</td>
-      <td class="right">24,000 ج.س</td>
+      <td class="right">24,000 د.ل</td>
     </tr>
     <tr>
       <td class="bold">الخصم (10%):</td>
-      <td class="right">-2,400 ج.س</td>
+      <td class="right">-2,400 د.ل</td>
     </tr>
     <tr class="total-row">
       <td>الإجمالي النهائي:</td>
-      <td class="right">21,600 ج.س</td>
+      <td class="right">21,600 د.ل</td>
     </tr>
   </table>
 
@@ -1600,7 +1650,7 @@ ipcMain.handle('print:test-pdf', async (event, templateConfig = {}) => {
       title = 'الدفة للعطور',
       subtitle = 'Aldaffa Perfumes ERP - منظومة إدارة المحل والمخزون',
       phone = '0123456789',
-      address = 'الخرطوم، السودان',
+      address = 'ليبيا - مصراتة',
       greeting = 'نسعد بخدمتكم دائماً',
       policy = 'وثيقة محاسبية رسمية معتمدة من المنظومة',
       showLogo = true,
@@ -1680,7 +1730,7 @@ ipcMain.handle('print:test-pdf', async (event, templateConfig = {}) => {
     <div class="company-info">
       <div>📍 ${address}</div>
       <div>📱 ${phone}</div>
-      <div>📅 تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SD')}</div>
+      <div>📅 تاريخ الطباعة: ${new Date().toLocaleDateString('ar-LY')}</div>
     </div>
   </div>
 
@@ -1701,26 +1751,26 @@ ipcMain.handle('print:test-pdf', async (event, templateConfig = {}) => {
         <td>1</td>
         <td>عطر دقة العود الفاخر - 50 مل</td>
         <td>3 حبات</td>
-        <td>18,000 ج.س</td>
-        <td>54,000 ج.س</td>
+        <td>180.00 د.ل</td>
+        <td>540.00 د.ل</td>
       </tr>
       <tr>
         <td>2</td>
         <td>زيت الصندل الصافي - 20 مل</td>
         <td>5 حبات</td>
-        <td>6,000 ج.س</td>
-        <td>30,000 ج.س</td>
+        <td>60.00 د.ل</td>
+        <td>300.00 د.ل</td>
       </tr>
       <tr>
         <td>3</td>
         <td>خلطة الدفة الخاصة الملكية - 100 مل</td>
         <td>2 حبة</td>
-        <td>32,000 ج.س</td>
-        <td>64,000 ج.س</td>
+        <td>320.00 د.ل</td>
+        <td>640.00 د.ل</td>
       </tr>
       <tr class="total-row">
         <td colspan="4" style="text-align: left;">المجموع الكلي:</td>
-        <td>148,000 ج.س</td>
+        <td>1,480.00 د.ل</td>
       </tr>
     </tbody>
   </table>
@@ -1765,6 +1815,26 @@ ipcMain.handle('print:test-pdf', async (event, templateConfig = {}) => {
   }
 });
 
+// Auto-save and flush database WAL & auto backup on app exit
+function safeFlushAndBackup() {
+  if (db) {
+    try {
+      db.pragma('wal_checkpoint(FULL)');
+      const userDataPath = app.getPath('userData');
+      const backupsDir = path.join(userDataPath, 'backups');
+      if (!fs.existsSync(backupsDir)) {
+        fs.mkdirSync(backupsDir, { recursive: true });
+      }
+      const exitBackupPath = path.join(backupsDir, 'aldaffa_auto_exit_backup.db');
+      db.backup(exitBackupPath)
+        .then(() => console.log('Auto exit database backup saved successfully'))
+        .catch((e) => console.error('Failed auto exit backup:', e));
+    } catch (e) {
+      console.error('Safe flush on exit error:', e);
+    }
+  }
+}
+
 app.whenReady().then(() => {
   initDatabase();
   createWindow();
@@ -1779,17 +1849,23 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  safeFlushAndBackup();
   if (process.platform !== 'darwin') {
     if (db) {
-      db.close();
+      try {
+        db.close();
+      } catch (e) {}
     }
     app.quit();
   }
 });
 
 app.on('before-quit', () => {
+  safeFlushAndBackup();
   if (db) {
-    db.close();
+    try {
+      db.close();
+    } catch (e) {}
   }
 });
 

@@ -48,6 +48,19 @@ export const useUIStore = create((set, get) => ({
     get().setTheme(next);
   },
 
+  // In-app Keyboard typing language mode: 'ar' (Default) | 'en'
+  keyboardLanguage: 'ar',
+  setKeyboardLanguage: (lang) => {
+    set({ keyboardLanguage: lang });
+    try {
+      localStorage.setItem('aldaffa_keyboard_lang', lang);
+    } catch (e) {}
+  },
+  toggleKeyboardLanguage: () => {
+    const next = get().keyboardLanguage === 'ar' ? 'en' : 'ar';
+    get().setKeyboardLanguage(next);
+  },
+
   // State
   sidebarOpen: false,
   activeModal: null,

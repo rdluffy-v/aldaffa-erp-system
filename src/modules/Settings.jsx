@@ -67,7 +67,11 @@ const DEFAULT_PRINT_SETTINGS = {
   showBarcode: true,
   showCashier: true,
   showPhone: true,
-  logoBase64: ''
+  logoBase64: '',
+  receiptTheme: 'luxury_gold', // 'classic' | 'luxury_gold' | 'modern_minimal' | 'ornate_box'
+  receiptBorder: 'dashed', // 'dashed' | 'solid' | 'double' | 'none'
+  receiptWatermarkBase64: '',
+  fontSize: 'md' // 'sm' | 'md' | 'lg'
 };
 
 const GUIDE_STAGES = [
@@ -350,6 +354,7 @@ const SettingsModule = () => {
   // ----------------------------------------------------
   const [printSettings, setPrintSettings] = useState(DEFAULT_PRINT_SETTINGS);
   const fileInputRef = useRef(null);
+  const watermarkInputRef = useRef(null);
 
   // ----------------------------------------------------
   // SECTION 2: Label Customizer State
@@ -384,7 +389,7 @@ const SettingsModule = () => {
   const [togglingSandbox, setTogglingSandbox] = useState(false);
 
   // Updater
-  const [appVersion, setAppVersion] = useState('2.3.3');
+  const [appVersion, setAppVersion] = useState('2.3.4');
   const [ghToken, setGhToken] = useState('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');
   const [showGhToken, setShowGhToken] = useState(false);
   const [updateStatus, setUpdateStatus] = useState({ status: 'idle', message: '' });
@@ -431,7 +436,11 @@ const SettingsModule = () => {
         showBarcode: settingsMap['show_barcode'] !== undefined ? settingsMap['show_barcode'] === 'true' : DEFAULT_PRINT_SETTINGS.showBarcode,
         showCashier: settingsMap['show_cashier'] !== undefined ? settingsMap['show_cashier'] === 'true' : DEFAULT_PRINT_SETTINGS.showCashier,
         showPhone: settingsMap['show_phone'] !== undefined ? settingsMap['show_phone'] === 'true' : DEFAULT_PRINT_SETTINGS.showPhone,
-        logoBase64: settingsMap['logo_base64'] || ''
+        logoBase64: settingsMap['logo_base64'] || '',
+        receiptTheme: settingsMap['receipt_theme'] || DEFAULT_PRINT_SETTINGS.receiptTheme,
+        receiptBorder: settingsMap['receipt_border'] || DEFAULT_PRINT_SETTINGS.receiptBorder,
+        receiptWatermarkBase64: settingsMap['receipt_watermark_base64'] || '',
+        fontSize: settingsMap['font_size'] || DEFAULT_PRINT_SETTINGS.fontSize
       });
 
       // Load AI Settings
@@ -519,6 +528,23 @@ const SettingsModule = () => {
     reader.readAsDataURL(file);
   };
 
+  const handleWatermarkUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 3 * 1024 * 1024) {
+      showWarning('حجم الصورة كبير جداً، يرجى اختيار صورة أقل من 3 ميجابايت');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPrintSettings((prev) => ({ ...prev, receiptWatermarkBase64: reader.result }));
+      showSuccess('تم تحميل صورة وتصميم الفاتورة بنجاح');
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSavePrintSettings = async () => {
     setSaving(true);
     try {
@@ -534,7 +560,11 @@ const SettingsModule = () => {
         settingsRepo.setSetting('show_barcode', String(printSettings.showBarcode)),
         settingsRepo.setSetting('show_cashier', String(printSettings.showCashier)),
         settingsRepo.setSetting('show_phone', String(printSettings.showPhone)),
-        settingsRepo.setSetting('logo_base64', printSettings.logoBase64 || '')
+        settingsRepo.setSetting('logo_base64', printSettings.logoBase64 || ''),
+        settingsRepo.setSetting('receipt_theme', printSettings.receiptTheme || 'luxury_gold'),
+        settingsRepo.setSetting('receipt_border', printSettings.receiptBorder || 'dashed'),
+        settingsRepo.setSetting('receipt_watermark_base64', printSettings.receiptWatermarkBase64 || ''),
+        settingsRepo.setSetting('font_size', printSettings.fontSize || 'md')
       ]);
       showSuccess('تم حفظ إعدادات وقوالب الطباعة بنجاح');
     } catch (error) {
@@ -558,7 +588,11 @@ const SettingsModule = () => {
         showBarcode: printSettings.showBarcode,
         showCashier: printSettings.showCashier,
         showPhone: printSettings.showPhone,
-        logoBase64: printSettings.logoBase64
+        logoBase64: printSettings.logoBase64,
+        receiptTheme: printSettings.receiptTheme,
+        receiptBorder: printSettings.receiptBorder,
+        receiptWatermarkBase64: printSettings.receiptWatermarkBase64,
+        fontSize: printSettings.fontSize
       });
       if (res?.success) {
         showSuccess('تمت المعالجة بنجاح');
@@ -1102,6 +1136,136 @@ const SettingsModule = () => {
                   </div>
                 </div>
 
+                {/* Visual Theme, Borders & Typography */}
+                <div className="glass-card p-5">
+                  <h2 className="text-sm font-bold text-[#e6edf3] mb-4">تصميم وثيم الفاتورة والطباعة</h2>
+                  
+                  {/* Theme Selector */}
+                  <div className="mb-4">
+                    <label className="block text-xs font-bold text-[#adbac7] mb-2">طابع وتصميم الفاتورة (Receipt Theme):</label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                      {[
+                        { id: 'luxury_gold', title: 'ذهبي فاخر', desc: 'لمسات ملكية أنيقة' },
+                        { id: 'classic', title: 'حراري كلاسيكي', desc: 'خطوط قياسية منقطة' },
+                        { id: 'modern_minimal', title: 'عصري ناعم', desc: 'خط حديث بدون زوائد' },
+                        { id: 'ornate_box', title: 'إطار صندوقي', desc: 'مؤطر بحدود كاملة' }
+                      ].map((th) => (
+                        <button
+                          key={th.id}
+                          type="button"
+                          onClick={() => setPrintSettings({ ...printSettings, receiptTheme: th.id })}
+                          className={`p-3 rounded-xl border text-right transition-all cursor-pointer ${
+                            printSettings.receiptTheme === th.id
+                              ? 'bg-[#fbbf24]/10 border-[#fbbf24] text-[#fbbf24]'
+                              : 'bg-[#161b22] border-white/5 text-[#adbac7] hover:border-white/20'
+                          }`}
+                        >
+                          <div className="text-xs font-bold">{th.title}</div>
+                          <div className="text-[10px] opacity-70 mt-0.5">{th.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Border Style & Font Scale */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#adbac7] mb-2">نوع الفواصل (Divider Border):</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { id: 'dashed', label: 'منقط' },
+                          { id: 'solid', label: 'مصمت' },
+                          { id: 'double', label: 'مزدوج' },
+                          { id: 'none', label: 'بدون' }
+                        ].map((b) => (
+                          <button
+                            key={b.id}
+                            type="button"
+                            onClick={() => setPrintSettings({ ...printSettings, receiptBorder: b.id })}
+                            className={`py-2 px-1 rounded-lg border text-center text-xs font-semibold transition-all cursor-pointer ${
+                              printSettings.receiptBorder === b.id
+                                ? 'bg-[#fbbf24]/15 border-[#fbbf24] text-[#fbbf24]'
+                                : 'bg-[#161b22] border-white/5 text-[#adbac7] hover:border-white/20'
+                            }`}
+                          >
+                            {b.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#adbac7] mb-2">حجم الخط (Font Scaling):</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: 'sm', label: 'صغير (11px)' },
+                          { id: 'md', label: 'متوسط (12px)' },
+                          { id: 'lg', label: 'كبير (13px)' }
+                        ].map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => setPrintSettings({ ...printSettings, fontSize: s.id })}
+                            className={`py-2 px-1 rounded-lg border text-center text-xs font-semibold transition-all cursor-pointer ${
+                              printSettings.fontSize === s.id
+                                ? 'bg-[#fbbf24]/15 border-[#fbbf24] text-[#fbbf24]'
+                                : 'bg-[#161b22] border-white/5 text-[#adbac7] hover:border-white/20'
+                            }`}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Custom Receipt Artwork / Watermark Image Ingestion */}
+                <div className="glass-card p-5">
+                  <h2 className="text-sm font-bold text-[#e6edf3] mb-4">صورة وخلفية الفاتورة المخصصة (Watermark / Artwork)</h2>
+                  
+                  <div className="space-y-3 bg-[#161b22] border border-white/5 p-3.5 rounded-xl">
+                    <p className="text-xs text-[#768390]">
+                      يمكنك رفع صورة تصميم أو علامة مائية تظهر بشفافية أنيقة في خلفية الفاتورة الحرارية وقابلة للتعديل والتبديل في أي وقت:
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <input
+                        ref={watermarkInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleWatermarkUpload}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => watermarkInputRef.current?.click()}
+                        className="btn-secondary text-xs flex items-center gap-2"
+                      >
+                        <ImageIcon className="w-4 h-4 text-[#fbbf24]" />
+                        اختيار صورة تصميم الفاتورة
+                      </button>
+                      <input
+                        type="text"
+                        placeholder="أو ضع رابط مباشر لصورة التصميم (https://...)"
+                        value={printSettings.receiptWatermarkBase64?.startsWith('data:') ? '' : printSettings.receiptWatermarkBase64}
+                        onChange={(e) => setPrintSettings((p) => ({ ...p, receiptWatermarkBase64: e.target.value }))}
+                        className="flex-1 min-w-[200px] bg-[#0d1117] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-[#e6edf3] focus:border-[#fbbf24] focus:outline-none"
+                        dir="ltr"
+                      />
+                      {printSettings.receiptWatermarkBase64 && (
+                        <button
+                          type="button"
+                          onClick={() => setPrintSettings((p) => ({ ...p, receiptWatermarkBase64: '' }))}
+                          className="text-xs text-[#ef4444] hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          حذف صورة التصميم
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Footer & Policies */}
                 <div className="glass-card p-5">
                   <h2 className="text-sm font-bold text-[#e6edf3] mb-4">التذييل والسياسات</h2>
@@ -1242,101 +1406,133 @@ const SettingsModule = () => {
                   </div>
 
                   {/* Simulated Receipt Container */}
-                  <div className="bg-[#f9fafb] text-[#111827] rounded-xl p-4 shadow-xl font-mono text-[11px] leading-relaxed border border-gray-300 select-none max-h-[580px] overflow-y-auto custom-scrollbar">
-                    {/* Logo area */}
-                    {printSettings.showLogo && (
-                      <div className="text-center mb-2">
-                        {printSettings.logoBase64 ? (
-                          <img
-                            src={printSettings.logoBase64}
-                            alt="Preview Logo"
-                            className="max-h-12 mx-auto object-contain"
-                          />
-                        ) : (
-                          <div className="inline-block bg-[#fbbf24] text-[#0d1117] font-bold px-3 py-1 rounded text-xs">
-                            {printSettings.storeName}
-                          </div>
-                        )}
+                  <div className={`relative bg-[#f9fafb] text-[#111827] rounded-xl p-4 shadow-xl select-none max-h-[580px] overflow-y-auto custom-scrollbar ${
+                    printSettings.receiptTheme === 'ornate_box' ? 'border-2 border-black' : 'border border-gray-300'
+                  } ${
+                    printSettings.receiptTheme === 'modern_minimal' ? 'font-sans' : 'font-mono'
+                  } ${
+                    printSettings.fontSize === 'lg' ? 'text-[13px]' : printSettings.fontSize === 'sm' ? 'text-[10.5px]' : 'text-[11px]'
+                  } leading-relaxed`}>
+                    
+                    {/* Watermark background */}
+                    {printSettings.receiptWatermarkBase64 && (
+                      <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none p-6 z-0">
+                        <img
+                          src={printSettings.receiptWatermarkBase64}
+                          alt="Watermark"
+                          className="max-h-48 max-w-full object-contain"
+                        />
                       </div>
                     )}
 
-                    <div className="text-center font-bold text-sm text-black">{printSettings.storeName}</div>
-                    {printSettings.storeSubtitle && (
-                      <div className="text-center text-[9px] text-gray-600">{printSettings.storeSubtitle}</div>
-                    )}
-                    {printSettings.showPhone && printSettings.storePhone && (
-                      <div className="text-center text-[10px] text-gray-700">📱 {printSettings.storePhone}</div>
-                    )}
-                    {printSettings.storeAddress && (
-                      <div className="text-center text-[9px] text-gray-500">📍 {printSettings.storeAddress}</div>
-                    )}
+                    <div className="relative z-10">
+                      {/* Logo area */}
+                      {printSettings.showLogo && (
+                        <div className="text-center mb-2">
+                          {printSettings.logoBase64 ? (
+                            <img
+                              src={printSettings.logoBase64}
+                              alt="Preview Logo"
+                              className="max-h-12 mx-auto object-contain"
+                            />
+                          ) : (
+                            <div className="inline-block bg-[#fbbf24] text-[#0d1117] font-bold px-3 py-1 rounded text-xs">
+                              {printSettings.storeName}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
-                    <div className="border-t border-dashed border-gray-400 my-2" />
+                      <div className="text-center font-bold text-sm text-black">{printSettings.storeName}</div>
+                      {printSettings.storeSubtitle && (
+                        <div className="text-center text-[9px] text-gray-600">{printSettings.storeSubtitle}</div>
+                      )}
+                      {printSettings.showPhone && printSettings.storePhone && (
+                        <div className="text-center text-[10px] text-gray-700">📱 {printSettings.storePhone}</div>
+                      )}
+                      {printSettings.storeAddress && (
+                        <div className="text-center text-[9px] text-gray-500">📍 {printSettings.storeAddress}</div>
+                      )}
 
-                    <div className="flex justify-between text-[10px]">
-                      <span>فاتورة: #INV-2026</span>
-                      <span>{new Date().toLocaleDateString('ar-SD')}</span>
-                    </div>
-                    {printSettings.showCashier && (
+                      <div className={`my-2 ${
+                        printSettings.receiptBorder === 'solid' ? 'border-t-[1.5px] border-solid border-gray-800' :
+                        printSettings.receiptBorder === 'double' ? 'border-t-[3px] border-double border-gray-800' :
+                        printSettings.receiptBorder === 'none' ? '' : 'border-t border-dashed border-gray-400'
+                      }`} />
+
                       <div className="flex justify-between text-[10px]">
-                        <span>الكاشير:</span>
-                        <span>المدير</span>
+                        <span>فاتورة: #INV-2026</span>
+                        <span>{new Date().toLocaleDateString('ar-LY')}</span>
                       </div>
-                    )}
+                      {printSettings.showCashier && (
+                        <div className="flex justify-between text-[10px]">
+                          <span>الكاشير:</span>
+                          <span>المدير</span>
+                        </div>
+                      )}
 
-                    <div className="border-t border-dashed border-gray-400 my-2" />
+                      <div className={`my-2 ${
+                        printSettings.receiptBorder === 'solid' ? 'border-t-[1.5px] border-solid border-gray-800' :
+                        printSettings.receiptBorder === 'double' ? 'border-t-[3px] border-double border-gray-800' :
+                        printSettings.receiptBorder === 'none' ? '' : 'border-t border-dashed border-gray-400'
+                      }`} />
 
-                    {/* Table items */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-bold border-b border-gray-200 pb-1">
-                        <span>الصنف</span>
-                        <span>المجموع</span>
+                      {/* Table items */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between font-bold border-b border-gray-200 pb-1">
+                          <span>الصنف</span>
+                          <span>المجموع</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>عطر العود الملكي (50ml) x 1</span>
+                          <span>150.00 د.ل</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>زيت مسك الصندل (10ml) x 2</span>
+                          <span>90.00 د.ل</span>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span>عطر العود الملكي (50ml) x 1</span>
-                        <span>15,000</span>
+
+                      <div className={`my-2 ${
+                        printSettings.receiptBorder === 'solid' ? 'border-t-[1.5px] border-solid border-gray-800' :
+                        printSettings.receiptBorder === 'double' ? 'border-t-[3px] border-double border-gray-800' :
+                        printSettings.receiptBorder === 'none' ? '' : 'border-t border-dashed border-gray-400'
+                      }`} />
+
+                      <div className="space-y-0.5 text-[10px]">
+                        <div className="flex justify-between">
+                          <span>المجموع الفرعي:</span>
+                          <span>240.00 د.ل</span>
+                        </div>
+                        <div className="flex justify-between text-red-600">
+                          <span>الخصم (10%):</span>
+                          <span>-24.00 د.ل</span>
+                        </div>
+                        <div className="flex justify-between font-bold text-xs pt-1 text-black">
+                          <span>الإجمالي النهائي:</span>
+                          <span>216.00 د.ل</span>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span>زيت مسك الصندل (10ml) x 2</span>
-                        <span>9,000</span>
-                      </div>
+
+                      {printSettings.showBarcode && (
+                        <div className="text-center my-3 text-[9px] tracking-widest bg-gray-100 py-1 rounded">
+                          ||| | ||||| ||| |||| |||| ||
+                          <div>*ALDAFFA-2026*</div>
+                        </div>
+                      )}
+
+                      {printSettings.receiptPolicy && (
+                        <div className="text-[8px] text-gray-500 text-center mt-2 leading-normal">
+                          {printSettings.receiptPolicy}
+                        </div>
+                      )}
+
+                      {printSettings.receiptGreeting && (
+                        <div className="text-center font-bold text-[10px] text-gray-800 mt-2">
+                          {printSettings.receiptGreeting}
+                        </div>
+                      )}
                     </div>
-
-                    <div className="border-t border-dashed border-gray-400 my-2" />
-
-                    <div className="space-y-0.5 text-[10px]">
-                      <div className="flex justify-between">
-                        <span>المجموع الفرعي:</span>
-                        <span>24,000 ج.س</span>
-                      </div>
-                      <div className="flex justify-between text-red-600">
-                        <span>الخصم (10%):</span>
-                        <span>-2,400 ج.س</span>
-                      </div>
-                      <div className="flex justify-between font-bold text-xs pt-1 text-black">
-                        <span>الإجمالي النهائي:</span>
-                        <span>21,600 ج.س</span>
-                      </div>
-                    </div>
-
-                    {printSettings.showBarcode && (
-                      <div className="text-center my-3 text-[9px] tracking-widest bg-gray-100 py-1 rounded">
-                        ||| | ||||| ||| |||| |||| ||
-                        <div>*ALDAFFA-2026*</div>
-                      </div>
-                    )}
-
-                    {printSettings.receiptPolicy && (
-                      <div className="text-[8px] text-gray-500 text-center mt-2 leading-normal">
-                        {printSettings.receiptPolicy}
-                      </div>
-                    )}
-
-                    {printSettings.receiptGreeting && (
-                      <div className="text-center font-bold text-[10px] text-gray-800 mt-2">
-                        {printSettings.receiptGreeting}
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>

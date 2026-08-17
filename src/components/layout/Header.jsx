@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useUIStore } from '../../stores/useUIStore.js';
 import { FlaconEmblem } from '../ui/FlaconIcons.jsx';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Keyboard } from 'lucide-react';
 
 /**
  * Organic Atelier Canopy Header
  * Features:
  * - Live Arabic Libyan Date/Time clock
  * - Organic luxury flacon brand emblem
+ * - In-app Keyboard Language Mode Switcher (عربي / EN)
  * - Theme Switcher (Daylight Atelier ☀️ / Nocturne Obsidian 🌙)
  * - Actions slot
  */
@@ -15,11 +16,24 @@ const Header = ({ children }) => {
   const [now, setNow] = useState(() => new Date());
   const theme = useUIStore((state) => state.theme);
   const toggleTheme = useUIStore((state) => state.toggleTheme);
+  const keyboardLanguage = useUIStore((state) => state.keyboardLanguage);
+  const toggleKeyboardLanguage = useUIStore((state) => state.toggleKeyboardLanguage);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  // Global hotkey to toggle keyboard language (Alt+K or Alt+Shift)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.altKey && e.key.toLowerCase() === 'k') || (e.altKey && e.shiftKey)) {
+        toggleKeyboardLanguage();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleKeyboardLanguage]);
 
   const dateFormatter = new Intl.DateTimeFormat('ar-LY', {
     weekday: 'long',
@@ -48,9 +62,24 @@ const Header = ({ children }) => {
         </div>
       </div>
 
-      {/* Brand Identity & Theme Toggle (Right in RTL) */}
-      <div className="flex items-center gap-4">
+      {/* Brand Identity, Keyboard Language & Theme Toggle (Right in RTL) */}
+      <div className="flex items-center gap-3">
         {children && <div className="flex items-center gap-2">{children}</div>}
+
+        {/* In-app Keyboard Language Mode Switcher */}
+        <button
+          type="button"
+          onClick={toggleKeyboardLanguage}
+          title="التبديل بين لغة الكتابة العربية والإنجليزية (اختصار: Alt + K)"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold shadow-sm hover:scale-105 active:scale-95 transition-all cursor-pointer ${
+            keyboardLanguage === 'ar'
+              ? 'bg-amber-500/15 border-amber-500/40 text-amber-800 dark:text-amber-300'
+              : 'bg-blue-500/15 border-blue-500/40 text-blue-800 dark:text-blue-300'
+          }`}
+        >
+          <Keyboard className="w-3.5 h-3.5" />
+          <span>{keyboardLanguage === 'ar' ? 'عربي (AR)' : 'English (EN)'}</span>
+        </button>
 
         {/* Theme Switcher */}
         <button

@@ -1,451 +1,1225 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  FlaskConical,
+  Plus,
+  Trash2,
+  CheckCircle2,
+  Sparkles,
+  ArrowRight,
+  ArrowLeft,
+  Package,
+  Layers,
+  Droplets,
+  DollarSign,
+  Barcode,
+  Eye,
+  SlidersHorizontal,
+  RefreshCw,
+  Search,
+  BookOpen
+} from 'lucide-react';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
 import { NotesRepository } from '../database/repositories/NotesRepository.js';
 import { useUIStore } from '../stores/useUIStore.js';
-import { formatCurrency, generateId } from '../utils/helpers.js';
+import { formatCurrency, generateId, safeParseFloat } from '../utils/helpers.js';
+import Modal from '../components/ui/Modal.jsx';
 
 const inventoryRepo = new InventoryRepository();
 const notesRepo = new NotesRepository();
+
+const DEFAULT_WIZARD_DATA = {
+  // Step 1: Bottles
+  bottleId: '',
+  bottleName: 'زجاجة عطر قياسية',
+  bottleCapacity: 50, // ml
+  batchQuantity: 1, // number of bottles
+  bottleCost: 5,
+  // Step 2: Fragrance Oils (supports multi-oil blends)
+  oils: [
+    { oilId: '', oilName: '', mlPerBottle: 15, percentage: 30, unitCostPerMl: 0.8 }
+  ],
+  // Step 3: Alcohol & Solvents
+  alcoholId: '',
+  alcoholName: 'كحول إيثيلي نقي 96%',
+  alcoholMlPerBottle: 35,
+  alcoholCostPerMl: 0.05,
+  // Step 4: Perfume Identity & Pricing
+  perfumeName: '',
+  category: 'عطور مركبة / خلطات الدفة',
+  retailPrice: 90,
+  wholesalePrice: 75,
+  barcode: '',
+  notes: ''
+};
 
 const PerfumeMixLabModule = () => {
   const { showSuccess, showError, showWarning } = useUIStore();
 
   const [products, setProducts] = useState([]);
   const [formulas, setFormulas] = useState([]);
-  const [showModal, setShowModal] = useState(false);
-
-  // Formula form
-  const [formulaName, setFormulaName] = useState('');
-  const [bottleCapacity, setBottleCapacity] = useState(100);
-  const [oilPercentage, setOilPercentage] = useState(20);
-  const [selectedOil, setSelectedOil] = useState('');
-  const [selectedAlcohol, setSelectedAlcohol] = useState('');
-  const [selectedBottle, setSelectedBottle] = useState('');
-  const [batchQuantity, setBatchQuantity] = useState(1);
-
-  // Loading states
-  const [loadingProducts, setLoadingProducts] = useState(false);
-  const [loadingFormulas, setLoadingFormulas] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const loadProducts = useCallback(async () => {
-    setLoadingProducts(true);
-    try {
-      const data = await inventoryRepo.findAll({}, 'name ASC');
-      setProducts(data);
-    } catch (error) {
-      showError('خطأ في تحميل المنتجات: ' + error.message);
-    } finally {
-      setLoadingProducts(false);
-    }
-  }, [showError]);
+  // Wizard state
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1); // 1 to 5
+  const [wizardData, setWizardData] = useState(DEFAULT_WIZARD_DATA);
+  const [activeFormulaPreview, setActiveFormulaPreview] = useState(null);
 
-  const loadFormulas = useCallback(async () => {
-    setLoadingFormulas(true);
+  // Load Inventory Products & Saved Formulas
+  const loadData = useCallback(async () => {
+    setLoading(true);
     try {
-      const data = await notesRepo.getByTitlePrefix('FORMULA:');
-      setFormulas(data);
-    } catch (error) {
-      showError('خطأ في تحميل التركيبات: ' + error.message);
+      const allProducts = await inventoryRepo.findAll({}, 'name ASC');
+      setProducts(allProducts);
+
+      const savedFormulas = await notesRepo.getByTitlePrefix('FORMULA:');
+      setFormulas(savedFormulas);
+    } catch (err) {
+      showError('فشل تحميل بيانات المختبر: ' + err.message);
     } finally {
-      setLoadingFormulas(false);
+      setLoading(false);
     }
   }, [showError]);
 
   useEffect(() => {
-    loadProducts();
-    loadFormulas();
-  }, [loadProducts, loadFormulas]);
+    loadData();
+  }, [loadData]);
 
-  // Mixing calculations preserved exactly
-  const calculateMixture = () => {
-    const oilMl = (bottleCapacity * oilPercentage) / 100;
-    const alcoholMl = bottleCapacity - oilMl;
+  // Derived categorized products for selection
+  const bottleProducts = useMemo(() => {
+    return products.filter((p) => {
+      const cat = (p.category || '').toLowerCase();
+      const name = (p.name || '').toLowerCase();
+      return (
+        cat.includes('زجاج') ||
+        cat.includes('علب') ||
+        name.includes('زجاج') ||
+        name.includes('قارورة') ||
+        name.includes('غرشة') ||
+        p.unit === 'bottle'
+      );
+    });
+  }, [products]);
 
-    return { oilMl, alcoholMl };
+  const oilProducts = useMemo(() => {
+    return products.filter((p) => {
+      const cat = (p.category || '').toLowerCase();
+      const name = (p.name || '').toLowerCase();
+      return (
+        cat.includes('زيت') ||
+        cat.includes('خام') ||
+        cat.includes('عطر') ||
+        name.includes('زيت') ||
+        name.includes('مسك') ||
+        name.includes('عود') ||
+        name.includes('صندل') ||
+        name.includes('عنبر') ||
+        p.unit === 'ml' ||
+        p.unit === 'تولة'
+      );
+    });
+  }, [products]);
+
+  const alcoholProducts = useMemo(() => {
+    return products.filter((p) => {
+      const cat = (p.category || '').toLowerCase();
+      const name = (p.name || '').toLowerCase();
+      return (
+        cat.includes('كحول') ||
+        cat.includes('مذيب') ||
+        cat.includes('مخفف') ||
+        name.includes('كحول') ||
+        name.includes('مذيب') ||
+        name.includes('مثبت') ||
+        p.unit === 'liter' ||
+        p.unit === 'ml'
+      );
+    });
+  }, [products]);
+
+  // Calculated totals
+  const totalOilMlPerBottle = useMemo(() => {
+    return wizardData.oils.reduce((sum, o) => sum + safeParseFloat(o.mlPerBottle, 0), 0);
+  }, [wizardData.oils]);
+
+  const calculatedOilCostPerBottle = useMemo(() => {
+    return wizardData.oils.reduce(
+      (sum, o) => sum + safeParseFloat(o.mlPerBottle, 0) * safeParseFloat(o.unitCostPerMl, 0),
+      0
+    );
+  }, [wizardData.oils]);
+
+  const calculatedAlcoholCostPerBottle = useMemo(() => {
+    return safeParseFloat(wizardData.alcoholMlPerBottle, 0) * safeParseFloat(wizardData.alcoholCostPerMl, 0);
+  }, [wizardData.alcoholMlPerBottle, wizardData.alcoholCostPerMl]);
+
+  const unitTotalCost = useMemo(() => {
+    return (
+      safeParseFloat(wizardData.bottleCost, 0) +
+      calculatedOilCostPerBottle +
+      calculatedAlcoholCostPerBottle
+    );
+  }, [wizardData.bottleCost, calculatedOilCostPerBottle, calculatedAlcoholCostPerBottle]);
+
+  const batchTotalCost = useMemo(() => {
+    return unitTotalCost * safeParseFloat(wizardData.batchQuantity, 1);
+  }, [unitTotalCost, wizardData.batchQuantity]);
+
+  const oilConcentrationPercentage = useMemo(() => {
+    const cap = safeParseFloat(wizardData.bottleCapacity, 50);
+    if (cap <= 0) return 0;
+    return Math.min(100, Math.round((totalOilMlPerBottle / cap) * 100));
+  }, [totalOilMlPerBottle, wizardData.bottleCapacity]);
+
+  const perfumeConcentrationGrade = useMemo(() => {
+    if (oilConcentrationPercentage >= 25) return { grade: 'Extrait de Parfum (عطر مركز نقي)', color: 'text-amber-500' };
+    if (oilConcentrationPercentage >= 18) return { grade: 'Eau de Parfum (أو دو بارفان فواح)', color: 'text-emerald-500' };
+    if (oilConcentrationPercentage >= 10) return { grade: 'Eau de Toilette (أو دو تواليت)', color: 'text-blue-500' };
+    return { grade: 'Eau de Cologne (كولونيا خفيفة)', color: 'text-purple-500' };
+  }, [oilConcentrationPercentage]);
+
+  // Open Wizard for new formula
+  const openNewWizard = () => {
+    const autoBarcode = `MIX${Date.now().toString().slice(-6)}${Math.floor(100 + Math.random() * 900)}`;
+    setWizardData({
+      ...DEFAULT_WIZARD_DATA,
+      barcode: autoBarcode
+    });
+    setCurrentStep(1);
+    setWizardOpen(true);
   };
 
-  const saveFormula = async () => {
-    if (!formulaName.trim()) {
-      showWarning('يرجى إدخال اسم التركيبة');
+  // Step 1: Select Bottle Handler
+  const handleSelectBottle = (prodId) => {
+    const prod = products.find((p) => String(p.id) === String(prodId));
+    if (prod) {
+      const cap = prod.capacity > 0 ? prod.capacity : 50;
+      setWizardData((prev) => ({
+        ...prev,
+        bottleId: prod.id,
+        bottleName: prod.name,
+        bottleCapacity: cap,
+        bottleCost: prod.cost || 0,
+        // Auto-recalculate alcohol
+        alcoholMlPerBottle: Math.max(0, cap - totalOilMlPerBottle)
+      }));
+    }
+  };
+
+  // Step 2: Oil blend management
+  const handleAddOilSlot = () => {
+    setWizardData((prev) => ({
+      ...prev,
+      oils: [...prev.oils, { oilId: '', oilName: '', mlPerBottle: 5, percentage: 10, unitCostPerMl: 0.8 }]
+    }));
+  };
+
+  const handleRemoveOilSlot = (index) => {
+    setWizardData((prev) => ({
+      ...prev,
+      oils: prev.oils.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleUpdateOilSlot = (index, field, value) => {
+    setWizardData((prev) => {
+      const nextOils = [...prev.oils];
+      const target = { ...nextOils[index], [field]: value };
+
+      if (field === 'oilId') {
+        const prod = products.find((p) => String(p.id) === String(value));
+        if (prod) {
+          target.oilName = prod.name;
+          const costPerMl = prod.unit === 'liter' ? prod.cost / 1000 : prod.cost > 0 ? prod.cost / (prod.capacity || 100) : 0.8;
+          target.unitCostPerMl = costPerMl;
+        }
+      }
+
+      nextOils[index] = target;
+      const newTotalOilMl = nextOils.reduce((sum, o) => sum + safeParseFloat(o.mlPerBottle, 0), 0);
+      const newAlcoholMl = Math.max(0, safeParseFloat(prev.bottleCapacity, 50) - newTotalOilMl);
+
+      return {
+        ...prev,
+        oils: nextOils,
+        alcoholMlPerBottle: newAlcoholMl
+      };
+    });
+  };
+
+  // Step 3: Select Alcohol
+  const handleSelectAlcohol = (prodId) => {
+    const prod = products.find((p) => String(p.id) === String(prodId));
+    if (prod) {
+      const costPerMl = prod.unit === 'liter' ? prod.cost / 1000 : prod.cost > 0 ? prod.cost / (prod.capacity || 1000) : 0.05;
+      setWizardData((prev) => ({
+        ...prev,
+        alcoholId: prod.id,
+        alcoholName: prod.name,
+        alcoholCostPerMl: costPerMl
+      }));
+    }
+  };
+
+  // Validate step progression
+  const canProceedStep = (step) => {
+    if (step === 1) {
+      return wizardData.bottleCapacity > 0 && wizardData.batchQuantity > 0;
+    }
+    if (step === 2) {
+      return wizardData.oils.length > 0 && wizardData.oils.every((o) => o.oilName && o.mlPerBottle > 0);
+    }
+    if (step === 3) {
+      return wizardData.alcoholMlPerBottle >= 0;
+    }
+    if (step === 4) {
+      return wizardData.perfumeName.trim().length > 0 && wizardData.retailPrice > 0;
+    }
+    return true;
+  };
+
+  const handleNextStep = () => {
+    if (!canProceedStep(currentStep)) {
+      showWarning('يرجى إكمال البيانات المطلوبة لهذه الخطوة قبل المتابعة');
       return;
     }
-
-    if (!selectedOil || !selectedAlcohol || !selectedBottle) {
-      showWarning('يرجى اختيار جميع المواد الخام');
-      return;
+    if (currentStep === 3 && !wizardData.perfumeName) {
+      // Suggest automatic perfume name based on selected oils
+      const primaryOil = wizardData.oils[0]?.oilName ? wizardData.oils[0].oilName.replace(/عطر|زيت/g, '').trim() : 'الدفة';
+      const autoName = `خلطة ${primaryOil} الملكية ${wizardData.bottleCapacity}ml`;
+      setWizardData((prev) => ({
+        ...prev,
+        perfumeName: autoName,
+        retailPrice: Math.round(unitTotalCost * 2.2) || 85,
+        wholesalePrice: Math.round(unitTotalCost * 1.6) || 65
+      }));
     }
+    setCurrentStep((prev) => Math.min(5, prev + 1));
+  };
 
-    const { oilMl, alcoholMl } = calculateMixture();
+  const handlePrevStep = () => {
+    setCurrentStep((prev) => Math.max(1, prev - 1));
+  };
 
-    const oil = products.find(p => p.id === selectedOil);
-    const alcohol = products.find(p => p.id === selectedAlcohol);
-    const bottle = products.find(p => p.id === selectedBottle);
-
-    if (!oil || !alcohol || !bottle) {
-      showError('خطأ في اختيار المواد');
-      return;
-    }
-
-    // Check stock availability
-    const totalOilNeeded = (oilMl / 1000) * batchQuantity;
-    const totalAlcoholNeeded = (alcoholMl / 1000) * batchQuantity;
-    const totalBottlesNeeded = batchQuantity;
-
-    if (oil.qty < totalOilNeeded) {
-      showWarning(`كمية الزيت غير كافية\nمطلوب: ${totalOilNeeded.toFixed(2)}L\nمتوفر: ${oil.qty}L`);
-      return;
-    }
-
-    if (alcohol.qty < totalAlcoholNeeded) {
-      showWarning(`كمية الكحول غير كافية\nمطلوب: ${totalAlcoholNeeded.toFixed(2)}L\nمتوفر: ${alcohol.qty}L`);
-      return;
-    }
-
-    if (bottle.qty < totalBottlesNeeded) {
-      showWarning(`عدد الزجاجات غير كافٍ\nمطلوب: ${totalBottlesNeeded}\nمتوفر: ${bottle.qty}`);
+  // Final Submission: Inject product into Inventory & deduct raw materials & save formula note
+  const handleFinalizeFormula = async () => {
+    if (!wizardData.perfumeName.trim()) {
+      showError('يرجى تحديد اسم العطر النهائي');
       return;
     }
 
     setSaving(true);
-
     try {
-      const id = generateId();
-      const formulaData = {
-        name: formulaName,
-        bottleCapacity,
-        oilPercentage,
-        oilMl,
-        alcoholMl,
-        batchQuantity,
-        materials: {
-          oil: { id: oil.id, name: oil.name, mlPerBottle: oilMl, totalMl: oilMl * batchQuantity },
-          alcohol: { id: alcohol.id, name: alcohol.name, mlPerBottle: alcoholMl, totalMl: alcoholMl * batchQuantity },
-          bottle: { id: bottle.id, name: bottle.name, quantity: batchQuantity }
-        },
-        totalCost: (oil.cost * totalOilNeeded) + (alcohol.cost * totalAlcoholNeeded) + (bottle.cost * totalBottlesNeeded)
-      };
+      const newProductId = generateId();
+      const formulaId = generateId();
 
-      // Save formula as note
-      await notesRepo.create({
-        id,
-        date: new Date().toISOString(),
-        title: `FORMULA: ${formulaName}`,
-        content: JSON.stringify(formulaData, null, 2),
-        priority: 'normal'
+      // 1. Create the new finished perfume product in inventory
+      await inventoryRepo.create({
+        id: newProductId,
+        name: wizardData.perfumeName.trim(),
+        category: wizardData.category || 'عطور مركبة / خلطات الدفة',
+        qty: safeParseFloat(wizardData.batchQuantity, 1),
+        cost: unitTotalCost,
+        price: safeParseFloat(wizardData.retailPrice, 0),
+        wholesale_price: safeParseFloat(wizardData.wholesalePrice, 0),
+        unit: 'قطعة',
+        capacity: safeParseFloat(wizardData.bottleCapacity, 50),
+        barcode: wizardData.barcode || `MIX${Date.now().toString().slice(-6)}`,
+        min_qty: 3,
+        notes: `تركيبة مخلطة تم إنتاجها في مختبر الدفة - ${wizardData.batchQuantity} زجاجات`
       });
 
-      // Deduct raw materials from inventory
-      await inventoryRepo.adjustStock(oil.id, -totalOilNeeded);
-      await inventoryRepo.adjustStock(alcohol.id, -totalAlcoholNeeded);
-      await inventoryRepo.adjustStock(bottle.id, -totalBottlesNeeded);
+      // 2. Deduct raw materials from inventory if linked to actual inventory records
+      const batchQty = safeParseFloat(wizardData.batchQuantity, 1);
 
-      resetForm();
-      await Promise.all([loadProducts(), loadFormulas()]);
+      // Deduct bottles
+      if (wizardData.bottleId) {
+        try {
+          await inventoryRepo.adjustStock(wizardData.bottleId, -batchQty);
+        } catch (e) {}
+      }
 
-      showSuccess(`✅ تم حفظ التركيبة وخصم المواد\n\nالتفاصيل:\n- زيت: ${oilMl}ml (${oilPercentage}%)\n- كحول: ${alcoholMl}ml (${100 - oilPercentage}%)\n- عدد الزجاجات: ${batchQuantity}\n- التكلفة: ${formatCurrency(formulaData.totalCost)}`);
-    } catch (error) {
-      showError('خطأ في حفظ التركيبة: ' + error.message);
+      // Deduct oils
+      for (const oil of wizardData.oils) {
+        if (oil.oilId) {
+          const totalOilMl = safeParseFloat(oil.mlPerBottle, 0) * batchQty;
+          try {
+            await inventoryRepo.adjustStock(oil.oilId, -totalOilMl);
+          } catch (e) {}
+        }
+      }
+
+      // Deduct alcohol
+      if (wizardData.alcoholId) {
+        const totalAlcMl = safeParseFloat(wizardData.alcoholMlPerBottle, 0) * batchQty;
+        try {
+          await inventoryRepo.adjustStock(wizardData.alcoholId, -totalAlcMl);
+        } catch (e) {}
+      }
+
+      // 3. Save Formula Spec into notes
+      const formulaPayload = {
+        id: formulaId,
+        productId: newProductId,
+        name: wizardData.perfumeName,
+        date: new Date().toISOString(),
+        bottleCapacity: wizardData.bottleCapacity,
+        batchQuantity: wizardData.batchQuantity,
+        bottle: { id: wizardData.bottleId, name: wizardData.bottleName, cost: wizardData.bottleCost },
+        oils: wizardData.oils,
+        alcohol: { id: wizardData.alcoholId, name: wizardData.alcoholName, ml: wizardData.alcoholMlPerBottle },
+        unitTotalCost,
+        batchTotalCost,
+        retailPrice: wizardData.retailPrice,
+        wholesalePrice: wizardData.wholesalePrice,
+        barcode: wizardData.barcode,
+        notes: wizardData.notes
+      };
+
+      await notesRepo.create({
+        id: formulaId,
+        date: new Date().toISOString(),
+        title: `FORMULA: ${wizardData.perfumeName}`,
+        content: JSON.stringify(formulaPayload, null, 2),
+        priority: 'high'
+      });
+
+      showSuccess(
+        `✅ تم اعتماد الخلطة بنجاح!\n\nتمت إضافة "${wizardData.perfumeName}" إلى المخزون (${wizardData.batchQuantity} زجاجة) وخصم المواد الخام المستهلكة.`
+      );
+
+      setWizardOpen(false);
+      await loadData();
+    } catch (err) {
+      showError('خطأ أثناء حفظ واعتماد الخلطة: ' + err.message);
     } finally {
       setSaving(false);
     }
   };
 
-  const resetForm = () => {
-    setFormulaName('');
-    setBottleCapacity(100);
-    setOilPercentage(20);
-    setSelectedOil('');
-    setSelectedAlcohol('');
-    setSelectedBottle('');
-    setBatchQuantity(1);
-    setShowModal(false);
-  };
-
-  const { oilMl, alcoholMl } = calculateMixture();
-
-  const oils = useMemo(() =>
-    products.filter(p => p.category && p.category.toLowerCase().includes('زيت')),
-    [products]
-  );
-  const alcohols = useMemo(() =>
-    products.filter(p => p.name.toLowerCase().includes('كحول') || p.name.toLowerCase().includes('alcohol')),
-    [products]
-  );
-  const bottles = useMemo(() =>
-    products.filter(p => p.name.toLowerCase().includes('زجاج') || p.name.toLowerCase().includes('bottle')),
-    [products]
-  );
-
   return (
-    <div className="h-full flex flex-col glass-card p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold text-gold flex items-center gap-2">
-          <span>🧪</span>
-          <span>مختبر خلط العطور</span>
-        </h2>
-        <button
-          onClick={() => setShowModal(true)}
-          className="btn-gold px-4 py-2"
-        >
-          ➕ تركيبة جديدة
-        </button>
-      </div>
+    <div className="h-full flex flex-col gap-4 overflow-hidden">
+      {/* Header Banner */}
+      <div className="glass-card p-5 border border-amber-500/30 bg-gradient-to-l from-amber-500/10 via-[#161b22] to-[#0d1117] rounded-3xl shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="w-13 h-13 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center font-bold text-2xl shadow-lg shrink-0">
+            🧪
+          </div>
+          <div>
+            <h1 className="text-xl font-extrabold text-[#e6edf3] flex items-center gap-2">
+              مختبر خلطات وعطور الدفة الملكية
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                المعالج التفاعلي الذكي
+              </span>
+            </h1>
+            <p className="text-xs text-[#adbac7] mt-0.5 leading-relaxed">
+              إنتاج وتركيب العطور الخاصة بنظام الأسئلة التفاعلي، واحتساب نسب الزيوت والكحول والتكلفة، وحقنها مباشرة في المخزون
+            </p>
+          </div>
+        </div>
 
-      <div className="bg-blue-600/10 border border-blue-400/30 p-4 rounded-lg mb-4">
-        <div className="text-sm text-blue-400 space-y-1">
-          <div>💡 احسب نسب الزيت والكحول تلقائياً</div>
-          <div>📊 خصم تلقائي للمواد الخام من المخزون</div>
-          <div>🧮 حساب التكلفة الإجمالية للتركيبة</div>
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <Search className="w-4 h-4 text-gray-400 absolute start-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="بحث في أرشيف الخلطات..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="input-atelier w-full ps-9 py-2 text-xs"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={openNewWizard}
+            className="btn-atelier-primary px-5 py-2.5 text-xs font-bold shrink-0 shadow-lg flex items-center gap-2 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>➕ إنشاء خلطة تفاعلية جديدة</span>
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {loadingFormulas ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="glass-card p-4 animate-pulse">
-                <div className="h-5 bg-gray-700 rounded mb-3 w-1/2"></div>
-                <div className="h-4 bg-gray-700 rounded mb-2 w-full"></div>
-                <div className="h-4 bg-gray-700 rounded w-2/3"></div>
-              </div>
-            ))}
-          </div>
-        ) : formulas.length === 0 ? (
-          <div className="text-center text-gray-500 py-12">
-            لا توجد تركيبات محفوظة
+      {/* Main Grid: Saved Formulas & Formulas Catalog */}
+      <div className="flex-1 overflow-y-auto scrollbar-thin space-y-4 pr-1">
+        {formulas.length === 0 ? (
+          <div className="glass-card p-12 text-center rounded-3xl border border-white/10 flex flex-col items-center justify-center gap-4 my-8">
+            <div className="w-20 h-20 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-4xl">
+              🧪
+            </div>
+            <h3 className="text-lg font-bold text-white">لا توجد خلطات مسجلة بعد في المختبر</h3>
+            <p className="text-xs text-gray-400 max-w-md leading-relaxed">
+              ابدأ الآن بإنشاء أول خلطة عطرية خاصة بمتجرك عبر المعالج التفاعلي (نظام الأسئلة والخطوات) لتحديد الزيوت، الزجاجات، ونسب الكحول.
+            </p>
+            <button
+              type="button"
+              onClick={openNewWizard}
+              className="btn-atelier-primary px-6 py-2.5 text-xs font-bold mt-2"
+            >
+              🚀 بدء معالج الخلطات التفاعلي الآن
+            </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {formulas.map(formula => {
-              const data = JSON.parse(formula.content);
-              return (
-                <div key={formula.id} className="glass-card p-4">
-                  <h3 className="text-lg font-bold text-gold mb-3">
-                    {data.name}
-                  </h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">سعة الزجاجة:</span>
-                      <span className="font-bold">{data.bottleCapacity}ml</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {formulas
+              .filter((f) => {
+                if (!searchTerm.trim()) return true;
+                return (
+                  f.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  f.content.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+              })
+              .map((formula) => {
+                let parsed = null;
+                try {
+                  parsed = JSON.parse(formula.content);
+                } catch (e) {}
+
+                const titleClean = formula.title.replace('FORMULA:', '').trim();
+
+                return (
+                  <div
+                    key={formula.id}
+                    className="glass-card p-5 rounded-2xl border border-white/10 hover:border-amber-500/40 transition-all flex flex-col justify-between gap-4 group"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-300 text-[10px] font-bold border border-amber-500/20">
+                          {parsed?.bottleCapacity ? `${parsed.bottleCapacity} مل` : 'عطر مخلط'}
+                        </span>
+                        <span className="text-[11px] text-gray-400 font-mono">
+                          {new Date(formula.date).toLocaleDateString('ar-LY')}
+                        </span>
+                      </div>
+
+                      <h3 className="text-base font-extrabold text-white group-hover:text-amber-400 transition-colors">
+                        {titleClean}
+                      </h3>
+
+                      {parsed && (
+                        <div className="mt-3 space-y-1.5 text-xs text-gray-300 bg-black/20 p-3 rounded-xl border border-white/5">
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">الزجاجة:</span>
+                            <span className="font-semibold">{parsed.bottle?.name || 'قياسية'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">الزيوت المستخدمة:</span>
+                            <span className="font-semibold text-amber-300">
+                              {parsed.oils?.map((o) => `${o.oilName} (${o.mlPerBottle}ml)`).join(' + ') || 'مزيج زيوت'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">كمية الكحول:</span>
+                            <span className="font-semibold">{parsed.alcohol?.ml || 0} مل</span>
+                          </div>
+                          <div className="flex justify-between pt-1 border-t border-white/10 font-bold">
+                            <span className="text-gray-400">تكلفة الزجاجة:</span>
+                            <span className="text-emerald-400">{formatCurrency(parsed.unitTotalCost)}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">نسبة الزيت:</span>
-                      <span className="font-bold text-purple-400">{data.oilPercentage}% ({data.oilMl}ml)</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">نسبة الكحول:</span>
-                      <span className="font-bold text-blue-400">{100 - data.oilPercentage}% ({data.alcoholMl}ml)</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">الدفعة:</span>
-                      <span className="font-bold">{data.batchQuantity} زجاجة</span>
-                    </div>
-                    <div className="flex justify-between border-t border-gray-700 pt-2">
-                      <span className="text-gray-400">التكلفة:</span>
-                      <span className="font-bold text-gold">{formatCurrency(data.totalCost)}</span>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => setActiveFormulaPreview(parsed || formula)}
+                        className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>معاينة تفاصيل التركيبة</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (window.confirm(`هل أنت متأكد من حذف خلطة "${titleClean}"؟`)) {
+                            await notesRepo.delete(formula.id);
+                            await loadData();
+                            showSuccess('تم حذف التركيبة من الأرشيف');
+                          }
+                        }}
+                        className="text-red-400 hover:text-red-300 p-1 transition-colors cursor-pointer"
+                        title="حذف الخلطة"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         )}
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" dir="rtl">
-          <div className="glass-card p-6 w-[800px] max-h-[90vh] overflow-y-auto scrollbar-thin">
-            <h2 className="text-2xl font-bold text-gold mb-4">تركيبة عطر جديدة</h2>
+      {/* ========================================================================= */}
+      {/* 5-STEP INTERACTIVE MIXING WIZARD MODAL */}
+      {/* ========================================================================= */}
+      <Modal
+        open={wizardOpen}
+        onClose={() => {
+          if (!saving) setWizardOpen(false);
+        }}
+        size="xl"
+        title={
+          <div className="flex items-center gap-2 text-base font-extrabold text-amber-400">
+            <FlaskConical className="w-5 h-5" />
+            <span>معالج تركيب العطور والخلطات التفاعلي — خطوة {currentStep} من 5</span>
+          </div>
+        }
+      >
+        <div className="space-y-6 select-none">
+          {/* Wizard Step Progress Indicator */}
+          <div className="grid grid-cols-5 gap-2 pb-3 border-b border-white/10 text-center text-xs font-bold">
+            {[
+              { num: 1, label: '1. الزجاجات والعبوات', icon: Package },
+              { num: 2, label: '2. الزيوت العطرية', icon: Droplets },
+              { num: 3, label: '3. الكحول والمذيبات', icon: Layers },
+              { num: 4, label: '4. التسمية والتسعير', icon: DollarSign },
+              { num: 5, label: '5. مراجعة واعتماد', icon: CheckCircle2 }
+            ].map((step) => {
+              const StepIcon = step.icon;
+              const isActive = currentStep === step.num;
+              const isPast = currentStep > step.num;
 
-            <div className="grid grid-cols-2 gap-6">
-              {/* Left Column: Inputs */}
-              <div className="space-y-3">
-                <div>
-                  <label className="text-sm text-gray-400 mb-1 block">اسم التركيبة *</label>
+              return (
+                <div
+                  key={step.num}
+                  className={`p-2 rounded-xl border transition-all flex flex-col items-center gap-1 ${
+                    isActive
+                      ? 'border-amber-500 bg-amber-500/20 text-amber-300 shadow-md scale-102'
+                      : isPast
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                      : 'border-white/5 bg-white/5 text-gray-400 opacity-60'
+                  }`}
+                >
+                  <StepIcon className="w-4 h-4" />
+                  <span className="text-[11px] truncate w-full">{step.label}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ===================================================================== */}
+          {/* STEP 1: SELECT BOTTLE & BATCH SIZE */}
+          {/* ===================================================================== */}
+          {currentStep === 1 && (
+            <div className="space-y-5 animate-in fade-in duration-200">
+              <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl">
+                <h3 className="text-sm font-extrabold text-amber-300 mb-1 flex items-center gap-2">
+                  <Package className="w-4 h-4" />
+                  السؤال الأول: ما هي الزجاجات التي ستستخدمها وكم عدد العبوات المراد إنتاجها؟
+                </h3>
+                <p className="text-xs text-gray-300">
+                  حدد نوع الزجاجة من المخزون وسعتها الإجمالية (مثال: 50ml أو 100ml) والعدد الإجمالي للزجاجات في هذه الدفعة.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Select bottle from inventory */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">اختر الزجاجة من المخزون:</label>
+                  <select
+                    value={wizardData.bottleId}
+                    onChange={(e) => handleSelectBottle(e.target.value)}
+                    className="select-luxury w-full"
+                  >
+                    <option value="">-- اختر زجاجة متوفرة أو حدد يدوياً --</option>
+                    {bottleProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (المتوفر: {p.qty} قطعة - التكلفة: {formatCurrency(p.cost)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Custom bottle name */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">اسم أو وصف الزجاجة:</label>
                   <input
                     type="text"
-                    placeholder="مثال: عطر الياسمين الملكي"
-                    value={formulaName}
-                    onChange={(e) => setFormulaName(e.target.value)}
-                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
+                    value={wizardData.bottleName}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, bottleName: e.target.value }))}
+                    className="input-luxury w-full"
+                    placeholder="مثال: زجاجة كريستال إيطالية 50ml"
+                  />
+                </div>
+
+                {/* Bottle Capacity (ml) */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">سعة الزجاجة الواحدة (مل):</label>
+                  <div className="flex items-center gap-2">
+                    {[30, 50, 80, 100].map((cap) => (
+                      <button
+                        key={cap}
+                        type="button"
+                        onClick={() =>
+                          setWizardData((prev) => ({
+                            ...prev,
+                            bottleCapacity: cap,
+                            alcoholMlPerBottle: Math.max(0, cap - totalOilMlPerBottle)
+                          }))
+                        }
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                          wizardData.bottleCapacity === cap
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 font-extrabold shadow-sm'
+                            : 'bg-black/20 border-white/10 text-gray-300 hover:border-amber-400/40'
+                        }`}
+                      >
+                        {cap} مل
+                      </button>
+                    ))}
+                    <input
+                      type="number"
+                      min="1"
+                      value={wizardData.bottleCapacity}
+                      onChange={(e) =>
+                        setWizardData((prev) => {
+                          const cap = safeParseFloat(e.target.value, 50);
+                          return {
+                            ...prev,
+                            bottleCapacity: cap,
+                            alcoholMlPerBottle: Math.max(0, cap - totalOilMlPerBottle)
+                          };
+                        })
+                      }
+                      className="input-luxury w-24 text-center font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* Batch Quantity (How many bottles) */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">كم عدد الزجاجات المراد إنتاجها (الدفعة)؟</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={wizardData.batchQuantity}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, batchQuantity: safeParseFloat(e.target.value, 1) }))}
+                    className="input-luxury w-full font-bold text-amber-400"
+                  />
+                </div>
+
+                {/* Bottle Unit Cost */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">سعر تكلفة الزجاجة الفارغة (د.ل):</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={wizardData.bottleCost}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, bottleCost: safeParseFloat(e.target.value, 0) }))}
+                    className="input-luxury w-full"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===================================================================== */}
+          {/* STEP 2: SELECT FRAGRANCE OILS & DOSAGE */}
+          {/* ===================================================================== */}
+          {currentStep === 2 && (
+            <div className="space-y-5 animate-in fade-in duration-200">
+              <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-extrabold text-amber-300 mb-1 flex items-center gap-2">
+                    <Droplets className="w-4 h-4" />
+                    السؤال الثاني: ما هي الزيوت العطرية التي ستستعملها وكم مقدار كل زيت؟
+                  </h3>
+                  <p className="text-xs text-gray-300">
+                    يمكنك مزج زيت واحد أو عدة زيوت، وتحديد الجرعة بالمل لكل زجاجة بسعة ({wizardData.bottleCapacity} مل).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddOilSlot}
+                  className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1 shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>إضافة زيت آخر للمزيج</span>
+                </button>
+              </div>
+
+              {/* Oils Table */}
+              <div className="space-y-3">
+                {wizardData.oils.map((oil, idx) => (
+                  <div
+                    key={idx}
+                    className="p-4 bg-black/20 border border-white/10 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3"
+                  >
+                    <div className="flex-1 w-full space-y-1">
+                      <label className="text-[11px] font-bold text-gray-400">الزيت #{idx + 1}:</label>
+                      <select
+                        value={oil.oilId}
+                        onChange={(e) => handleUpdateOilSlot(idx, 'oilId', e.target.value)}
+                        className="select-luxury w-full text-xs"
+                      >
+                        <option value="">-- اختر من مخزون الزيوت العطرية --</option>
+                        {oilProducts.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} (المتوفر: {p.qty} {p.unit})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="w-full md:w-36 space-y-1">
+                      <label className="text-[11px] font-bold text-gray-400">الاسم يدوياً:</label>
+                      <input
+                        type="text"
+                        value={oil.oilName}
+                        onChange={(e) => handleUpdateOilSlot(idx, 'oilName', e.target.value)}
+                        placeholder="اسم الزيت..."
+                        className="input-luxury w-full text-xs"
+                      />
+                    </div>
+
+                    <div className="w-full md:w-28 space-y-1">
+                      <label className="text-[11px] font-bold text-gray-400">المقدار (مل/زجاجة):</label>
+                      <input
+                        type="number"
+                        min="0.5"
+                        step="0.5"
+                        value={oil.mlPerBottle}
+                        onChange={(e) => handleUpdateOilSlot(idx, 'mlPerBottle', safeParseFloat(e.target.value, 0))}
+                        className="input-luxury w-full text-center text-xs font-bold text-amber-300"
+                      />
+                    </div>
+
+                    <div className="w-full md:w-28 space-y-1">
+                      <label className="text-[11px] font-bold text-gray-400">تكلفة الـ مل (د.ل):</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.05"
+                        value={oil.unitCostPerMl}
+                        onChange={(e) => handleUpdateOilSlot(idx, 'unitCostPerMl', safeParseFloat(e.target.value, 0))}
+                        className="input-luxury w-full text-left text-xs font-mono"
+                      />
+                    </div>
+
+                    {wizardData.oils.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveOilSlot(idx)}
+                        className="text-red-400 hover:text-red-300 p-2 mt-4 transition-colors cursor-pointer"
+                        title="حذف هذا الزيت"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Oil Summary Pill */}
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-between text-xs font-bold">
+                <span className="text-amber-300">
+                  إجمالي الزيوت في الزجاجة ({wizardData.bottleCapacity} مل):
+                </span>
+                <span className="text-white">
+                  {totalOilMlPerBottle} مل ({oilConcentrationPercentage}%) — إجمالي الدفعة: {(totalOilMlPerBottle * wizardData.batchQuantity).toFixed(1)} مل
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ===================================================================== */}
+          {/* STEP 3: ALCOHOL & FIXATIVES */}
+          {/* ===================================================================== */}
+          {currentStep === 3 && (
+            <div className="space-y-5 animate-in fade-in duration-200">
+              <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl">
+                <h3 className="text-sm font-extrabold text-amber-300 mb-1 flex items-center gap-2">
+                  <Layers className="w-4 h-4" />
+                  السؤال الثالث: كم مقدار الكحول والمذيب الذي سيتم وضعه لإكمال السعة؟
+                </h3>
+                <p className="text-xs text-gray-300">
+                  يقوم النظام بحساب كمية الكحول تلقائياً لإكمال سعة الزجاجة ({wizardData.bottleCapacity} مل)، مع إمكانية تعديلها.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Select Alcohol */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">اختر نوع الكحول/المذيب من المخزون:</label>
+                  <select
+                    value={wizardData.alcoholId}
+                    onChange={(e) => handleSelectAlcohol(e.target.value)}
+                    className="select-luxury w-full"
+                  >
+                    <option value="">-- اختر من مخزون الكحول والمذيبات --</option>
+                    {alcoholProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (المتوفر: {p.qty} {p.unit})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Alcohol Name */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">وصف أو نوع الكحول المستخدم:</label>
+                  <input
+                    type="text"
+                    value={wizardData.alcoholName}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, alcoholName: e.target.value }))}
+                    className="input-luxury w-full"
+                  />
+                </div>
+
+                {/* Alcohol ml per bottle */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">مقدار الكحول في الزجاجة (مل):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={wizardData.alcoholMlPerBottle}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, alcoholMlPerBottle: safeParseFloat(e.target.value, 0) }))}
+                    className="input-luxury w-full font-bold text-blue-300"
+                  />
+                </div>
+
+                {/* Alcohol Cost per ml */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">سعر تكلفة الـ مل من الكحول (د.ل):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={wizardData.alcoholCostPerMl}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, alcoholCostPerMl: safeParseFloat(e.target.value, 0) }))}
+                    className="input-luxury w-full"
+                  />
+                </div>
+              </div>
+
+              {/* Concentration Gauge Card */}
+              <div className="p-4 bg-black/30 border border-white/10 rounded-2xl space-y-2">
+                <div className="flex justify-between items-center text-xs font-bold">
+                  <span className="text-gray-300">تصنيف تركيز العطر الناتج:</span>
+                  <span className={`font-extrabold ${perfumeConcentrationGrade.color}`}>
+                    {perfumeConcentrationGrade.grade} ({oilConcentrationPercentage}% زيت نقي)
+                  </span>
+                </div>
+                <div className="w-full bg-gray-700 h-2.5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 via-emerald-500 to-amber-500"
+                    style={{ width: `${Math.min(100, Math.max(5, oilConcentrationPercentage))}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===================================================================== */}
+          {/* STEP 4: PERFUME NAME & PRICING */}
+          {/* ===================================================================== */}
+          {currentStep === 4 && (
+            <div className="space-y-5 animate-in fade-in duration-200">
+              <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl">
+                <h3 className="text-sm font-extrabold text-amber-300 mb-1 flex items-center gap-2">
+                  <DollarSign className="w-4 h-4" />
+                  السؤال الرابع: ما هو الاسم التجاري للعطر وسعر بيعه في المحل؟
+                </h3>
+                <p className="text-xs text-gray-300">
+                  اختر اسماً فريداً للخلطة ليتم إدراجها فورياً في المخزون تحت قسم "عطور مركبة / خلطات الدفة".
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Perfume Name */}
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-xs font-bold text-gray-300 block">
+                    اسم العطر المخلط الجديد <span className="text-red-400">*</span>:
+                  </label>
+                  <input
+                    type="text"
+                    value={wizardData.perfumeName}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, perfumeName: e.target.value }))}
+                    className="input-luxury w-full font-bold text-sm text-amber-300"
+                    placeholder="مثال: خلطة عود الصندل الملكية 50ml"
                     autoFocus
                   />
                 </div>
 
-                <div>
-                  <label className="text-sm text-gray-400 mb-1 block">سعة الزجاجة (ml)</label>
+                {/* Category */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">فئة المنتج في المخزون:</label>
+                  <input
+                    type="text"
+                    value={wizardData.category}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, category: e.target.value }))}
+                    className="input-luxury w-full"
+                  />
+                </div>
+
+                {/* Barcode */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">الباركود:</label>
+                  <input
+                    type="text"
+                    value={wizardData.barcode}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, barcode: e.target.value }))}
+                    className="input-luxury w-full font-mono"
+                  />
+                </div>
+
+                {/* Retail Price */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">سعر البيع قطاعي للمستهلك (د.ل):</label>
                   <input
                     type="number"
-                    value={bottleCapacity}
-                    onChange={(e) => setBottleCapacity(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
-                    min="1"
+                    step="1"
+                    min="0"
+                    value={wizardData.retailPrice}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, retailPrice: safeParseFloat(e.target.value, 0) }))}
+                    className="input-luxury w-full font-bold text-emerald-400"
                   />
                 </div>
 
-                <div>
-                  <label className="text-sm text-gray-400 mb-1 block">نسبة الزيت (%)</label>
-                  <input
-                    type="range"
-                    min="5"
-                    max="50"
-                    value={oilPercentage}
-                    onChange={(e) => setOilPercentage(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="text-center text-2xl font-bold text-purple-400 mt-2">
-                    {oilPercentage}%
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm text-gray-400 mb-1 block">عدد الزجاجات (الدفعة)</label>
+                {/* Wholesale Price */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">سعر البيع جملة (د.ل):</label>
                   <input
                     type="number"
-                    value={batchQuantity}
-                    onChange={(e) => setBatchQuantity(parseInt(e.target.value) || 1)}
-                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
-                    min="1"
+                    step="1"
+                    min="0"
+                    value={wizardData.wholesalePrice}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, wholesalePrice: safeParseFloat(e.target.value, 0) }))}
+                    className="input-luxury w-full font-bold text-amber-300"
                   />
-                </div>
-
-                <div>
-                  <label className="text-sm text-gray-400 mb-1 block">الزيت العطري *</label>
-                  <select
-                    value={selectedOil}
-                    onChange={(e) => setSelectedOil(e.target.value)}
-                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
-                  >
-                    <option value="">اختر زيت...</option>
-                    {loadingProducts ? (
-                      <option disabled>جاري التحميل...</option>
-                    ) : (
-                      oils.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} - متوفر: {p.qty}L
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-sm text-gray-400 mb-1 block">الكحول *</label>
-                  <select
-                    value={selectedAlcohol}
-                    onChange={(e) => setSelectedAlcohol(e.target.value)}
-                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
-                  >
-                    <option value="">اختر كحول...</option>
-                    {alcohols.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} - متوفر: {p.qty}L
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-sm text-gray-400 mb-1 block">الزجاجة *</label>
-                  <select
-                    value={selectedBottle}
-                    onChange={(e) => setSelectedBottle(e.target.value)}
-                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
-                  >
-                    <option value="">اختر زجاجة...</option>
-                    {bottles.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} - متوفر: {p.qty}
-                      </option>
-                    ))}
-                  </select>
                 </div>
               </div>
 
-              {/* Right Column: Calculator Display */}
-              <div className="bg-gray-800 p-6 rounded-lg">
-                <h3 className="text-xl font-bold text-gold mb-4 text-center">حاسبة التركيبة</h3>
+              {/* Live Cost & Margin Indicator */}
+              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex flex-wrap items-center justify-between gap-4 text-xs font-bold">
+                <div>
+                  <span className="text-gray-400 block">تكلفة الزجاجة المحسوبة:</span>
+                  <span className="text-white text-sm">{formatCurrency(unitTotalCost)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400 block">سعر البيع المقترح:</span>
+                  <span className="text-emerald-300 text-sm">{formatCurrency(wizardData.retailPrice)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400 block">صافي الربح المتوقع للزجاجة:</span>
+                  <span className="text-amber-300 text-sm">
+                    {formatCurrency(Math.max(0, wizardData.retailPrice - unitTotalCost))} (
+                    {unitTotalCost > 0 ? Math.round(((wizardData.retailPrice - unitTotalCost) / unitTotalCost) * 100) : 0}%)
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
-                <div className="space-y-4">
-                  <div className="bg-purple-600/20 p-4 rounded-lg border border-purple-400/30">
-                    <div className="text-sm text-gray-400 mb-1">الزيت العطري</div>
-                    <div className="text-3xl font-bold text-purple-400">
-                      {oilMl.toFixed(1)} ml
-                    </div>
-                    <div className="text-sm text-purple-300">
-                      {oilPercentage}% × {bottleCapacity}ml
-                    </div>
-                    <div className="text-xs text-gray-500 mt-2">
-                      إجمالي الدفعة: {(oilMl * batchQuantity / 1000).toFixed(2)}L
-                    </div>
-                  </div>
+          {/* ===================================================================== */}
+          {/* STEP 5: COMPREHENSIVE EDITABLE REVIEW SCREEN */}
+          {/* ===================================================================== */}
+          {currentStep === 5 && (
+            <div className="space-y-5 animate-in fade-in duration-200">
+              <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-2xl">
+                <h3 className="text-sm font-extrabold text-emerald-300 mb-1 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                  المرحلة الأخيرة: مراجعة شاملة لكافة بيانات الخلطة مع إمكانية التعديل
+                </h3>
+                <p className="text-xs text-gray-300">
+                  تأكد من صحة جميع البيانات والمقادير قبل الضغط على "اعتماد وحفظ في المخزون". يمكنك تعديل أي حقل مباشرة هنا.
+                </p>
+              </div>
 
-                  <div className="bg-blue-600/20 p-4 rounded-lg border border-blue-400/30">
-                    <div className="text-sm text-gray-400 mb-1">الكحول</div>
-                    <div className="text-3xl font-bold text-blue-400">
-                      {alcoholMl.toFixed(1)} ml
+              {/* Comprehensive Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Perfume Identity Card */}
+                <div className="p-4 bg-black/30 border border-amber-500/20 rounded-2xl space-y-3">
+                  <h4 className="text-xs font-bold text-amber-300 border-b border-white/10 pb-2">
+                    🏷️ بيانات وهوية العطر الجديد
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    <div>
+                      <span className="text-gray-400 block text-[11px]">اسم العطر:</span>
+                      <input
+                        type="text"
+                        value={wizardData.perfumeName}
+                        onChange={(e) => setWizardData((prev) => ({ ...prev, perfumeName: e.target.value }))}
+                        className="input-luxury w-full font-bold text-amber-300 py-1"
+                      />
                     </div>
-                    <div className="text-sm text-blue-300">
-                      {(100 - oilPercentage)}% × {bottleCapacity}ml
-                    </div>
-                    <div className="text-xs text-gray-500 mt-2">
-                      إجمالي الدفعة: {(alcoholMl * batchQuantity / 1000).toFixed(2)}L
-                    </div>
-                  </div>
-
-                  <div className="bg-gold/20 p-4 rounded-lg border border-gold/30">
-                    <div className="text-sm text-gray-400 mb-1">عدد الزجاجات</div>
-                    <div className="text-3xl font-bold text-gold">
-                      {batchQuantity}
-                    </div>
-                    <div className="text-sm text-gray-300">
-                      {bottleCapacity}ml لكل زجاجة
-                    </div>
-                  </div>
-
-                  {selectedOil && selectedAlcohol && selectedBottle && (() => {
-                    const oil = products.find(p => p.id === selectedOil);
-                    const alcohol = products.find(p => p.id === selectedAlcohol);
-                    const bottle = products.find(p => p.id === selectedBottle);
-                    const totalCost = (oil.cost * oilMl * batchQuantity / 1000) +
-                                     (alcohol.cost * alcoholMl * batchQuantity / 1000) +
-                                     (bottle.cost * batchQuantity);
-
-                    return (
-                      <div className="bg-green-600/20 p-4 rounded-lg border border-green-400/30">
-                        <div className="text-sm text-gray-400 mb-1">التكلفة الإجمالية</div>
-                        <div className="text-2xl font-bold text-green-400">
-                          {formatCurrency(totalCost)}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {formatCurrency(totalCost / batchQuantity)} للزجاجة
-                        </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">الكمية المنتجة (الدفعة):</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={wizardData.batchQuantity}
+                          onChange={(e) => setWizardData((prev) => ({ ...prev, batchQuantity: safeParseFloat(e.target.value, 1) }))}
+                          className="input-luxury w-full font-bold py-1"
+                        />
                       </div>
-                    );
-                  })()}
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">سعة الزجاجة:</span>
+                        <input
+                          type="number"
+                          value={wizardData.bottleCapacity}
+                          onChange={(e) => setWizardData((prev) => ({ ...prev, bottleCapacity: safeParseFloat(e.target.value, 50) }))}
+                          className="input-luxury w-full font-bold py-1"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">سعر البيع قطاعي:</span>
+                        <input
+                          type="number"
+                          value={wizardData.retailPrice}
+                          onChange={(e) => setWizardData((prev) => ({ ...prev, retailPrice: safeParseFloat(e.target.value, 0) }))}
+                          className="input-luxury w-full font-bold text-emerald-400 py-1"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">سعر البيع جملة:</span>
+                        <input
+                          type="number"
+                          value={wizardData.wholesalePrice}
+                          onChange={(e) => setWizardData((prev) => ({ ...prev, wholesalePrice: safeParseFloat(e.target.value, 0) }))}
+                          className="input-luxury w-full font-bold text-amber-300 py-1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recipe Breakdown Card */}
+                <div className="p-4 bg-black/30 border border-amber-500/20 rounded-2xl space-y-3">
+                  <h4 className="text-xs font-bold text-amber-300 border-b border-white/10 pb-2">
+                    🧪 مكونات التركيبة والمقادير
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between items-center py-1 border-b border-white/5">
+                      <span className="text-gray-400">الزجاجات:</span>
+                      <span className="font-bold text-white">
+                        {wizardData.bottleName} ({wizardData.batchQuantity} قطعة)
+                      </span>
+                    </div>
+                    <div className="py-1 border-b border-white/5">
+                      <span className="text-gray-400 block mb-1">الزيوت العطرية:</span>
+                      <div className="space-y-1 ps-2">
+                        {wizardData.oils.map((o, idx) => (
+                          <div key={idx} className="flex justify-between text-amber-300">
+                            <span>• {o.oilName || `زيت #${idx + 1}`}:</span>
+                            <span>{o.mlPerBottle} مل/زجاجة (إجمالي: {(o.mlPerBottle * wizardData.batchQuantity).toFixed(1)} مل)</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-white/5">
+                      <span className="text-gray-400">الكحول الإيثيلي:</span>
+                      <span className="font-bold text-blue-300">
+                        {wizardData.alcoholMlPerBottle} مل/زجاجة (إجمالي: {(wizardData.alcoholMlPerBottle * wizardData.batchQuantity).toFixed(1)} مل)
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 font-bold">
+                      <span className="text-gray-300">التكلفة الإجمالية للدفعة:</span>
+                      <span className="text-emerald-400 text-sm">{formatCurrency(batchTotalCost)}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
+          )}
 
-            <div className="flex gap-3 mt-6">
+          {/* Navigation Controls Slot */}
+          <div className="flex items-center justify-between pt-4 border-t border-white/10">
+            {currentStep > 1 ? (
               <button
-                onClick={saveFormula}
-                disabled={!formulaName || !selectedOil || !selectedAlcohol || !selectedBottle || saving}
-                className="flex-1 btn-gold py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                type="button"
+                onClick={handlePrevStep}
+                disabled={saving}
+                className="btn-secondary text-xs px-4 py-2.5 flex items-center gap-2 cursor-pointer"
               >
-                {saving ? '⏳ جاري الحفظ...' : '✅ حفظ وخصم المواد'}
+                <ArrowRight className="w-4 h-4" />
+                <span>الخطوة السابقة</span>
               </button>
+            ) : (
+              <div />
+            )}
+
+            {currentStep < 5 ? (
               <button
-                onClick={resetForm}
-                className="flex-1 bg-gray-700 text-white px-4 py-3 rounded-lg font-bold hover:bg-gray-600"
+                type="button"
+                onClick={handleNextStep}
+                className="btn-atelier-primary text-xs px-6 py-2.5 font-bold flex items-center gap-2 cursor-pointer"
               >
-                إلغاء
+                <span>متابعة الخطوة التالية</span>
+                <ArrowLeft className="w-4 h-4" />
               </button>
-            </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleFinalizeFormula}
+                disabled={saving}
+                className="btn-atelier-primary text-xs px-8 py-3 font-extrabold flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg cursor-pointer"
+              >
+                {saving ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>جاري حقن الخلطة في المخزون...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span>✅ اعتماد وحفظ الخلطة في المخزون فوراً</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
-      )}
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* PREVIEW FORMULA DETAILS MODAL */}
+      {/* ========================================================================= */}
+      <Modal
+        open={Boolean(activeFormulaPreview)}
+        onClose={() => setActiveFormulaPreview(null)}
+        title="تفاصيل ومقادير التركيبة العطرية"
+      >
+        {activeFormulaPreview && (
+          <div className="space-y-4 text-xs">
+            <div className="p-4 bg-black/30 border border-amber-500/20 rounded-2xl space-y-2">
+              <h3 className="text-base font-extrabold text-amber-300">
+                {activeFormulaPreview.name || activeFormulaPreview.title}
+              </h3>
+              <p className="text-gray-400">
+                تاريخ الإنتاج: {new Date(activeFormulaPreview.date).toLocaleDateString('ar-LY')}
+              </p>
+            </div>
+
+            <div className="space-y-2 bg-white/5 p-4 rounded-xl border border-white/10">
+              <div className="flex justify-between">
+                <span className="text-gray-400">سعة الزجاجة:</span>
+                <span className="font-bold">{activeFormulaPreview.bottleCapacity} مل</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">الدفعة المنتجة:</span>
+                <span className="font-bold">{activeFormulaPreview.batchQuantity} زجاجات</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">التكلفة الفردية للزجاجة:</span>
+                <span className="font-bold text-emerald-400">{formatCurrency(activeFormulaPreview.unitTotalCost)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">سعر البيع قطاعي:</span>
+                <span className="font-bold text-amber-300">{formatCurrency(activeFormulaPreview.retailPrice)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
