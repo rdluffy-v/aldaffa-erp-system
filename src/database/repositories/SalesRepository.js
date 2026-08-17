@@ -5,6 +5,7 @@
 
 import { BaseRepository } from './BaseRepository.js';
 import { db } from '../connection.js';
+import { safeParseFloat } from '../../utils/helpers.js';
 
 export class SalesRepository extends BaseRepository {
   constructor() {
@@ -15,26 +16,37 @@ export class SalesRepository extends BaseRepository {
    * Create sale with items in transaction
    */
   async createSaleWithItems(saleData, items) {
+    // 1. Insert sale master record first to get auto-incremented saleId
+    const saleResult = await this.create(saleData);
+    const saleId = saleResult?.lastInsertRowid;
+
+    if (!saleId) {
+      throw new Error('Failed to generate valid sale_id for new sale');
+    }
+
     const queries = [];
 
-    // Insert sale
-    const saleKeys = Object.keys(saleData);
-    const salePlaceholders = saleKeys.map(() => '?').join(', ');
-    queries.push({
-      sql: `INSERT INTO sales (${saleKeys.join(', ')}) VALUES (${salePlaceholders})`,
-      params: Object.values(saleData)
-    });
-
-    // Insert sale items
+    // 2. Insert sale items linked with sale_id
     for (const item of items) {
-      const itemKeys = Object.keys(item);
+      const itemToInsert = {
+        sale_id: saleId,
+        product_id: String(item.product_id),
+        name: item.name || 'منتج',
+        cart_qty: safeParseFloat(item.cart_qty, 1),
+        unit: item.unit || 'قطعة',
+        final_price: safeParseFloat(item.final_price, 0),
+        unit_cost: safeParseFloat(item.unit_cost, 0),
+        portion_ml: item.portion_ml || null
+      };
+
+      const itemKeys = Object.keys(itemToInsert);
       const itemPlaceholders = itemKeys.map(() => '?').join(', ');
       queries.push({
         sql: `INSERT INTO sale_items (${itemKeys.join(', ')}) VALUES (${itemPlaceholders})`,
-        params: Object.values(item)
+        params: Object.values(itemToInsert)
       });
 
-      // Update inventory
+      // 3. Deduct stock from inventory
       const qtyToDeduct = item.portion_ml
         ? (item.cart_qty * item.portion_ml / (item.capacity || 1))
         : item.cart_qty;
@@ -45,8 +57,12 @@ export class SalesRepository extends BaseRepository {
       });
     }
 
-    // Return transaction results so caller can access saleId
-    return await db.transaction(queries);
+    if (queries.length > 0) {
+      await db.transaction(queries);
+    }
+
+    // Return array matching existing caller contract
+    return [{ lastInsertRowid: saleId }, saleResult];
   }
 
   /**

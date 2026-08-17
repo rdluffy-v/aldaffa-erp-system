@@ -615,7 +615,9 @@ ipcMain.handle('db:run', async (event, { sql, params = [] }) => {
     const result = stmt.run(...params);
     return { success: true, data: result };
   } catch (error) {
-    console.error('Database run error:', error);
+    if (!error.message || !error.message.includes('duplicate column name')) {
+      console.error('Database run error:', error);
+    }
     return { success: false, error: error.message };
   }
 });

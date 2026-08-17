@@ -125,6 +125,7 @@ const PurchasesModule = () => {
     setPurchaseItems((prev) => [
       ...prev,
       {
+        id: generateId(),
         is_new: false,
         product_id: '',
         name: '',
@@ -145,6 +146,7 @@ const PurchasesModule = () => {
     setPurchaseItems((prev) => [
       ...prev,
       {
+        id: generateId(),
         is_new: true,
         product_id: '',
         name: '',
@@ -160,28 +162,31 @@ const PurchasesModule = () => {
   };
 
   const updatePurchaseItem = (index, field, value) => {
-    const updated = [...purchaseItems];
-    updated[index][field] = value;
+    setPurchaseItems((prev) => {
+      const updated = [...prev];
+      const currentItem = { ...updated[index], [field]: value };
 
-    if (field === 'product_id') {
-      const product = products.find((p) => String(p.id) === String(value));
-      if (product) {
-        updated[index].name = product.name;
-        updated[index].cost_per_unit = product.cost || 0;
-        updated[index].sell_price = product.price || 0;
-        updated[index].category = product.category || 'عطور';
-        updated[index].unit = product.unit || 'قطعة';
-        updated[index].barcode = product.barcode || '';
+      if (field === 'product_id') {
+        const product = products.find((p) => String(p.id) === String(value));
+        if (product) {
+          currentItem.name = product.name;
+          currentItem.cost_per_unit = product.cost || 0;
+          currentItem.sell_price = product.price || 0;
+          currentItem.category = product.category || 'عطور';
+          currentItem.unit = product.unit || 'قطعة';
+          currentItem.barcode = product.barcode || '';
+        }
       }
-    }
 
-    if (field === 'quantity' || field === 'cost_per_unit') {
-      const qty = safeParseFloat(updated[index].quantity, 0);
-      const cost = safeParseFloat(updated[index].cost_per_unit, 0);
-      updated[index].total_cost = qty * cost;
-    }
+      if (field === 'quantity' || field === 'cost_per_unit') {
+        const qty = safeParseFloat(currentItem.quantity, 0);
+        const cost = safeParseFloat(currentItem.cost_per_unit, 0);
+        currentItem.total_cost = qty * cost;
+      }
 
-    setPurchaseItems(updated);
+      updated[index] = currentItem;
+      return updated;
+    });
   };
 
   const removePurchaseItem = (index) => {
@@ -673,7 +678,7 @@ No additional text, only JSON.`
                   </thead>
                   <tbody className="divide-y divide-amber-500/10">
                     {purchaseItems.map((item, index) => (
-                      <tr key={index} className="hover:bg-amber-500/5 transition-colors">
+                      <tr key={item.id || index} className="hover:bg-amber-500/5 transition-colors">
                         <td className="p-2.5">
                           {item.is_new ? (
                             <div className="space-y-1">

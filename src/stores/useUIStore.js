@@ -18,6 +18,11 @@ const initialTheme = (() => {
 
 if (typeof document !== 'undefined') {
   document.documentElement.setAttribute('data-theme', initialTheme);
+  if (initialTheme === 'dark') {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
 }
 
 export const useUIStore = create((set, get) => ({
@@ -28,6 +33,11 @@ export const useUIStore = create((set, get) => ({
       localStorage.setItem('aldaffa_theme', newTheme);
       if (typeof document !== 'undefined') {
         document.documentElement.setAttribute('data-theme', newTheme);
+        if (newTheme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
       }
     } catch (e) {}
     set({ theme: newTheme });

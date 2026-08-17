@@ -9,43 +9,61 @@ import { generateId } from '../utils/helpers.js';
 
 export class SandboxEngine {
   /**
-   * Ensure all non-destructive schema columns exist across tables
+   * Ensure all non-destructive schema columns exist across tables using PRAGMA check
    */
   static async ensureSchema() {
-    const migrationStatements = [
-      "ALTER TABLE inventory ADD COLUMN barcode TEXT",
-      "ALTER TABLE inventory ADD COLUMN min_qty REAL DEFAULT 5",
-      "ALTER TABLE inventory ADD COLUMN is_demo INTEGER DEFAULT 0",
-      "ALTER TABLE inventory ADD COLUMN image_url TEXT",
-      "ALTER TABLE inventory ADD COLUMN discount_rate REAL DEFAULT 0",
-      "ALTER TABLE inventory ADD COLUMN wholesale_price REAL DEFAULT 0",
-      "ALTER TABLE inventory ADD COLUMN original_price REAL DEFAULT 0",
-      "ALTER TABLE inventory ADD COLUMN capacity REAL DEFAULT 0",
-      "ALTER TABLE sales ADD COLUMN discount_type TEXT DEFAULT 'percentage'",
-      "ALTER TABLE sales ADD COLUMN is_demo INTEGER DEFAULT 0",
-      "ALTER TABLE sales ADD COLUMN type TEXT DEFAULT 'store'",
-      "ALTER TABLE sales ADD COLUMN debtor_id TEXT",
-      "ALTER TABLE sales ADD COLUMN customer_name TEXT",
-      "ALTER TABLE sales ADD COLUMN phone TEXT",
-      "ALTER TABLE sales ADD COLUMN notes TEXT",
-      "ALTER TABLE sale_items ADD COLUMN is_demo INTEGER DEFAULT 0",
-      "ALTER TABLE sale_items ADD COLUMN unit_cost REAL DEFAULT 0",
-      "ALTER TABLE sale_items ADD COLUMN portion_ml REAL",
-      "ALTER TABLE purchases ADD COLUMN invoice_ref TEXT",
-      "ALTER TABLE purchases ADD COLUMN payment_type TEXT DEFAULT 'cash'",
-      "ALTER TABLE purchases ADD COLUMN notes TEXT",
-      "ALTER TABLE purchases ADD COLUMN is_demo INTEGER DEFAULT 0",
-      "ALTER TABLE debtors ADD COLUMN is_demo INTEGER DEFAULT 0",
-      "ALTER TABLE debt_history ADD COLUMN is_demo INTEGER DEFAULT 0",
-      "ALTER TABLE debt_history ADD COLUMN invoice_id INTEGER"
-    ];
+    const tableColumns = {
+      inventory: [
+        { name: 'barcode', type: 'TEXT' },
+        { name: 'min_qty', type: 'REAL DEFAULT 5' },
+        { name: 'is_demo', type: 'INTEGER DEFAULT 0' },
+        { name: 'image_url', type: 'TEXT' },
+        { name: 'discount_rate', type: 'REAL DEFAULT 0' },
+        { name: 'wholesale_price', type: 'REAL DEFAULT 0' },
+        { name: 'original_price', type: 'REAL DEFAULT 0' },
+        { name: 'capacity', type: 'REAL DEFAULT 0' }
+      ],
+      sales: [
+        { name: 'discount_type', type: "TEXT DEFAULT 'percentage'" },
+        { name: 'is_demo', type: 'INTEGER DEFAULT 0' },
+        { name: 'type', type: "TEXT DEFAULT 'store'" },
+        { name: 'debtor_id', type: 'TEXT' },
+        { name: 'customer_name', type: 'TEXT' },
+        { name: 'phone', type: 'TEXT' },
+        { name: 'notes', type: 'TEXT' }
+      ],
+      sale_items: [
+        { name: 'is_demo', type: 'INTEGER DEFAULT 0' },
+        { name: 'unit_cost', type: 'REAL DEFAULT 0' },
+        { name: 'portion_ml', type: 'REAL' }
+      ],
+      purchases: [
+        { name: 'invoice_ref', type: 'TEXT' },
+        { name: 'payment_type', type: "TEXT DEFAULT 'cash'" },
+        { name: 'notes', type: 'TEXT' },
+        { name: 'is_demo', type: 'INTEGER DEFAULT 0' }
+      ],
+      debtors: [
+        { name: 'is_demo', type: 'INTEGER DEFAULT 0' }
+      ],
+      debt_history: [
+        { name: 'is_demo', type: 'INTEGER DEFAULT 0' },
+        { name: 'invoice_id', type: 'INTEGER' }
+      ]
+    };
 
-    for (const sql of migrationStatements) {
+    for (const [table, columns] of Object.entries(tableColumns)) {
       try {
-        await db.run(sql);
-      } catch (e) {
-        // Column already exists or table not ready, safely continue
-      }
+        const info = await db.query(`PRAGMA table_info(${table})`);
+        const existingColNames = (info || []).map(c => c.name);
+        for (const col of columns) {
+          if (!existingColNames.includes(col.name)) {
+            try {
+              await db.run(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.type}`);
+            } catch (e) {}
+          }
+        }
+      } catch (e) {}
     }
 
     try {

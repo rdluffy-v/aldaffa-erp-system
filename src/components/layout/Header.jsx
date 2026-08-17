@@ -75,10 +75,10 @@ const Header = ({ children }) => {
         {/* Brand Logo & Emblem */}
         <div className="flex items-center gap-2.5">
           <div className="text-right leading-tight">
-            <h1 className="text-base font-extrabold text-[#2D2424] dark:text-[#F3F4F6] tracking-tight">
+            <h1 className="text-base font-extrabold text-[var(--text-primary)] dark:text-[#F3F4F6] tracking-tight transition-colors duration-200">
               الدفة للعطور
             </h1>
-            <p className="text-[9px] font-bold text-[#8C827A] dark:text-amber-400/70 tracking-[0.2em] uppercase">
+            <p className="text-[9px] font-bold text-[var(--text-muted)] dark:text-amber-400/80 tracking-[0.2em] uppercase transition-colors duration-200">
               ALDAFFA PERFUMES ERP
             </p>
           </div>

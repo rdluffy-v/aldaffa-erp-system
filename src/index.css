@@ -252,21 +252,57 @@ body {
   transform: translateY(-1px);
 }
 
-/* Inputs & Form Controls */
-.input-atelier {
-  background: var(--surface-card);
-  border: 1px solid var(--surface-card-border);
-  color: var(--text-primary);
-  border-radius: 1rem;
-  padding: 0.65rem 1rem;
+/* Inputs & Form Controls - High Contrast in Both Themes */
+.input-atelier,
+.input-luxury,
+input.input-atelier,
+input.input-luxury,
+select.input-atelier,
+select.select-luxury,
+.select-luxury,
+textarea.input-atelier,
+textarea.input-luxury {
+  background: var(--surface-card) !important;
+  border: 1px solid var(--surface-card-border) !important;
+  color: var(--text-primary) !important;
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.9rem;
   outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
   font-family: inherit;
+  font-size: 0.85rem;
 }
 
-.input-atelier:focus {
-  border-color: var(--accent-amber);
-  box-shadow: 0 0 0 3px var(--accent-amber-bg);
+.input-atelier::placeholder,
+.input-luxury::placeholder {
+  color: var(--text-muted) !important;
+  opacity: 0.7;
+}
+
+.input-atelier:focus,
+.input-luxury:focus,
+.select-luxury:focus,
+select.input-atelier:focus {
+  border-color: var(--accent-amber) !important;
+  box-shadow: 0 0 0 3px var(--accent-amber-bg) !important;
+}
+
+/* Modal and Card native form controls fallback */
+.modal-box input:not([type="checkbox"]):not([type="radio"]),
+.modal-box select,
+.modal-box textarea,
+.glass-card input:not([type="checkbox"]):not([type="radio"]),
+.glass-card select,
+.atelier-card input:not([type="checkbox"]):not([type="radio"]),
+.atelier-card select {
+  background: var(--surface-card);
+  color: var(--text-primary);
+  border-color: var(--surface-card-border);
+}
+
+select option {
+  background: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
 }
 
 /* Elegant Scrollbars */
