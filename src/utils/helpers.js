@@ -236,3 +236,23 @@ export const getDateRange = (period) => {
     end: end.toISOString()
   };
 };
+
+/**
+ * Generate a valid, scanner-compatible EAN-13 or standard numeric barcode
+ * @param {string} prefix - 3-digit prefix (default: '628')
+ * @returns {string} 13-digit standard valid barcode
+ */
+export const generateValidBarcode = (prefix = '628') => {
+  const cleanPrefix = String(prefix).replace(/\D/g, '').slice(0, 3).padEnd(3, '6');
+  const timePart = Date.now().toString().slice(-6);
+  const randPart = Math.floor(100 + Math.random() * 900).toString();
+  const raw12 = `${cleanPrefix}${timePart}${randPart}`.slice(0, 12).padEnd(12, '0');
+
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    const digit = parseInt(raw12[i], 10);
+    sum += i % 2 === 0 ? digit : digit * 3;
+  }
+  const checkDigit = (10 - (sum % 10)) % 10;
+  return `${raw12}${checkDigit}`;
+};

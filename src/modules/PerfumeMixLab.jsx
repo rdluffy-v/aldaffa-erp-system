@@ -16,39 +16,51 @@ import {
   SlidersHorizontal,
   RefreshCw,
   Search,
-  BookOpen
+  BookOpen,
+  HelpCircle,
+  Clock,
+  MapPin,
+  Tag,
+  Compass,
+  ShieldCheck
 } from 'lucide-react';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
 import { NotesRepository } from '../database/repositories/NotesRepository.js';
 import { useUIStore } from '../stores/useUIStore.js';
-import { formatCurrency, generateId, safeParseFloat } from '../utils/helpers.js';
+import { formatCurrency, generateId, safeParseFloat, generateValidBarcode } from '../utils/helpers.js';
 import Modal from '../components/ui/Modal.jsx';
 
 const inventoryRepo = new InventoryRepository();
 const notesRepo = new NotesRepository();
 
 const DEFAULT_WIZARD_DATA = {
-  // Step 1: Bottles
+  // Step 1: Bottles & Batch
   bottleId: '',
   bottleName: 'زجاجة عطر قياسية',
   bottleCapacity: 50, // ml
   batchQuantity: 1, // number of bottles
   bottleCost: 5,
+  batchNumber: '', // optional
+  storageLocation: '', // optional
   // Step 2: Fragrance Oils (supports multi-oil blends)
   oils: [
     { oilId: '', oilName: '', mlPerBottle: 15, percentage: 30, unitCostPerMl: 0.8 }
   ],
+  purityGrade: 'درجة أولى نقية 100%', // optional
   // Step 3: Alcohol & Solvents
   alcoholId: '',
   alcoholName: 'كحول إيثيلي نقي 96%',
   alcoholMlPerBottle: 35,
   alcoholCostPerMl: 0.05,
+  fixativeType: 'مثبت عطري نقي', // optional
   // Step 4: Perfume Identity & Pricing
   perfumeName: '',
   category: 'عطور مركبة / خلطات الدفة',
   retailPrice: 90,
   wholesalePrice: 75,
-  barcode: '',
+  barcode: '', // optional (auto-generated on wizard open)
+  macerationPeriod: 'أسبوعين إلى شهر', // optional
+  scentNotes: 'افتتاحية منعشة، قلب زهري فواح، قاعدة خشبية عنبرية ثقيلة', // optional
   notes: ''
 };
 
@@ -182,13 +194,19 @@ const PerfumeMixLabModule = () => {
 
   // Open Wizard for new formula
   const openNewWizard = () => {
-    const autoBarcode = `MIX${Date.now().toString().slice(-6)}${Math.floor(100 + Math.random() * 900)}`;
+    const validBarcode = generateValidBarcode('628');
     setWizardData({
       ...DEFAULT_WIZARD_DATA,
-      barcode: autoBarcode
+      barcode: validBarcode
     });
     setCurrentStep(1);
     setWizardOpen(true);
+  };
+
+  const handleRegenerateBarcode = () => {
+    const code = generateValidBarcode('628');
+    setWizardData((prev) => ({ ...prev, barcode: code }));
+    showSuccess(`تم توليد باركود قياسي صالح للخلطة: ${code}`);
   };
 
   // Step 1: Select Bottle Handler
@@ -314,6 +332,17 @@ const PerfumeMixLabModule = () => {
     try {
       const newProductId = generateId();
       const formulaId = generateId();
+      const finalBarcode = (wizardData.barcode || '').trim() || generateValidBarcode('628');
+
+      const notesArray = [
+        wizardData.notes ? wizardData.notes.trim() : null,
+        wizardData.batchNumber ? `رقم الدفعة: ${wizardData.batchNumber.trim()}` : null,
+        wizardData.storageLocation ? `الموقع: ${wizardData.storageLocation.trim()}` : null,
+        wizardData.macerationPeriod ? `فترة التعتيق: ${wizardData.macerationPeriod.trim()}` : null,
+        wizardData.scentNotes ? `نوتات العطر: ${wizardData.scentNotes.trim()}` : null,
+        wizardData.purityGrade ? `النقاء: ${wizardData.purityGrade.trim()}` : null,
+        `خلطة مخصصة تم إنتاجها في مختبر الدفة - ${wizardData.batchQuantity} زجاجات`
+      ].filter(Boolean);
 
       // 1. Create the new finished perfume product in inventory
       await inventoryRepo.create({
@@ -326,9 +355,9 @@ const PerfumeMixLabModule = () => {
         wholesale_price: safeParseFloat(wizardData.wholesalePrice, 0),
         unit: 'قطعة',
         capacity: safeParseFloat(wizardData.bottleCapacity, 50),
-        barcode: wizardData.barcode || `MIX${Date.now().toString().slice(-6)}`,
+        barcode: finalBarcode,
         min_qty: 3,
-        notes: `تركيبة مخلطة تم إنتاجها في مختبر الدفة - ${wizardData.batchQuantity} زجاجات`
+        notes: notesArray.join(' | ')
       });
 
       // 2. Deduct raw materials from inventory if linked to actual inventory records
@@ -367,6 +396,12 @@ const PerfumeMixLabModule = () => {
         date: new Date().toISOString(),
         bottleCapacity: wizardData.bottleCapacity,
         batchQuantity: wizardData.batchQuantity,
+        batchNumber: wizardData.batchNumber,
+        storageLocation: wizardData.storageLocation,
+        purityGrade: wizardData.purityGrade,
+        fixativeType: wizardData.fixativeType,
+        macerationPeriod: wizardData.macerationPeriod,
+        scentNotes: wizardData.scentNotes,
         bottle: { id: wizardData.bottleId, name: wizardData.bottleName, cost: wizardData.bottleCost },
         oils: wizardData.oils,
         alcohol: { id: wizardData.alcoholId, name: wizardData.alcoholName, ml: wizardData.alcoholMlPerBottle },
@@ -374,7 +409,7 @@ const PerfumeMixLabModule = () => {
         batchTotalCost,
         retailPrice: wizardData.retailPrice,
         wholesalePrice: wizardData.wholesalePrice,
-        barcode: wizardData.barcode,
+        barcode: finalBarcode,
         notes: wizardData.notes
       };
 
@@ -387,7 +422,7 @@ const PerfumeMixLabModule = () => {
       });
 
       showSuccess(
-        `✅ تم اعتماد الخلطة بنجاح!\n\nتمت إضافة "${wizardData.perfumeName}" إلى المخزون (${wizardData.batchQuantity} زجاجة) وخصم المواد الخام المستهلكة.`
+        `✅ تم اعتماد الخلطة بنجاح!\n\nتمت إضافة "${wizardData.perfumeName}" إلى المخزون (${wizardData.batchQuantity} زجاجة) وتحديث المواد الخام.`
       );
 
       setWizardOpen(false);
@@ -612,7 +647,7 @@ const PerfumeMixLabModule = () => {
                   السؤال الأول: ما هي الزجاجات التي ستستخدمها وكم عدد العبوات المراد إنتاجها؟
                 </h3>
                 <p className="text-xs text-gray-300">
-                  حدد نوع الزجاجة من المخزون وسعتها الإجمالية (مثال: 50ml أو 100ml) والعدد الإجمالي للزجاجات في هذه الدفعة.
+                  💡 <span className="font-bold">شرح:</span> حدد نوع الزجاجة من المخزون وسعتها الإجمالية (مثال: 50ml أو 100ml) والعدد المطلوب تصنيعه في هذه الدفعة ليقوم النظام بحساب إجمالي السوائل تلقائياً.
                 </p>
               </div>
 
@@ -713,6 +748,20 @@ const PerfumeMixLabModule = () => {
                     className="input-luxury w-full"
                   />
                 </div>
+
+                {/* Optional Batch Details */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">
+                    رقم الدفعة / التشغيلة <span className="text-gray-500 font-normal">(اختياري)</span>:
+                  </label>
+                  <input
+                    type="text"
+                    value={wizardData.batchNumber}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, batchNumber: e.target.value }))}
+                    className="input-luxury w-full text-xs"
+                    placeholder="مثال: BATCH-MIX-01"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -722,20 +771,20 @@ const PerfumeMixLabModule = () => {
           {/* ===================================================================== */}
           {currentStep === 2 && (
             <div className="space-y-5 animate-in fade-in duration-200">
-              <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex items-center justify-between gap-4">
+              <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
                   <h3 className="text-sm font-extrabold text-amber-300 mb-1 flex items-center gap-2">
                     <Droplets className="w-4 h-4" />
                     السؤال الثاني: ما هي الزيوت العطرية التي ستستعملها وكم مقدار كل زيت؟
                   </h3>
                   <p className="text-xs text-gray-300">
-                    يمكنك مزج زيت واحد أو عدة زيوت، وتحديد الجرعة بالمل لكل زجاجة بسعة ({wizardData.bottleCapacity} مل).
+                    💡 <span className="font-bold">شرح:</span> حدد الزيوت العطرية والكمية بالملّ لكل زجاجة بسعة ({wizardData.bottleCapacity} مل). يقوم النظام بحساب إجمالي الزيوت المستهلكة للدفعة كاملة وتكلفتها بدقة.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={handleAddOilSlot}
-                  className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1 shrink-0 cursor-pointer"
+                  className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1 shrink-0 cursor-pointer font-bold"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>إضافة زيت آخر للمزيج</span>
@@ -814,14 +863,30 @@ const PerfumeMixLabModule = () => {
                 ))}
               </div>
 
-              {/* Oil Summary Pill */}
-              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-between text-xs font-bold">
-                <span className="text-amber-300">
-                  إجمالي الزيوت في الزجاجة ({wizardData.bottleCapacity} مل):
-                </span>
-                <span className="text-white">
-                  {totalOilMlPerBottle} مل ({oilConcentrationPercentage}%) — إجمالي الدفعة: {(totalOilMlPerBottle * wizardData.batchQuantity).toFixed(1)} مل
-                </span>
+              {/* Oil Summary Pill & Optional Purity */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-between text-xs font-bold">
+                  <span className="text-amber-300">
+                    إجمالي الزيوت في الزجاجة ({wizardData.bottleCapacity} مل):
+                  </span>
+                  <span className="text-white">
+                    {totalOilMlPerBottle} مل ({oilConcentrationPercentage}%) — إجمالي الدفعة: {(totalOilMlPerBottle * wizardData.batchQuantity).toFixed(1)} مل
+                  </span>
+                </div>
+
+                <div className="p-3 bg-black/20 border border-white/10 rounded-xl flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div className="flex-1">
+                    <label className="text-[10px] text-gray-400 block font-bold">درجة النقاء والمصدر <span className="text-gray-500 font-normal">(اختياري)</span>:</label>
+                    <input
+                      type="text"
+                      value={wizardData.purityGrade}
+                      onChange={(e) => setWizardData((prev) => ({ ...prev, purityGrade: e.target.value }))}
+                      className="input-luxury w-full py-0.5 text-xs"
+                      placeholder="مثال: درجة أولى نقية 100% فرنسية"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -837,7 +902,7 @@ const PerfumeMixLabModule = () => {
                   السؤال الثالث: كم مقدار الكحول والمذيب الذي سيتم وضعه لإكمال السعة؟
                 </h3>
                 <p className="text-xs text-gray-300">
-                  يقوم النظام بحساب كمية الكحول تلقائياً لإكمال سعة الزجاجة ({wizardData.bottleCapacity} مل)، مع إمكانية تعديلها.
+                  💡 <span className="font-bold">شرح:</span> يتم احتساب الكحول المتبقي تلقائياً لإكمال سعة العبوة ({wizardData.bottleCapacity} مل)، مع تحديد درجة تركيز وثبات العطر الناتجة فوراً في المؤشر الذكي.
                 </p>
               </div>
 
@@ -897,6 +962,20 @@ const PerfumeMixLabModule = () => {
                 </div>
               </div>
 
+              {/* Optional Fixative Field */}
+              <div className="p-3 bg-black/20 border border-white/10 rounded-xl">
+                <label className="text-xs font-bold text-gray-300 block mb-1">
+                  المثبت أو المذيب الإضافي المستخدم <span className="text-gray-500 font-normal">(اختياري)</span>:
+                </label>
+                <input
+                  type="text"
+                  value={wizardData.fixativeType}
+                  onChange={(e) => setWizardData((prev) => ({ ...prev, fixativeType: e.target.value }))}
+                  className="input-luxury w-full text-xs"
+                  placeholder="مثال: مثبت مسك غزال نقي أو جلسرين طبي"
+                />
+              </div>
+
               {/* Concentration Gauge Card */}
               <div className="p-4 bg-black/30 border border-white/10 rounded-2xl space-y-2">
                 <div className="flex justify-between items-center text-xs font-bold">
@@ -926,7 +1005,7 @@ const PerfumeMixLabModule = () => {
                   السؤال الرابع: ما هو الاسم التجاري للعطر وسعر بيعه في المحل؟
                 </h3>
                 <p className="text-xs text-gray-300">
-                  اختر اسماً فريداً للخلطة ليتم إدراجها فورياً في المخزون تحت قسم "عطور مركبة / خلطات الدفة".
+                  💡 <span className="font-bold">شرح:</span> اختر اسماً مميزاً للخلطة وسعر البيع للجمهور، وسيقوم النظام فوراً باحتساب هامش الربح وصافي الأرباح المتوقعة، مع إمكانية توليد باركود قياسي أو تركه اختيارياً.
                 </p>
               </div>
 
@@ -957,15 +1036,29 @@ const PerfumeMixLabModule = () => {
                   />
                 </div>
 
-                {/* Barcode */}
+                {/* Barcode with Quick Generator */}
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-300 block">الباركود:</label>
-                  <input
-                    type="text"
-                    value={wizardData.barcode}
-                    onChange={(e) => setWizardData((prev) => ({ ...prev, barcode: e.target.value }))}
-                    className="input-luxury w-full font-mono"
-                  />
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-gray-300">
+                      الباركود <span className="text-gray-500 font-normal">(اختياري)</span>:
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleRegenerateBarcode}
+                      className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer font-bold"
+                    >
+                      <span>⚡ توليد باركود قياسي</span>
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={wizardData.barcode}
+                      onChange={(e) => setWizardData((prev) => ({ ...prev, barcode: e.target.value }))}
+                      className="input-luxury w-full font-mono text-xs"
+                      placeholder="باركود صالح للمسح..."
+                    />
+                  </div>
                 </div>
 
                 {/* Retail Price */}
@@ -991,6 +1084,34 @@ const PerfumeMixLabModule = () => {
                     value={wizardData.wholesalePrice}
                     onChange={(e) => setWizardData((prev) => ({ ...prev, wholesalePrice: safeParseFloat(e.target.value, 0) }))}
                     className="input-luxury w-full font-bold text-amber-300"
+                  />
+                </div>
+
+                {/* Optional Scent Notes */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">
+                    نوتات العطر الهرمية <span className="text-gray-500 font-normal">(اختياري)</span>:
+                  </label>
+                  <input
+                    type="text"
+                    value={wizardData.scentNotes}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, scentNotes: e.target.value }))}
+                    className="input-luxury w-full text-xs"
+                    placeholder="افتتاحية، قلب، قاعدة..."
+                  />
+                </div>
+
+                {/* Optional Maceration Period */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-300 block">
+                    فترة التعتيق الموصى بها <span className="text-gray-500 font-normal">(اختياري)</span>:
+                  </label>
+                  <input
+                    type="text"
+                    value={wizardData.macerationPeriod}
+                    onChange={(e) => setWizardData((prev) => ({ ...prev, macerationPeriod: e.target.value }))}
+                    className="input-luxury w-full text-xs"
+                    placeholder="مثال: أسبوعين في مكان بارد ومظلم"
                   />
                 </div>
               </div>
@@ -1027,7 +1148,7 @@ const PerfumeMixLabModule = () => {
                   المرحلة الأخيرة: مراجعة شاملة لكافة بيانات الخلطة مع إمكانية التعديل
                 </h3>
                 <p className="text-xs text-gray-300">
-                  تأكد من صحة جميع البيانات والمقادير قبل الضغط على "اعتماد وحفظ في المخزون". يمكنك تعديل أي حقل مباشرة هنا.
+                  💡 <span className="font-bold">شرح:</span> راجع كافة تفاصيل ومكونات الخلطة مع إمكانية التعديل المباشر لأي حقل، ثم اضغط على "اعتماد وحفظ الخلطة" لخصم المواد الخام وحقن العطر فوراً في المخزون.
                 </p>
               </div>
 
@@ -1035,8 +1156,15 @@ const PerfumeMixLabModule = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Perfume Identity Card */}
                 <div className="p-4 bg-black/30 border border-amber-500/20 rounded-2xl space-y-3">
-                  <h4 className="text-xs font-bold text-amber-300 border-b border-white/10 pb-2">
-                    🏷️ بيانات وهوية العطر الجديد
+                  <h4 className="text-xs font-bold text-amber-300 border-b border-white/10 pb-2 flex items-center justify-between">
+                    <span>🏷️ بيانات وهوية العطر الجديد</span>
+                    <button
+                      type="button"
+                      onClick={handleRegenerateBarcode}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      توليد باركود جديد ⚡
+                    </button>
                   </h4>
                   <div className="space-y-2 text-xs">
                     <div>
@@ -1060,7 +1188,7 @@ const PerfumeMixLabModule = () => {
                         />
                       </div>
                       <div>
-                        <span className="text-gray-400 block text-[11px]">سعة الزجاجة:</span>
+                        <span className="text-gray-400 block text-[11px]">سعة الزجاجة (مل):</span>
                         <input
                           type="number"
                           value={wizardData.bottleCapacity}
@@ -1071,7 +1199,7 @@ const PerfumeMixLabModule = () => {
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <span className="text-gray-400 block text-[11px]">سعر البيع قطاعي:</span>
+                        <span className="text-gray-400 block text-[11px]">سعر البيع قطاعي (د.ل):</span>
                         <input
                           type="number"
                           value={wizardData.retailPrice}
@@ -1080,7 +1208,7 @@ const PerfumeMixLabModule = () => {
                         />
                       </div>
                       <div>
-                        <span className="text-gray-400 block text-[11px]">سعر البيع جملة:</span>
+                        <span className="text-gray-400 block text-[11px]">سعر البيع جملة (د.ل):</span>
                         <input
                           type="number"
                           value={wizardData.wholesalePrice}
@@ -1088,6 +1216,15 @@ const PerfumeMixLabModule = () => {
                           className="input-luxury w-full font-bold text-amber-300 py-1"
                         />
                       </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 block text-[11px]">الباركود:</span>
+                      <input
+                        type="text"
+                        value={wizardData.barcode}
+                        onChange={(e) => setWizardData((prev) => ({ ...prev, barcode: e.target.value }))}
+                        className="input-luxury w-full font-mono text-[11px] py-1"
+                      />
                     </div>
                   </div>
                 </div>
@@ -1121,6 +1258,12 @@ const PerfumeMixLabModule = () => {
                         {wizardData.alcoholMlPerBottle} مل/زجاجة (إجمالي: {(wizardData.alcoholMlPerBottle * wizardData.batchQuantity).toFixed(1)} مل)
                       </span>
                     </div>
+                    {wizardData.macerationPeriod && (
+                      <div className="flex justify-between items-center py-1 border-b border-white/5 text-[11px]">
+                        <span className="text-gray-400">فترة التعتيق:</span>
+                        <span className="text-amber-200">{wizardData.macerationPeriod}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center pt-2 font-bold">
                       <span className="text-gray-300">التكلفة الإجمالية للدفعة:</span>
                       <span className="text-emerald-400 text-sm">{formatCurrency(batchTotalCost)}</span>
