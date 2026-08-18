@@ -3,7 +3,8 @@ node_modules/
 
 # Built assets
 dist/
-release/
+release/*
+!release/latest-linux.yml
 build/
 
 # Environment variables

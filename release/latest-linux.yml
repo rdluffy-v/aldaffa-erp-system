@@ -1,0 +1,8 @@
+version: 2.3.5
+files:
+  - url: aldaffa-app-desktop_2.3.5_amd64.deb
+    sha512: gVzTJMhwOOr2lf3TbODOTZYYlFLZ2unxYr81BjM7Dgz5pNkdPLomWXaAOHeNfYhQUkP8N+xq8E1/T7kAHlJATw==
+    size: 116656372
+path: aldaffa-app-desktop_2.3.5_amd64.deb
+sha512: gVzTJMhwOOr2lf3TbODOTZYYlFLZ2unxYr81BjM7Dgz5pNkdPLomWXaAOHeNfYhQUkP8N+xq8E1/T7kAHlJATw==
+releaseDate: "2026-08-18T22:10:23.209Z"
