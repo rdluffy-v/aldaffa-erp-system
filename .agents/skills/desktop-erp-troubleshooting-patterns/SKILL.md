@@ -183,3 +183,23 @@ For private GitHub repositories or restricted CI/CD environments where electron-
    openssl dgst -sha512 -binary release/app.deb | base64
    ```
 3. **Direct Asset Streaming via GitHub REST API**: Use direct HTTPS uploads to `https://uploads.github.com/repos/{owner}/{repo}/releases/{release_id}/assets` for full reliability.
+
+---
+
+## 8. Interactive Purchasing & Receiving Wizard with Automated Post-Commit Barcode Studio
+
+### The Problem
+Traditional flat ERP purchase forms overwhelm operators with 15+ simultaneous input fields, lead to input errors, and require cumbersome manual navigation to print barcodes after receiving stock. Text placeholder barcodes (`||| |||| ||`) cannot be read by physical optical/laser scanners.
+
+### The Solution & Pattern
+1. **Interactive 4-Step Progressive State Machine**:
+   - **Step 1 (Supplier & Invoice Metadata)**: Supplier name, phone (optional), supplier invoice reference, purchase date, payment method (cash/card/bank/debt).
+   - **Step 2 (Products, Units & Quantities)**: Existing stock selection or new item creation, rich perfume unit selector (`قطعة`, `زجاجة`, `مل`, `لتر`, `تولة`, `جرام`, `كرتونة`), real-time stock indicator, unit cost, suggested retail price, and valid standard barcode generator.
+   - **Step 3 (Storage, Batch & Quality Metadata)**: Batch/lot number, warehouse shelf location, expiry date, delivery notes.
+   - **Step 4 (Comprehensive Review & Grand Total)**: Full summary review card before transactional database commit.
+2. **Automated Post-Commit Barcode Studio**:
+   - Immediately upon committing the invoice, automatically open the dedicated Barcode Studio with all line items pre-populated.
+   - Operators can toggle which items to print, adjust exact label counts per item (`+` / `-`), or use 1-click presets (`same as invoice qty` / `1 sticker per item`).
+3. **100% Offline True Vector Scannable Barcode Standard**:
+   - Never use fake text characters or CSS font approximations.
+   - Use clean, mathematically compliant SVG vector renderers (Code-128B / EAN-13) with precise module widths, quiet zones, high contrast (`#FFFFFF` background, `#000000` bars), and crisp edge rendering for guaranteed laser/CCD scanner readability on 50x30mm thermal rolls and A4 sheets.
