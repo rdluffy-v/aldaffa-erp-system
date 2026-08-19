@@ -43,6 +43,7 @@ import {
   Clock,
   Compass
 } from 'lucide-react';
+import { BarcodeSVG } from '../utils/barcodeGenerator.jsx';
 
 import { SandboxEngine } from '../database/SandboxEngine.js';
 import { SettingsRepository } from '../database/repositories/SettingsRepository.js';
@@ -1515,9 +1516,8 @@ const SettingsModule = () => {
                       </div>
 
                       {printSettings.showBarcode && (
-                        <div className="text-center my-3 text-[9px] tracking-widest bg-gray-100 py-1 rounded">
-                          ||| | ||||| ||| |||| |||| ||
-                          <div>*ALDAFFA-2026*</div>
+                        <div className="flex justify-center my-3 bg-white p-1 rounded">
+                          <BarcodeSVG value="ALDAFFA-2026" width={140} height={42} showText={true} />
                         </div>
                       )}
 
