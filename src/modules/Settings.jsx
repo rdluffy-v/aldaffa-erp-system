@@ -764,13 +764,28 @@ const SettingsModule = () => {
   const handleSaveAiSettings = async () => {
     setSaving(true);
     try {
+      const providerUrls = {
+        openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+        deepseek: 'https://api.deepseek.com/chat/completions',
+        gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+        groq: 'https://api.groq.com/openai/v1/chat/completions',
+        openai: 'https://api.openai.com/v1/chat/completions',
+        ollama: 'http://localhost:11434/v1/chat/completions',
+        custom: 'https://api.together.xyz/v1/chat/completions'
+      };
+
+      const targetUrl = providerUrls[aiProvider] || 'https://openrouter.ai/api/v1/chat/completions';
+
       await Promise.all([
         settingsRepo.setSetting('ai_provider', aiProvider),
         settingsRepo.setSetting('ai_model', aiModel),
+        settingsRepo.setSetting('ai_model_name', aiModel),
+        settingsRepo.setSetting('ai_api_key', geminiApiKey),
+        settingsRepo.setSetting('ai_api_url', targetUrl),
         settingsRepo.setSetting('gemini_api_key', geminiApiKey),
-        settingsRepo.setSetting('openai_api_key', openaiApiKey)
+        settingsRepo.setSetting('openai_api_key', geminiApiKey)
       ]);
-      showSuccess('تم حفظ إعدادات الذكاء الاصطناعي بنجاح');
+      showSuccess('✅ تم حفظ إعدادات الذكاء الاصطناعي بنجاح');
     } catch (error) {
       showError('فشل حفظ إعدادات AI: ' + error.message);
     } finally {
@@ -1836,60 +1851,72 @@ const SettingsModule = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#adbac7] mb-1.5">مزود الذكاء الاصطناعي</label>
+                  <label className="block text-xs font-bold text-[#adbac7] mb-1.5">مزود الذكاء الاصطناعي (AI Provider)</label>
                   <select
                     value={aiProvider}
-                    onChange={(e) => setAiProvider(e.target.value)}
-                    className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-xs text-[#e6edf3] focus:border-[#fbbf24] focus:outline-none"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setAiProvider(val);
+                      if (val === 'openrouter') {
+                        setAiModel('openrouter/auto');
+                      } else if (val === 'deepseek') {
+                        setAiModel('deepseek-chat');
+                      } else if (val === 'gemini') {
+                        setAiModel('gemini-1.5-flash');
+                      } else if (val === 'groq') {
+                        setAiModel('llama-3.3-70b-versatile');
+                      } else if (val === 'openai') {
+                        setAiModel('gpt-4o-mini');
+                      } else if (val === 'ollama') {
+                        setAiModel('llama3');
+                      }
+                    }}
+                    className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-xs text-[#e6edf3] focus:border-[#fbbf24] focus:outline-none font-bold"
                   >
-                    <option value="gemini">Google Gemini (موصى به - فائق السرعة)</option>
-                    <option value="openai">OpenAI (GPT-4o)</option>
+                    <option value="openrouter">OpenRouter (شامل: DeepSeek R1, Claude 3.7, GPT-4o, Gemini)</option>
+                    <option value="deepseek">DeepSeek Official (اقتصادي وفائق الذكاء)</option>
+                    <option value="gemini">Google Gemini (رسمي عبر Google AI Studio)</option>
+                    <option value="groq">Groq Cloud (فائق السرعة)</option>
+                    <option value="openai">OpenAI (ChatGPT الرسمي)</option>
+                    <option value="ollama">Ollama (محلي أوفلاين 100% بدون إنترنت وبدون مفتاح)</option>
+                    <option value="custom">مزود مخصص (Any Custom Endpoint)</option>
                   </select>
                 </div>
 
-                {aiProvider === 'gemini' ? (
-                  <div>
-                    <label className="block text-xs font-bold text-[#adbac7] mb-1.5">Google Gemini API Key</label>
-                    <div className="relative">
-                      <input
-                        type={showGeminiKey ? 'text' : 'password'}
-                        value={geminiApiKey}
-                        onChange={(e) => setGeminiApiKey(e.target.value)}
-                        placeholder="AIzaSy..."
-                        className="w-full bg-[#161b22] border border-white/10 rounded-lg pl-10 pr-3 py-2 text-xs text-[#e6edf3] font-mono focus:border-[#fbbf24] focus:outline-none text-left"
-                        dir="ltr"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowGeminiKey(!showGeminiKey)}
-                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#768390] hover:text-[#e6edf3]"
-                      >
-                        {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#adbac7] mb-1.5">اسم النموذج (Model Name)</label>
+                  <input
+                    type="text"
+                    value={aiModel}
+                    onChange={(e) => setAiModel(e.target.value)}
+                    placeholder="openrouter/auto أو deepseek-chat أو gemini-1.5-flash"
+                    className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-xs text-[#e6edf3] font-mono focus:border-[#fbbf24] focus:outline-none text-left"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#adbac7] mb-1.5">
+                    مفتاح الـ API (API Key) {aiProvider === 'ollama' && '(غير مطلوب للمحلي)'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showGeminiKey ? 'text' : 'password'}
+                      value={geminiApiKey}
+                      onChange={(e) => setGeminiApiKey(e.target.value)}
+                      placeholder={aiProvider === 'ollama' ? 'غير مطلوب' : 'sk-... أو AIzaSy...'}
+                      className="w-full bg-[#161b22] border border-white/10 rounded-lg pl-10 pr-3 py-2 text-xs text-[#e6edf3] font-mono focus:border-[#fbbf24] focus:outline-none text-left"
+                      dir="ltr"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGeminiKey(!showGeminiKey)}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#768390] hover:text-[#e6edf3]"
+                    >
+                      {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
-                ) : (
-                  <div>
-                    <label className="block text-xs font-bold text-[#adbac7] mb-1.5">OpenAI API Key</label>
-                    <div className="relative">
-                      <input
-                        type={showOpenAiKey ? 'text' : 'password'}
-                        value={openaiApiKey}
-                        onChange={(e) => setOpenaiApiKey(e.target.value)}
-                        placeholder="sk-..."
-                        className="w-full bg-[#161b22] border border-white/10 rounded-lg pl-10 pr-3 py-2 text-xs text-[#e6edf3] font-mono focus:border-[#fbbf24] focus:outline-none text-left"
-                        dir="ltr"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowOpenAiKey(!showOpenAiKey)}
-                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#768390] hover:text-[#e6edf3]"
-                      >
-                        {showOpenAiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                )}
+                </div>
 
                 <button
                   type="button"

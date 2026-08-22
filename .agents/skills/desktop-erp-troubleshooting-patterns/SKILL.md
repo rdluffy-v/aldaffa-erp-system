@@ -249,3 +249,25 @@ This causes immediate operation failure and blocks critical transactions.
    }
    ```
 
+---
+
+## 13. Universal Multi-Provider AI Architecture & Endpoint Normalization
+
+### Root Cause
+1. **Module Import Scope Failure**: Using database instances (`db.transaction(...)`) without importing `db` in UI modules produces `ReferenceError: db is not defined` when saving settings.
+2. **Rigid API Endpoint Mismatches**: Users entering API base URLs (e.g. `https://openrouter.ai/api/v1` or `https://api.deepseek.com/v1`) without `/chat/completions` cause HTTP 404 or 405 routing errors.
+
+### Prevention & Guardrail
+1. **Always Verify Module Imports**: Ensure `db` and repository imports are explicitly resolved at the top of the component.
+2. **Universal Endpoint Normalizer**:
+   Automatically parse and append standard `/chat/completions` paths for all OpenAI-compatible providers (OpenRouter, DeepSeek, Groq, Ollama, LM Studio, Together, OpenAI):
+   ```javascript
+   function normalizeApiEndpoint(rawUrl) {
+     let clean = (rawUrl || '').trim().replace(/\/+$/, '');
+     if (!clean.endsWith('/chat/completions') && !clean.endsWith('/generateContent')) {
+       clean = `${clean}/chat/completions`;
+     }
+     return clean;
+   }
+   ```
+3. **Interactive Connection Probing**: Provide a single-click "Test Connection" (`handleTestConnection`) button in the UI sending a 1-token probe request to give users instant visual confirmation of latency and credential validity.
