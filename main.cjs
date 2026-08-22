@@ -1070,15 +1070,25 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
   }
 });
 
-// Shift Report Printing (A4)
+// Shift Report Printing (A4 & Detailed Tables)
 ipcMain.handle('print:shift-report', async (event, reportData) => {
   try {
-    const { period, sales, profit, expenses, capital, cash } = reportData;
+    const { period, sales, profit, purchases, withdrawals, capital, losses, gifts, notes, cash, cashier } = reportData;
     const settings = getPrintSettings();
 
     const formatCurrency = (amount) => {
       const val = Number(amount) || 0;
       return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
+    };
+
+    const formatDateStr = (d) => {
+      if (!d) return '—';
+      try {
+        const dateObj = new Date(d);
+        return dateObj.toLocaleTimeString('ar-LY', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        return d;
+      }
     };
 
     const reportHtml = `
@@ -1087,12 +1097,12 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
 <head>
   <meta charset="UTF-8">
   <style>
-    @page { size: A4; margin: 15mm; }
+    @page { size: A4; margin: 12mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      font-size: 12px;
-      line-height: 1.6;
+      font-size: 11px;
+      line-height: 1.5;
       color: #111827;
       background: #fff;
     }
@@ -1100,23 +1110,25 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 3px solid #fbbf24;
-      padding-bottom: 8mm;
-      margin-bottom: 6mm;
+      border-bottom: 3px solid #d97706;
+      padding-bottom: 6mm;
+      margin-bottom: 4mm;
     }
-    .logo-area { display: flex; align-items: center; gap: 12px; }
-    .logo-img { max-height: 45px; object-fit: contain; }
-    .logo-text { font-size: 24px; font-weight: bold; color: #92400e; }
-    .title { font-size: 22px; font-weight: bold; text-align: center; margin-bottom: 4mm; }
-    table { width: 100%; border-collapse: collapse; margin: 3mm 0; }
-    th, td { padding: 6px 8px; text-align: right; border: 1px solid #e5e7eb; }
-    th { background: #f3f4f6; font-weight: bold; }
-    .section { margin: 5mm 0; }
-    .section-title { font-size: 14px; font-weight: bold; margin-bottom: 2mm; background: #f9fafb; padding: 4px 8px; border-right: 3px solid #fbbf24; }
+    .logo-area { display: flex; align-items: center; gap: 10px; }
+    .logo-img { max-height: 40px; object-fit: contain; }
+    .logo-text { font-size: 20px; font-weight: bold; color: #78350f; }
+    .title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 2mm; color: #1f2937; }
+    table { width: 100%; border-collapse: collapse; margin: 2.5mm 0; font-size: 10.5px; }
+    th, td { padding: 4.5px 6px; text-align: right; border: 1px solid #e5e7eb; }
+    th { background: #f3f4f6; font-weight: bold; color: #374151; }
+    .section { margin: 4mm 0; }
+    .section-title { font-size: 12px; font-weight: bold; margin-bottom: 1.5mm; background: #fef3c7; color: #92400e; padding: 3px 6px; border-right: 3px solid #d97706; border-radius: 2px; }
     .total-row { font-weight: bold; background: #fffbeb; }
     .highlight { background: #fffdf5; }
     .variance-positive { color: #059669; font-weight: bold; }
     .variance-negative { color: #dc2626; font-weight: bold; }
+    .text-center { text-align: center; }
+    .text-left { text-align: left; }
   </style>
 </head>
 <body>
@@ -1124,128 +1136,227 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
     <div class="logo-area">
       ${settings.showLogo && settings.logoBase64 ? `<img src="${settings.logoBase64}" class="logo-img" alt="Logo" />` : ''}
       <div>
-        <div class="logo-text">${settings.storeName}</div>
-        <div style="font-size: 11px; color: #6b7280;">${settings.storeSubtitle}</div>
+        <div class="logo-text">${settings.storeName || 'منظومة الدفة للعطور'}</div>
+        <div style="font-size: 10px; color: #6b7280;">${settings.storeSubtitle || 'عطور شرقية وغربية وزيوت ملكية'}</div>
       </div>
     </div>
-    <div style="text-align: left; font-size: 11px; color: #4b5563;">
-      <div>📍 ${settings.storeAddress}</div>
-      <div>📱 ${settings.storePhone}</div>
-      <div>تاريخ التقرير: ${new Date().toLocaleDateString('ar-SD')}</div>
+    <div style="text-align: left; font-size: 10px; color: #4b5563;">
+      <div>📍 ${settings.storeAddress || 'مصراتة - ليبيا'}</div>
+      <div>📱 ${settings.storePhone || '091xxxxxxx'}</div>
+      <div>الكاشير: ${cashier || 'المناوب'}</div>
+      <div>تاريخ التقرير: ${new Date().toLocaleDateString('ar-LY')}</div>
     </div>
   </div>
 
-  <div class="title">تقرير إغلاق الوردية والحسابات</div>
-  <div style="text-align: center; font-size: 12px; color: #6b7280; margin-bottom: 6mm;">
-    من ${new Date(period.start).toLocaleDateString('ar-SD')} إلى ${new Date(period.end).toLocaleDateString('ar-SD')}
+  <div class="title">تقرير إغلاق الوردية والحسابات الشاملة</div>
+  <div style="text-align: center; font-size: 11px; color: #6b7280; margin-bottom: 4mm;">
+    الفترة: من ${period?.start || ''} إلى ${period?.end || ''}
   </div>
 
+  <!-- 1. FINANCIAL SUMMARY -->
   <div class="section">
-    <div class="section-title">ملخص المبيعات</div>
+    <div class="section-title">1. الملخص المالي والتشغيلي العام</div>
     <table>
       <tr>
-        <td style="width: 60%;">عدد الفواتير</td>
-        <td style="font-weight: bold;">${sales.count}</td>
-      </tr>
-      <tr class="highlight">
-        <td>إجمالي المبيعات</td>
-        <td style="font-weight: bold; color: #059669;">${formatCurrency(sales.total)}</td>
+        <td style="width: 25%;">إجمالي المبيعات (${sales?.count || 0} فاتورة)</td>
+        <td style="width: 25%; font-weight: bold; color: #059669;">${formatCurrency(sales?.total)}</td>
+        <td style="width: 25%;">صافي الربح المحقق</td>
+        <td style="width: 25%; font-weight: bold; color: #047857;">${formatCurrency(profit)}</td>
       </tr>
       <tr>
-        <td style="padding-right: 10mm;">نقدي</td>
-        <td>${formatCurrency(sales.cash)}</td>
+        <td>مبيعات كاش (نقدي)</td>
+        <td>${formatCurrency(sales?.cash)}</td>
+        <td>مبيعات بطاقة</td>
+        <td>${formatCurrency(sales?.card)}</td>
       </tr>
       <tr>
-        <td style="padding-right: 10mm;">بطاقة</td>
-        <td>${formatCurrency(sales.card)}</td>
-      </tr>
-      <tr>
-        <td style="padding-right: 10mm;">تحويل بنكي</td>
-        <td>${formatCurrency(sales.transfer)}</td>
+        <td>مبيعات تحويل مصرفي</td>
+        <td>${formatCurrency(sales?.transfer)}</td>
+        <td>مبيعات آجلة (ديون عملاء)</td>
+        <td>${formatCurrency(sales?.debt)}</td>
       </tr>
     </table>
   </div>
 
+  <!-- 2. CASH RECONCILIATION -->
   <div class="section">
-    <div class="section-title">الربحية</div>
+    <div class="section-title">2. تسوية وفحص النقدية في الدرج (Cash Drawer)</div>
     <table>
-      <tr class="total-row">
-        <td style="width: 60%; font-size: 13px;">صافي الربح</td>
-        <td style="font-size: 13px; color: #059669;">${formatCurrency(profit)}</td>
+      <tr>
+        <td style="width: 60%;">النقد المتوقع في الدرج (Expected Cash)</td>
+        <td style="font-weight: bold;">${formatCurrency(cash?.expected)}</td>
+      </tr>
+      <tr>
+        <td>النقد الفعلي المعدود في الصندوق (Actual Counted)</td>
+        <td style="font-weight: bold;">${formatCurrency(cash?.actual)}</td>
+      </tr>
+      <tr class="total-row ${cash?.variance >= 0 ? 'variance-positive' : 'variance-negative'}">
+        <td>حالة المطابقة والفارق (${cash?.variance >= 0 ? 'فائض نقدي' : 'عجز نقدي'})</td>
+        <td style="font-size: 12px;">${cash?.variance >= 0 ? '+' : ''}${formatCurrency(cash?.variance)}</td>
       </tr>
     </table>
   </div>
 
+  <!-- 3. PURCHASES BREAKDOWN -->
+  ${purchases && purchases.items && purchases.items.length > 0 ? `
   <div class="section">
-    <div class="section-title">المصروفات</div>
+    <div class="section-title">3. فواتير المشتريات والتوريدات المسجلة (${purchases.count} فاتورة — الإجمالي: ${formatCurrency(purchases.total)})</div>
     <table>
-      <tr>
-        <td style="width: 60%;">المشتريات</td>
-        <td style="color: #dc2626;">${formatCurrency(expenses.purchases)}</td>
-      </tr>
-      <tr>
-        <td>السحوبات النقدية</td>
-        <td style="color: #dc2626;">${formatCurrency(expenses.withdrawals)}</td>
-      </tr>
-      <tr>
-        <td>الخسائر والتالف</td>
-        <td style="color: #dc2626;">${formatCurrency(expenses.losses)}</td>
-      </tr>
-      <tr>
-        <td>الهدايا والعينات</td>
-        <td style="color: #dc2626;">${formatCurrency(expenses.gifts)}</td>
-      </tr>
-      <tr class="total-row">
-        <td>إجمالي المصروفات</td>
-        <td style="color: #dc2626;">${formatCurrency(expenses.purchases + expenses.withdrawals + expenses.losses + expenses.gifts)}</td>
-      </tr>
-    </table>
-  </div>
-
-  ${capital > 0 ? `
-  <div class="section">
-    <div class="section-title">الضخ الرأسمالي</div>
-    <table>
-      <tr class="highlight">
-        <td style="width: 60%;">إجمالي الضخ</td>
-        <td style="font-weight: bold; color: #2563eb;">${formatCurrency(capital)}</td>
-      </tr>
+      <thead>
+        <tr>
+          <th>الوقت / المرجع</th>
+          <th>المورد</th>
+          <th>طريقة الدفع</th>
+          <th class="text-left">الإجمالي</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${purchases.items.map(p => `
+          <tr>
+            <td>${formatDateStr(p.date)} ${p.invoice_ref ? `(${p.invoice_ref})` : ''}</td>
+            <td>${p.supplier_name || 'مورد عام'}</td>
+            <td>${p.payment_type === 'cash' ? 'كاش' : 'آجل / أخرى'}</td>
+            <td class="text-left" style="font-weight: bold;">${formatCurrency(p.total)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
     </table>
   </div>
   ` : ''}
 
+  <!-- 4. LOSSES & DAMAGED ITEMS -->
+  ${losses && losses.items && losses.items.length > 0 ? `
   <div class="section">
-    <div class="section-title">تسوية النقد في الصندوق</div>
+    <div class="section-title">4. التوالف والفاقد (${losses.count} صنف — التكلفة: ${formatCurrency(losses.total)})</div>
     <table>
-      <tr>
-        <td style="width: 60%;">النقد المتوقع في الدرج</td>
-        <td style="font-weight: bold;">${formatCurrency(cash.expected)}</td>
-      </tr>
-      <tr>
-        <td>النقد الفعلي (العد اليدوي)</td>
-        <td style="font-weight: bold;">${formatCurrency(cash.actual)}</td>
-      </tr>
-      <tr class="total-row ${cash.variance >= 0 ? 'variance-positive' : 'variance-negative'}">
-        <td style="font-size: 13px;">الفرق (${cash.variance >= 0 ? 'فائض' : 'عجز'})</td>
-        <td style="font-size: 13px;">${cash.variance >= 0 ? '+' : ''}${formatCurrency(cash.variance)}</td>
-      </tr>
+      <thead>
+        <tr>
+          <th>الصنف التالف</th>
+          <th class="text-center">الكمية</th>
+          <th>سبب التلف</th>
+          <th class="text-left">قيمة الخسارة</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${losses.items.map(l => `
+          <tr>
+            <td>${l.item_name}</td>
+            <td class="text-center">${l.qty} ${l.unit || 'قطعة'}</td>
+            <td>${l.reason || 'تلف'}</td>
+            <td class="text-left" style="color: #dc2626; font-weight: bold;">${formatCurrency(l.cost_value)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
     </table>
   </div>
+  ` : ''}
 
-  <div style="margin-top: 15mm; display: flex; justify-content: space-between;">
+  <!-- 5. WITHDRAWALS & CAPITAL -->
+  ${(withdrawals && withdrawals.items && withdrawals.items.length > 0) || (capital && capital.items && capital.items.length > 0) ? `
+  <div class="section">
+    <div class="section-title">5. السحوبات النقدية والضخ المالي</div>
+    <table>
+      <thead>
+        <tr>
+          <th>النوع</th>
+          <th>البيان / المستلم</th>
+          <th>السبب / الملاحظات</th>
+          <th class="text-left">المبلغ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(withdrawals?.items || []).map(w => `
+          <tr>
+            <td style="color: #dc2626; font-weight: bold;">سحب نقدي</td>
+            <td>${w.person || 'سحب'}</td>
+            <td>${w.reason || w.category || 'مصاريف'}</td>
+            <td class="text-left" style="color: #dc2626; font-weight: bold;">-${formatCurrency(w.amount)}</td>
+          </tr>
+        `).join('')}
+        ${(capital?.items || []).map(c => `
+          <tr>
+            <td style="color: #2563eb; font-weight: bold;">ضخ مالي</td>
+            <td>${c.source || 'خزينة'}</td>
+            <td>${c.notes || 'ضخ سيولة'}</td>
+            <td class="text-left" style="color: #2563eb; font-weight: bold;">+${formatCurrency(c.amount)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+  ` : ''}
+
+  <!-- 6. GIFTS & NOTES -->
+  ${(gifts && gifts.items && gifts.items.length > 0) || (notes && notes.items && notes.items.length > 0) ? `
+  <div class="section">
+    <div class="section-title">6. الهدايا والملاحظات التوثيقية للوردية</div>
+    <table>
+      <thead>
+        <tr>
+          <th>البند</th>
+          <th>التفاصيل</th>
+          <th class="text-left">القيمة / الملاحظة</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(gifts?.items || []).map(g => `
+          <tr>
+            <td>🎁 هدية / عينة: ${g.recipient || 'زبون'}</td>
+            <td>${g.item_name} (×${g.qty})</td>
+            <td class="text-left" style="font-weight: bold;">${formatCurrency(g.cost_value)}</td>
+          </tr>
+        `).join('')}
+        ${(notes?.items || []).map(n => `
+          <tr>
+            <td>📝 ملاحظة: ${n.title || 'تنبيه'}</td>
+            <td colspan="2">${n.content || n.notes || '—'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+  ` : ''}
+
+  <div style="margin-top: 8mm; display: flex; justify-content: space-between;">
     <div style="text-align: center; width: 45%;">
-      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 12mm;">توقيع المدير</div>
+      <div style="border-top: 1px solid #000; padding-top: 1.5mm; margin-top: 10mm; font-size: 10px;">توقيع الكاشير المناوب (${cashier || 'الكاشير'})</div>
     </div>
     <div style="text-align: center; width: 45%;">
-      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 12mm;">توقيع المحاسب</div>
+      <div style="border-top: 1px solid #000; padding-top: 1.5mm; margin-top: 10mm; font-size: 10px;">توقيع المدير / المشرف العام</div>
     </div>
   </div>
 
-  <div style="text-align: center; margin-top: 10mm; font-size: 10px; color: #6b7280;">
-    <div>${settings.storeName} — تم الطباعة: ${new Date().toLocaleString('ar-SD')}</div>
+  <div style="text-align: center; margin-top: 6mm; font-size: 9px; color: #6b7280;">
+    <div>${settings.storeName || 'منظومة الدفة للعطور'} — طبع بتاريخ: ${new Date().toLocaleString('ar-LY')}</div>
   </div>
 </body>
 </html>`;
+
+    const printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        nodeIntegration: false
+      }
+    });
+
+    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(reportHtml));
+
+    printWindow.webContents.print({
+      silent: false,
+      printBackground: true
+    }, (success, errorType) => {
+      if (!success) {
+        console.error('Print shift report failed:', errorType);
+      }
+      printWindow.close();
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Print shift report error:', error);
+    return { success: false, error: error.message };
+  }
+});
 
     const printWindow = new BrowserWindow({
       show: false,

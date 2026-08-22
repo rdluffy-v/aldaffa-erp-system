@@ -1,15 +1,46 @@
-import React, { useState, useEffect, useCallback } from 'react';
+/**
+ * ============================================================================
+ * SHIFT CLOSE MODULE (إغلاق الوردية والحسابات الشاملة)
+ * ============================================================================
+ */
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { SalesRepository } from '../database/repositories/SalesRepository.js';
 import { PurchasesRepository } from '../database/repositories/PurchasesRepository.js';
 import { WithdrawalsRepository } from '../database/repositories/WithdrawalsRepository.js';
 import { CapitalRepository } from '../database/repositories/CapitalRepository.js';
 import { GiftsRepository } from '../database/repositories/GiftsRepository.js';
 import { LossesRepository } from '../database/repositories/LossesRepository.js';
+import { NotesRepository } from '../database/repositories/NotesRepository.js';
 import { BaseRepository } from '../database/repositories/BaseRepository.js';
 import { db } from '../database/connection.js';
 import { useUIStore } from '../stores/useUIStore.js';
-import { formatCurrency, formatDate, generateId } from '../utils/helpers.js';
-import { Lock, Printer, CheckCircle, Clock, History, FileText } from 'lucide-react';
+import { formatCurrency, formatDate, generateId, safeParseFloat } from '../utils/helpers.js';
+import {
+  Lock,
+  Printer,
+  CheckCircle,
+  Clock,
+  History,
+  FileText,
+  DollarSign,
+  TrendingUp,
+  TrendingDown,
+  ShoppingBag,
+  ShoppingCart,
+  Wallet,
+  Gift,
+  HeartCrack,
+  StickyNote,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Check,
+  Scale,
+  RefreshCw,
+  Building2,
+  Calendar
+} from 'lucide-react';
 
 const salesRepo = new SalesRepository();
 const purchasesRepo = new PurchasesRepository();
@@ -17,6 +48,7 @@ const withdrawalsRepo = new WithdrawalsRepository();
 const capitalRepo = new CapitalRepository();
 const giftsRepo = new GiftsRepository();
 const lossesRepo = new LossesRepository();
+const notesRepo = new NotesRepository();
 const shiftReportsRepo = new BaseRepository('shift_reports');
 
 const ShiftCloseModule = () => {
@@ -25,15 +57,15 @@ const ShiftCloseModule = () => {
   const [cashierName, setCashierName] = useState('الكاشير المناوب');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
-  const [expectedCash, setExpectedCash] = useState('');
   const [actualCash, setActualCash] = useState('');
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [savingShift, setSavingShift] = useState(false);
   const [pastReports, setPastReports] = useState([]);
   const [activeTab, setActiveTab] = useState('current'); // 'current' | 'history'
+  const [activeDetailTab, setActiveDetailTab] = useState('summary'); // 'summary' | 'sales' | 'purchases' | 'losses' | 'withdrawals' | 'capital' | 'gifts' | 'notes'
 
-  // Ensure table exists
+  // Ensure table exists on mount
   useEffect(() => {
     const initTable = async () => {
       try {
@@ -53,7 +85,7 @@ const ShiftCloseModule = () => {
           )
         `);
       } catch (e) {
-        console.warn('shift_reports table creation:', e);
+        console.warn('shift_reports table init error:', e);
       }
     };
     initTable();
@@ -74,58 +106,104 @@ const ShiftCloseModule = () => {
 
     try {
       const start = new Date(startDate).toISOString();
-      const end = new Date(endDate + 'T23:59:59').toISOString();
+      const end = new Date(endDate + 'T23:59:59.999Z').toISOString();
 
-      // Gather all financial data via repositories
-      const [sales, purchases, withdrawals, capitalInjections, losses, gifts] =
+      // Gather all financial and operational data across all modules
+      const [sales, purchases, withdrawals, capitalInjections, losses, gifts, notesList] =
         await Promise.all([
           salesRepo.getSalesInRange(start, end),
           purchasesRepo.getPurchasesInRange(start, end),
           withdrawalsRepo.getWithdrawalsInRange(start, end),
           capitalRepo.getInjectionsInRange(start, end),
           lossesRepo.getLossesInRange(start, end),
-          giftsRepo.getGiftsInRange(start, end)
+          giftsRepo.getGiftsInRange(start, end),
+          notesRepo.findAll({}, 'date DESC').catch(() => [])
         ]);
 
-      // Calculate totals
-      const cashSales = sales.filter((s) => s.payment_method === 'cash');
-      const cardSales = sales.filter((s) => s.payment_method === 'card');
-      const transferSales = sales.filter((s) => s.payment_method === 'bank_transfer');
+      // Filter notes created within period
+      const filteredNotes = (notesList || []).filter((n) => {
+        if (!n.date) return false;
+        return n.date >= start && n.date <= end;
+      });
 
-      const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
-      const totalProfit = sales.reduce((sum, s) => sum + s.profit, 0);
-      const totalCashSales = cashSales.reduce((sum, s) => sum + s.total, 0);
-      const totalCardSales = cardSales.reduce((sum, s) => sum + s.total, 0);
-      const totalTransferSales = transferSales.reduce((sum, s) => sum + s.total, 0);
+      // Sales Grouping
+      const cashSales = (sales || []).filter((s) => s.payment_method === 'cash');
+      const cardSales = (sales || []).filter((s) => s.payment_method === 'card');
+      const transferSales = (sales || []).filter((s) => s.payment_method === 'bank_transfer');
+      const debtSales = (sales || []).filter((s) => s.payment_method === 'debt');
 
-      const totalPurchases = purchases.reduce((sum, p) => sum + p.total, 0);
-      const totalWithdrawals = withdrawals.reduce((sum, w) => sum + w.amount, 0);
-      const totalCapital = capitalInjections.reduce((sum, c) => sum + c.amount, 0);
-      const totalLosses = losses.reduce((sum, l) => sum + l.cost_value, 0);
-      const totalGifts = gifts.reduce((sum, g) => sum + g.cost_value, 0);
+      const totalRevenue = (sales || []).reduce((sum, s) => sum + safeParseFloat(s.total, 0), 0);
+      const totalProfit = (sales || []).reduce((sum, s) => sum + safeParseFloat(s.profit, 0), 0);
+      const totalCashSales = cashSales.reduce((sum, s) => sum + safeParseFloat(s.total, 0), 0);
+      const totalCardSales = cardSales.reduce((sum, s) => sum + safeParseFloat(s.total, 0), 0);
+      const totalTransferSales = transferSales.reduce((sum, s) => sum + safeParseFloat(s.total, 0), 0);
+      const totalDebtSales = debtSales.reduce((sum, s) => sum + safeParseFloat(s.total, 0), 0);
 
-      const expectedCashBalance = totalCashSales + totalCapital - totalWithdrawals;
-      const actualCashValue = parseFloat(actualCash) || 0;
+      // Purchases Grouping
+      const totalPurchases = (purchases || []).reduce((sum, p) => sum + safeParseFloat(p.total, 0), 0);
+      const cashPurchases = (purchases || []).filter((p) => p.payment_type === 'cash');
+      const totalCashPurchases = cashPurchases.reduce((sum, p) => sum + safeParseFloat(p.total, 0), 0);
+      const debtPurchases = (purchases || []).filter((p) => p.payment_type === 'debt');
+      const totalDebtPurchases = debtPurchases.reduce((sum, p) => sum + safeParseFloat(p.total, 0), 0);
+
+      // Expenses, Losses, Gifts, Capital
+      const totalWithdrawals = (withdrawals || []).reduce((sum, w) => sum + safeParseFloat(w.amount, 0), 0);
+      const totalCapital = (capitalInjections || []).reduce((sum, c) => sum + safeParseFloat(c.amount, 0), 0);
+      const totalLosses = (losses || []).reduce((sum, l) => sum + safeParseFloat(l.cost_value, 0), 0);
+      const totalLossesQty = (losses || []).reduce((sum, l) => sum + safeParseFloat(l.qty, 0), 0);
+      const totalGifts = (gifts || []).reduce((sum, g) => sum + safeParseFloat(g.cost_value, 0), 0);
+
+      // Cash Drawer Calculation Formula:
+      // Expected Cash in Drawer = Cash Sales + Cash Capital Injected - Cash Withdrawals - Cash Purchases
+      const expectedCashBalance = totalCashSales + totalCapital - totalWithdrawals - totalCashPurchases;
+      const actualCashValue = safeParseFloat(actualCash, 0);
       const variance = actualCashValue - expectedCashBalance;
 
       const reportData = {
-        cashier: cashierName,
+        cashier: cashierName.trim() || 'كاشير',
         period: { start: startDate, end: endDate },
         sales: {
           total: totalRevenue,
-          count: sales.length,
+          count: (sales || []).length,
           cash: totalCashSales,
           card: totalCardSales,
-          transfer: totalTransferSales
+          transfer: totalTransferSales,
+          debt: totalDebtSales,
+          items: sales || []
         },
         profit: totalProfit,
-        expenses: {
-          purchases: totalPurchases,
-          withdrawals: totalWithdrawals,
-          losses: totalLosses,
-          gifts: totalGifts
+        purchases: {
+          total: totalPurchases,
+          count: (purchases || []).length,
+          cash: totalCashPurchases,
+          debt: totalDebtPurchases,
+          items: purchases || []
         },
-        capital: totalCapital,
+        withdrawals: {
+          total: totalWithdrawals,
+          count: (withdrawals || []).length,
+          items: withdrawals || []
+        },
+        capital: {
+          total: totalCapital,
+          count: (capitalInjections || []).length,
+          items: capitalInjections || []
+        },
+        losses: {
+          total: totalLosses,
+          totalQty: totalLossesQty,
+          count: (losses || []).length,
+          items: losses || []
+        },
+        gifts: {
+          total: totalGifts,
+          count: (gifts || []).length,
+          items: gifts || []
+        },
+        notes: {
+          count: filteredNotes.length,
+          items: filteredNotes
+        },
         cash: {
           expected: expectedCashBalance,
           actual: actualCashValue,
@@ -134,9 +212,9 @@ const ShiftCloseModule = () => {
       };
 
       setReport(reportData);
-      showSuccess('✅ تم إعداد تقرير الوردية بنجاح');
+      showSuccess('✅ تم إعداد وتحليل تقرير الوردية الشامل بنجاح');
     } catch (error) {
-      showError('خطأ في إنشاء التقرير: ' + error.message);
+      showError('خطأ في إعداد التقرير: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -147,7 +225,7 @@ const ShiftCloseModule = () => {
       const electron = window.require ? window.require('electron') : null;
       if (electron) {
         await electron.ipcRenderer.invoke('print:shift-report', reportData);
-        showSuccess('✅ تم إرسال تقرير الوردية للطباعة');
+        showSuccess('✅ تم إرسال تقرير الوردية الشامل للطباعة');
       } else {
         window.print();
       }
@@ -158,7 +236,7 @@ const ShiftCloseModule = () => {
 
   const handleSaveAndCloseShift = async () => {
     if (!report) {
-      showWarning('يرجى إنشاء التقرير أولاً');
+      showWarning('يرجى إنشاء وتوليد التقرير أولاً');
       return;
     }
 
@@ -182,7 +260,7 @@ const ShiftCloseModule = () => {
       await shiftReportsRepo.create(record);
       await loadPastReports();
       await handlePrint(report);
-      showSuccess('✅ تم حفظ وإغلاق الوردية نهائياً وطباعة الإيصال');
+      showSuccess('✅ تم حفظ وإغلاق الوردية نهائياً وطباعة الإيصال الشامل');
     } catch (err) {
       showError(`فشل حفظ إغلاق الوردية: ${err.message}`);
     } finally {
@@ -191,257 +269,607 @@ const ShiftCloseModule = () => {
   };
 
   return (
-    <div className="h-full flex flex-col gap-4">
+    <div className="h-full flex flex-col gap-3.5">
       {/* Top Header */}
-      <div className="atelier-card p-4 flex justify-between items-center flex-wrap gap-3">
+      <div className="atelier-card p-3.5 flex justify-between items-center flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+          <div className="w-9 h-9 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold shadow-sm">
             <Lock className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-[#2D2424] dark:text-white">إغلاق الوردية وتسوية الحسابات</h1>
-            <p className="text-xs text-[#5C524F] dark:text-slate-400">جرد النقدية، مطابقة الرصيد، حفظ السجلات وطباعة التقارير</p>
+            <h1 className="text-base font-extrabold text-[#2D2424] dark:text-white">إغلاق الوردية والحسابات الشاملة</h1>
+            <p className="text-[11px] text-[#5C524F] dark:text-slate-400">
+              حساب الخزينة، تحليل المبيعات، المشتريات، التوالف، المصاريف، الفوارق والطباعة
+            </p>
           </div>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="inline-flex rounded-full bg-gray-200 dark:bg-slate-800 p-1 border border-amber-500/20">
+        {/* Tab Toggle */}
+        <div className="flex gap-1.5 bg-black/10 dark:bg-slate-800/60 p-1 rounded-xl">
           <button
-            type="button"
             onClick={() => setActiveTab('current')}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'current'
                 ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-[#5C524F] dark:text-slate-300 hover:text-[#2D2424] dark:hover:text-white'
+                : 'text-gray-400 hover:text-white'
             }`}
           >
-            <Clock className="w-3.5 h-3.5" />
-            <span>إغلاق الوردية الحالية</span>
+            📊 تقرير الوردية الحالية
           </button>
           <button
-            type="button"
             onClick={() => setActiveTab('history')}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'history'
                 ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-[#5C524F] dark:text-slate-300 hover:text-[#2D2424] dark:hover:text-white'
+                : 'text-gray-400 hover:text-white'
             }`}
           >
-            <History className="w-3.5 h-3.5" />
-            <span>سجل الورديات السابقة ({pastReports.length})</span>
+            📁 سجل الورديات المغلقة ({pastReports.length})
           </button>
         </div>
       </div>
 
       {activeTab === 'current' ? (
-        <div className="flex-1 flex gap-4 overflow-hidden">
-          {/* Inputs Column */}
-          <div className="w-[360px] flex flex-col atelier-card p-5 h-full justify-between overflow-y-auto">
-            <div className="space-y-3">
-              <h2 className="text-sm font-bold text-[#2D2424] dark:text-amber-300 mb-2">بيانات الوردية</h2>
-
+        <div className="flex-1 overflow-y-auto space-y-3.5 scrollbar-thin pr-1">
+          {/* Controls Strip */}
+          <div className="atelier-card p-4 bg-amber-50/50 dark:bg-slate-800/40 border-amber-500/20">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <div>
-                <label className="text-[11px] font-bold text-gray-500 mb-1 block">اسم الكاشير / المسؤول</label>
+                <label className="block text-[11px] font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                  اسم الكاشير المناوب:
+                </label>
                 <input
                   type="text"
                   value={cashierName}
                   onChange={(e) => setCashierName(e.target.value)}
-                  className="input-atelier w-full text-xs"
+                  className="input-atelier w-full text-xs font-bold"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] font-bold text-gray-500 mb-1 block">من تاريخ</label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="input-atelier w-full text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-500 mb-1 block">إلى تاريخ</label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="input-atelier w-full text-xs"
-                  />
-                </div>
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-gray-500 mb-1 block">النقد الفعلي المعدود في الدرج (د.ل)</label>
+                <label className="block text-[11px] font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                  من تاريخ:
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="input-atelier w-full text-xs font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                  إلى تاريخ:
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="input-atelier w-full text-xs font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                  النقد الفعلي في الصندوق (د.ل) *:
+                </label>
                 <input
                   type="number"
-                  placeholder="0.00"
+                  step="any"
+                  min="0"
+                  placeholder="المبلغ بعد العد اليدوي"
                   value={actualCash}
                   onChange={(e) => setActualCash(e.target.value)}
-                  className="input-atelier w-full text-sm font-bold text-emerald-600 dark:text-emerald-400"
-                  step="0.01"
+                  className="input-atelier w-full text-xs font-bold text-center border-amber-500"
                 />
               </div>
             </div>
 
-            <div className="space-y-2 pt-4">
+            <div className="flex justify-end gap-2 mt-3 pt-3 border-t border-amber-500/15">
               <button
+                type="button"
                 onClick={generateReport}
                 disabled={loading}
-                className="btn-atelier-secondary w-full py-2.5 text-xs font-bold"
+                className="btn-atelier-primary py-1.5 px-5 text-xs font-bold flex items-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
               >
-                {loading ? '⏳ جاري الحساب...' : '📊 حساب ومعاينة التقرير'}
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <span>{loading ? 'جاري التحليل والجمع...' : 'توليد وفحص تقرير الوردية'}</span>
               </button>
-
-              {report && (
-                <button
-                  onClick={handleSaveAndCloseShift}
-                  disabled={savingShift}
-                  className="btn-atelier-primary w-full py-3 text-xs font-bold shadow-lg flex items-center justify-center gap-1.5"
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  <span>{savingShift ? '⏳ جاري الحفظ...' : '🔒 حفظ وإغلاق الوردية نهائياً'}</span>
-                </button>
-              )}
             </div>
           </div>
 
-          {/* Report Preview */}
-          <div className="flex-1 atelier-card p-5 flex flex-col overflow-hidden">
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-sm font-bold text-[#2D2424] dark:text-white">معاينة تقرير تسوية الوردية</h2>
-              {report && (
-                <button
-                  onClick={() => handlePrint(report)}
-                  className="btn-atelier-secondary py-1.5 px-3 text-xs flex items-center gap-1.5"
-                >
-                  <Printer className="w-3.5 h-3.5 text-amber-600" />
-                  <span>طباعة فورية</span>
-                </button>
-              )}
-            </div>
+          {report && (
+            <div className="space-y-3.5 animate-in fade-in duration-200">
+              {/* Financial KPIs Banner */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="atelier-card p-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-gray-500 font-bold">إجمالي المبيعات</span>
+                    <ShoppingCart className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">
+                    {formatCurrency(report.sales.total)}
+                  </div>
+                  <div className="text-[9px] text-gray-400">{report.sales.count} فاتورة بيع</div>
+                </div>
 
-            {!report ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                <FileText className="w-12 h-12 mb-2 stroke-1" />
-                <p className="text-xs">اضغط على "حساب ومعاينة التقرير" لمطابقة الأرقام</p>
+                <div className="atelier-card p-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-gray-500 font-bold">صافي الأرباح المحققة</span>
+                    <TrendingUp className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <div className="text-lg font-black text-emerald-700 dark:text-emerald-300 mt-1 tabular-nums">
+                    {formatCurrency(report.profit)}
+                  </div>
+                  <div className="text-[9px] text-gray-400">هامش الربح التشغيلي</div>
+                </div>
+
+                <div className="atelier-card p-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-gray-500 font-bold">إجمالي المشتريات</span>
+                    <ShoppingBag className="w-4 h-4 text-amber-500" />
+                  </div>
+                  <div className="text-lg font-black text-amber-600 dark:text-amber-400 mt-1 tabular-nums">
+                    {formatCurrency(report.purchases.total)}
+                  </div>
+                  <div className="text-[9px] text-gray-400">
+                    نقدي: {formatCurrency(report.purchases.cash)} | آجل: {formatCurrency(report.purchases.debt)}
+                  </div>
+                </div>
+
+                <div className="atelier-card p-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-gray-500 font-bold">التوالف والفاقد</span>
+                    <HeartCrack className="w-4 h-4 text-rose-500" />
+                  </div>
+                  <div className="text-lg font-black text-rose-600 dark:text-rose-400 mt-1 tabular-nums">
+                    {formatCurrency(report.losses.total)}
+                  </div>
+                  <div className="text-[9px] text-gray-400">{report.losses.totalQty} وحدة مكسورة/تالفة</div>
+                </div>
               </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto scrollbar-thin space-y-3 text-xs">
-                {/* Period & Cashier */}
-                <div className="bg-amber-50/70 dark:bg-slate-800/60 p-3 rounded-2xl border border-amber-200/50 dark:border-white/5 flex justify-between">
-                  <div>
-                    <span className="text-gray-500">الفترة:</span>{' '}
-                    <span className="font-bold">{new Date(report.period.start).toLocaleDateString('ar-LY')} إلى {new Date(report.period.end).toLocaleDateString('ar-LY')}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">الكاشير:</span>{' '}
-                    <span className="font-bold">{report.cashier}</span>
-                  </div>
+
+              {/* Cash Reconciliation Card */}
+              <div className="atelier-card p-4 bg-[#F8F6F0] dark:bg-slate-800/90 border-amber-500/30">
+                <div className="flex items-center gap-2 mb-3">
+                  <Scale className="w-5 h-5 text-amber-600" />
+                  <h3 className="text-sm font-extrabold text-[#2D2424] dark:text-white">
+                    تسوية وفحص النقدية في الدرج (Cash Drawer Reconciliation)
+                  </h3>
                 </div>
 
-                {/* Sales & Profit */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-white/80 dark:bg-slate-800/80 p-3 rounded-2xl border border-amber-500/10 space-y-1.5">
-                    <h3 className="font-bold text-gray-700 dark:text-slate-300">المبيعات</h3>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">عدد الفواتير:</span>
-                      <span className="font-bold">{report.sales.count}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">إجمالي المبيعات:</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(report.sales.total)}</span>
-                    </div>
-                    <div className="flex justify-between text-[11px] text-gray-500">
-                      <span>نقدي: {formatCurrency(report.sales.cash)}</span>
-                      <span>بطاقة: {formatCurrency(report.sales.card)}</span>
-                    </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-black/5">
+                    <span className="text-gray-500 block text-[10px]">النقد المتوقع في الدرج (Expected):</span>
+                    <span className="text-base font-black text-[#2D2424] dark:text-white tabular-nums">
+                      {formatCurrency(report.cash.expected)}
+                    </span>
+                    <span className="text-[9px] text-gray-400 block mt-0.5">
+                      (مبيعات كاش + ضخ مالي - سحوبات نقدية - مشتريات كاش)
+                    </span>
                   </div>
 
-                  <div className="bg-white/80 dark:bg-slate-800/80 p-3 rounded-2xl border border-amber-500/10 space-y-1.5">
-                    <h3 className="font-bold text-gray-700 dark:text-slate-300">الأرباح والمصروفات</h3>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">صافي الربح:</span>
-                      <span className="font-bold text-amber-600 dark:text-amber-400">{formatCurrency(report.profit)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">المشتريات:</span>
-                      <span className="font-bold text-red-500">{formatCurrency(report.expenses.purchases)}</span>
-                    </div>
-                    <div className="flex justify-between text-[11px] text-gray-500">
-                      <span>سحوبات: {formatCurrency(report.expenses.withdrawals)}</span>
-                      <span>فاقد: {formatCurrency(report.expenses.losses)}</span>
-                    </div>
+                  <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-black/5">
+                    <span className="text-gray-500 block text-[10px]">النقد الفعلي المعدود (Actual):</span>
+                    <span className="text-base font-black text-amber-600 dark:text-amber-400 tabular-nums">
+                      {formatCurrency(report.cash.actual)}
+                    </span>
+                    <span className="text-[9px] text-gray-400 block mt-0.5">العد اليدوي للكاش بالصندوق</span>
                   </div>
-                </div>
 
-                {/* Cash Reconciliation */}
-                <div className="bg-amber-50/70 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-amber-200/50 dark:border-white/5 space-y-2">
-                  <h3 className="font-bold text-gray-700 dark:text-slate-300">تسوية النقدية والدرج</h3>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">النقد المتوقع حسابه (المبيعات النقدية + الضخ - السحوبات):</span>
-                    <span className="font-bold tabular-nums">{formatCurrency(report.cash.expected)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">النقد الفعلي المعدود:</span>
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{formatCurrency(report.cash.actual)}</span>
-                  </div>
-                  <div className="flex justify-between border-t border-amber-500/20 pt-2 font-bold text-sm">
-                    <span>فارق التسوية (الزيادة / العجز):</span>
-                    <span className={`tabular-nums ${report.cash.variance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                      {report.cash.variance >= 0 ? '+' : ''}{formatCurrency(report.cash.variance)}
+                  <div
+                    className={`p-3 rounded-xl border font-bold ${
+                      report.cash.variance > 0
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                        : report.cash.variance < 0
+                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
+                        : 'bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-300'
+                    }`}
+                  >
+                    <span className="block text-[10px]">حالة المطابقة والفارق (Variance):</span>
+                    <span className="text-base font-black tabular-nums">
+                      {report.cash.variance > 0
+                        ? `+${formatCurrency(report.cash.variance)} (فائض نقدي)`
+                        : report.cash.variance < 0
+                        ? `${formatCurrency(report.cash.variance)} (عجز نقدي)`
+                        : '0.00 د.ل (مطابق 100%)'}
+                    </span>
+                    <span className="text-[9px] block mt-0.5">
+                      {report.cash.variance === 0
+                        ? 'الدرج متطابق تماماً بدون أية نواقص'
+                        : report.cash.variance > 0
+                        ? 'يوجد زيادة نقدية في الخزينة'
+                        : 'يوجد نقص نقدي يستوجب المراجعة'}
                     </span>
                   </div>
                 </div>
               </div>
-            )}
-          </div>
+
+              {/* Drilldown Navigation Tabs for Deep Breakdown */}
+              <div className="atelier-card p-3.5">
+                <div className="flex gap-1.5 overflow-x-auto pb-2 border-b border-white/10 text-xs scrollbar-thin">
+                  {[
+                    { id: 'summary', label: '📊 التحليل العام', count: null },
+                    { id: 'sales', label: '🛒 المبيعات', count: report.sales.count },
+                    { id: 'purchases', label: '📦 المشتريات والتوريد', count: report.purchases.count },
+                    { id: 'losses', label: '💔 التوالف والفاقد', count: report.losses.count },
+                    { id: 'withdrawals', label: '💸 السحوبات', count: report.withdrawals.count },
+                    { id: 'capital', label: '💵 الضخ المالي', count: report.capital.count },
+                    { id: 'gifts', label: '🎁 الهدايا والعينات', count: report.gifts.count },
+                    { id: 'notes', label: '📝 الملاحظات والمهام', count: report.notes.count }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveDetailTab(tab.id)}
+                      className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer text-xs ${
+                        activeDetailTab === tab.id
+                          ? 'bg-amber-500 text-slate-950 shadow-sm'
+                          : 'bg-black/5 dark:bg-slate-800 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <span>{tab.label}</span>
+                      {tab.count !== null && (
+                        <span className="ms-1 px-1.5 py-0.2 rounded-full text-[9px] bg-black/20 text-current">
+                          {tab.count}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Sub Tab Contents */}
+                <div className="pt-3">
+                  {/* Summary Breakdown */}
+                  {activeDetailTab === 'summary' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-white/5 space-y-2">
+                        <h4 className="font-extrabold text-amber-600">تفاصيل قنوات الدفع للمبيعات:</h4>
+                        <div className="flex justify-between py-1 border-b border-white/5">
+                          <span className="text-gray-400">مبيعات كاش (نقدي):</span>
+                          <span className="font-bold tabular-nums">{formatCurrency(report.sales.cash)}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-white/5">
+                          <span className="text-gray-400">مبيعات بطاقة مصرفية:</span>
+                          <span className="font-bold tabular-nums">{formatCurrency(report.sales.card)}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-white/5">
+                          <span className="text-gray-400">مبيعات تحويل بنكي:</span>
+                          <span className="font-bold tabular-nums">{formatCurrency(report.sales.transfer)}</span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-gray-400">مبيعات آجلة (ديون عملاء):</span>
+                          <span className="font-bold text-amber-500 tabular-nums">{formatCurrency(report.sales.debt)}</span>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-white/5 space-y-2">
+                        <h4 className="font-extrabold text-rose-600">تفاصيل المصروفات والخصومات:</h4>
+                        <div className="flex justify-between py-1 border-b border-white/5">
+                          <span className="text-gray-400">مشتريات مدفوعة كاش:</span>
+                          <span className="font-bold tabular-nums">{formatCurrency(report.purchases.cash)}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-white/5">
+                          <span className="text-gray-400">سحوبات ومصاريف المحل:</span>
+                          <span className="font-bold tabular-nums">{formatCurrency(report.withdrawals.total)}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-white/5">
+                          <span className="text-gray-400">تكلفة التوالف والكسر:</span>
+                          <span className="font-bold tabular-nums">{formatCurrency(report.losses.total)}</span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-gray-400">تكلفة الهدايا والعينات:</span>
+                          <span className="font-bold tabular-nums">{formatCurrency(report.gifts.total)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Detailed Sales Tab */}
+                  {activeDetailTab === 'sales' && (
+                    <div className="overflow-x-auto max-h-60 overflow-y-auto scrollbar-thin">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-black/10 dark:bg-slate-800 font-bold text-gray-400 sticky top-0">
+                          <tr>
+                            <th className="p-2">الفاتورة / الوقت</th>
+                            <th className="p-2">العميل</th>
+                            <th className="p-2">طريقة الدفع</th>
+                            <th className="p-2 text-left">الإجمالي</th>
+                            <th className="p-2 text-left">الربح</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {report.sales.items.length === 0 ? (
+                            <tr>
+                              <td colSpan="5" className="p-4 text-center text-gray-400">لا توجد مبيعات في هذه الوردية</td>
+                            </tr>
+                          ) : (
+                            report.sales.items.map((s, idx) => (
+                              <tr key={idx} className="hover:bg-amber-500/5">
+                                <td className="p-2 font-mono text-[11px]">{formatDate(s.date)}</td>
+                                <td className="p-2 font-bold">{s.customer_name || 'زبون عام'}</td>
+                                <td className="p-2">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-black/10 dark:bg-slate-800">
+                                    {s.payment_method === 'cash'
+                                      ? 'كاش'
+                                      : s.payment_method === 'card'
+                                      ? 'بطاقة'
+                                      : s.payment_method === 'bank_transfer'
+                                      ? 'تحويل'
+                                      : 'آجل'}
+                                  </span>
+                                </td>
+                                <td className="p-2 text-left font-bold text-emerald-600">{formatCurrency(s.total)}</td>
+                                <td className="p-2 text-left font-mono text-emerald-700">{formatCurrency(s.profit)}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Detailed Purchases Tab */}
+                  {activeDetailTab === 'purchases' && (
+                    <div className="overflow-x-auto max-h-60 overflow-y-auto scrollbar-thin">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-black/10 dark:bg-slate-800 font-bold text-gray-400 sticky top-0">
+                          <tr>
+                            <th className="p-2">التاريخ / المرجع</th>
+                            <th className="p-2">المورد</th>
+                            <th className="p-2">طريقة الدفع</th>
+                            <th className="p-2 text-left">إجمالي الفاتورة</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {report.purchases.items.length === 0 ? (
+                            <tr>
+                              <td colSpan="4" className="p-4 text-center text-gray-400">لا توجد مشتريات مسجلة في هذه الوردية</td>
+                            </tr>
+                          ) : (
+                            report.purchases.items.map((p, idx) => (
+                              <tr key={idx} className="hover:bg-amber-500/5">
+                                <td className="p-2 font-mono text-[11px]">
+                                  {formatDate(p.date)} {p.invoice_ref && `(${p.invoice_ref})`}
+                                </td>
+                                <td className="p-2 font-bold">{p.supplier_name || 'مورد عام'}</td>
+                                <td className="p-2">{p.payment_type === 'cash' ? 'كاش' : 'آجل / أخرى'}</td>
+                                <td className="p-2 text-left font-bold text-amber-600">{formatCurrency(p.total)}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Detailed Losses Tab */}
+                  {activeDetailTab === 'losses' && (
+                    <div className="overflow-x-auto max-h-60 overflow-y-auto scrollbar-thin">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-black/10 dark:bg-slate-800 font-bold text-gray-400 sticky top-0">
+                          <tr>
+                            <th className="p-2">الصنف التالف</th>
+                            <th className="p-2 text-center">الكمية</th>
+                            <th className="p-2">سبب التلف</th>
+                            <th className="p-2 text-left">قيمة الخسارة</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {report.losses.items.length === 0 ? (
+                            <tr>
+                              <td colSpan="4" className="p-4 text-center text-gray-400">لا توجد توالف أو فاقد مسجل</td>
+                            </tr>
+                          ) : (
+                            report.losses.items.map((l, idx) => (
+                              <tr key={idx} className="hover:bg-rose-500/5">
+                                <td className="p-2 font-bold">{l.item_name}</td>
+                                <td className="p-2 text-center">
+                                  {l.qty} {l.unit}
+                                </td>
+                                <td className="p-2 text-gray-400">{l.reason}</td>
+                                <td className="p-2 text-left font-bold text-rose-600">{formatCurrency(l.cost_value)}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Detailed Withdrawals Tab */}
+                  {activeDetailTab === 'withdrawals' && (
+                    <div className="overflow-x-auto max-h-60 overflow-y-auto scrollbar-thin">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-black/10 dark:bg-slate-800 font-bold text-gray-400 sticky top-0">
+                          <tr>
+                            <th className="p-2">المستلم / البند</th>
+                            <th className="p-2">السبب / التصنيف</th>
+                            <th className="p-2 text-left">المبلغ</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {report.withdrawals.items.length === 0 ? (
+                            <tr>
+                              <td colSpan="3" className="p-4 text-center text-gray-400">لا توجد سحوبات نقدية</td>
+                            </tr>
+                          ) : (
+                            report.withdrawals.items.map((w, idx) => (
+                              <tr key={idx} className="hover:bg-amber-500/5">
+                                <td className="p-2 font-bold">{w.person || 'سحب عام'}</td>
+                                <td className="p-2 text-gray-400">{w.reason || w.category || '—'}</td>
+                                <td className="p-2 text-left font-bold text-rose-600">{formatCurrency(w.amount)}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Detailed Capital Tab */}
+                  {activeDetailTab === 'capital' && (
+                    <div className="overflow-x-auto max-h-60 overflow-y-auto scrollbar-thin">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-black/10 dark:bg-slate-800 font-bold text-gray-400 sticky top-0">
+                          <tr>
+                            <th className="p-2">المصدر</th>
+                            <th className="p-2">الملاحظات</th>
+                            <th className="p-2 text-left">المبلغ المضاف للخزينة</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {report.capital.items.length === 0 ? (
+                            <tr>
+                              <td colSpan="3" className="p-4 text-center text-gray-400">لا يوجد ضخ مالي مسجل</td>
+                            </tr>
+                          ) : (
+                            report.capital.items.map((c, idx) => (
+                              <tr key={idx} className="hover:bg-blue-500/5">
+                                <td className="p-2 font-bold">{c.source || 'ضخ مالي'}</td>
+                                <td className="p-2 text-gray-400">{c.notes || '—'}</td>
+                                <td className="p-2 text-left font-bold text-blue-600">{formatCurrency(c.amount)}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Detailed Gifts Tab */}
+                  {activeDetailTab === 'gifts' && (
+                    <div className="overflow-x-auto max-h-60 overflow-y-auto scrollbar-thin">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-black/10 dark:bg-slate-800 font-bold text-gray-400 sticky top-0">
+                          <tr>
+                            <th className="p-2">المهدى إليه</th>
+                            <th className="p-2">المنتج</th>
+                            <th className="p-2 text-center">الكمية</th>
+                            <th className="p-2 text-left">التكلفة</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {report.gifts.items.length === 0 ? (
+                            <tr>
+                              <td colSpan="4" className="p-4 text-center text-gray-400">لا توجد هدايا أو عينات مسجلة</td>
+                            </tr>
+                          ) : (
+                            report.gifts.items.map((g, idx) => (
+                              <tr key={idx} className="hover:bg-purple-500/5">
+                                <td className="p-2 font-bold">{g.recipient || 'زبون'}</td>
+                                <td className="p-2">{g.item_name}</td>
+                                <td className="p-2 text-center">{g.qty}</td>
+                                <td className="p-2 text-left font-bold text-purple-600">{formatCurrency(g.cost_value)}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Detailed Notes Tab */}
+                  {activeDetailTab === 'notes' && (
+                    <div className="space-y-2 max-h-60 overflow-y-auto scrollbar-thin">
+                      {report.notes.items.length === 0 ? (
+                        <div className="p-4 text-center text-gray-400 text-xs">لا توجد ملاحظات أو تنبيهات مسجلة في هذه الوردية</div>
+                      ) : (
+                        report.notes.items.map((n, idx) => (
+                          <div key={idx} className="p-2.5 bg-black/10 dark:bg-slate-900 rounded-xl text-xs space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="font-bold text-[#2D2424] dark:text-white">{n.title || 'ملاحظة وردية'}</span>
+                              <span className="text-[10px] text-gray-400">{formatDate(n.date)}</span>
+                            </div>
+                            <p className="text-gray-500 dark:text-slate-300">{n.content || n.notes}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => handlePrint(report)}
+                  className="btn-atelier-secondary py-2.5 px-6 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة تقرير الوردية</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveAndCloseShift}
+                  disabled={savingShift}
+                  className="flex-1 btn-atelier-primary py-2.5 text-xs font-extrabold flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer shadow-lg"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span>
+                    {savingShift ? 'جاري حفظ وإغلاق الوردية...' : 'حفظ وإغلاق الوردية نهائياً وطباعة الإيصال'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
-        /* History Tab */
-        <div className="atelier-card flex-1 p-4 overflow-y-auto scrollbar-thin space-y-2">
+        /* Past Shift Reports History */
+        <div className="flex-1 overflow-y-auto space-y-2.5 scrollbar-thin pr-1">
           {pastReports.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-              <History className="w-12 h-12 mb-2 stroke-1" />
-              <p className="text-sm font-medium">لا توجد ورديات سابقة محفوظة</p>
+            <div className="atelier-card p-12 text-center flex flex-col items-center justify-center gap-3">
+              <History className="w-12 h-12 text-gray-300 dark:text-slate-600" />
+              <div className="text-sm font-bold text-gray-600 dark:text-gray-300">لا توجد تقارير ورديات مغلقة سابقة</div>
+              <p className="text-xs text-gray-400">عند إغلاق أي وردية سيتم أرشفة كامل تقريرها هنا للرجوع إليها وطباعتها</p>
             </div>
           ) : (
-            pastReports.map((row) => {
-              let parsedData = null;
+            pastReports.map((item) => {
+              let parsed = null;
               try {
-                parsedData = JSON.parse(row.report_data_json || '{}');
+                parsed = JSON.parse(item.report_data_json || '{}');
               } catch (e) {}
 
               return (
-                <div key={row.id} className="p-3.5 rounded-2xl bg-white/70 dark:bg-slate-800/70 border border-amber-500/15 flex justify-between items-center hover:border-amber-500/30 transition-all text-xs">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-bold text-[#2D2424] dark:text-white">وردية #{row.id.slice(0, 8)}</span>
-                      <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold text-[10px]">
-                        الكاشير: {row.cashier_name}
+                <div
+                  key={item.id}
+                  className="atelier-card p-3.5 flex justify-between items-center hover:border-amber-500/40 transition-all shadow-sm"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-sm text-[#2D2424] dark:text-white">
+                        وردية: {item.cashier_name}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                        {item.start_date} إلى {item.end_date}
                       </span>
                     </div>
-                    <div className="text-[11px] text-gray-500">
-                      التاريخ: {formatDate(row.created_at)} | الفترة: {row.start_date} إلى {row.end_date}
+                    <div className="text-[11px] text-gray-400 flex items-center gap-3">
+                      <span>إجمالي المبيعات: {formatCurrency(item.total_sales)}</span>
+                      <span>صافي الربح: {formatCurrency(item.total_profit)}</span>
+                      <span
+                        className={
+                          item.variance >= 0 ? 'text-emerald-500 font-bold' : 'text-rose-500 font-bold'
+                        }
+                      >
+                        الفارق: {item.variance >= 0 ? '+' : ''}
+                        {formatCurrency(item.variance)}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4">
-                    <div className="text-left">
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400">
-                        مبيعات: {formatCurrency(row.total_sales)}
-                      </div>
-                      <div className={`text-[11px] ${row.variance >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                        الفارق: {row.variance >= 0 ? '+' : ''}{formatCurrency(row.variance)}
-                      </div>
-                    </div>
-
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={() => handlePrint(parsedData || row)}
-                      className="btn-atelier-secondary py-1.5 px-3 text-xs flex items-center gap-1"
+                      type="button"
+                      onClick={() => handlePrint(parsed || item)}
+                      className="btn-atelier-secondary py-1.5 px-3 text-xs flex items-center gap-1.5 font-bold cursor-pointer"
+                      title="إعادة طباعة تقرير الوردية"
                     >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>إعادة طباعة</span>
+                      <Printer className="w-3.5 h-3.5 text-amber-500" />
+                      <span>طباعة التقرير</span>
                     </button>
                   </div>
                 </div>

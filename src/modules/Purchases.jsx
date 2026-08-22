@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * PURCHASES MODULE - INTERACTIVE STEP-BY-STEP WIZARD & POST-COMMIT BARCODE STUDIO
+ * PURCHASES MODULE - EXPANDED WORKFLOW, ULTRA-WIDE WIZARD & BARCODE STUDIO
  * ============================================================================
  */
 
@@ -43,7 +43,9 @@ import {
   Building2,
   Boxes,
   ClipboardList,
-  AlertCircle
+  AlertCircle,
+  Package,
+  Receipt
 } from 'lucide-react';
 
 const purchasesRepo = new PurchasesRepository();
@@ -111,12 +113,12 @@ const PurchasesModule = () => {
 
   // Modal & Wizard State
   const [showWizardModal, setShowWizardModal] = useState(false);
-  const [wizardStep, setWizardStep] = useState(1); // 1: Supplier & Ref, 2: Items & Units, 3: Storage & Notes, 4: Review & Finalize
+  const [wizardStep, setWizardStep] = useState(1); // 1: Supplier, 2: Items, 3: Storage, 4: Review
   const [showOCRModal, setShowOCRModal] = useState(false);
   const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
-  // Barcode Print Studio Modal State
+  // Barcode Print Studio State
   const [barcodeModalData, setBarcodeModalData] = useState(null); // { items: [...with printCount, selected] }
   const [barcodeLayout, setBarcodeLayout] = useState('thermal'); // 'thermal' | 'a4_grid'
 
@@ -158,7 +160,7 @@ const PurchasesModule = () => {
       cutoffDate.setDate(cutoffDate.getDate() - filterDays);
       const data = await purchasesRepo.getPurchasesInRange(
         cutoffDate.toISOString(),
-        new Date().toISOString()
+        new Date(Date.now() + 86400000).toISOString()
       );
       setPurchases(data || []);
     } catch (error) {
@@ -226,7 +228,6 @@ const PurchasesModule = () => {
     }
   };
 
-  // Add existing product item
   const addExistingItem = () => {
     setPurchaseItems((prev) => [
       ...prev,
@@ -249,7 +250,6 @@ const PurchasesModule = () => {
     ]);
   };
 
-  // Add brand new product item
   const addNewItem = () => {
     setPurchaseItems((prev) => [
       ...prev,
@@ -310,7 +310,6 @@ const PurchasesModule = () => {
     setPurchaseItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Step Validation
   const handleNextStep = () => {
     if (wizardStep === 1) {
       if (!invoiceDate) {
@@ -348,7 +347,6 @@ const PurchasesModule = () => {
     setWizardStep((prev) => Math.max(1, prev - 1));
   };
 
-  // Final Commit & Automatic Barcode Studio Launch
   const savePurchase = async () => {
     if (purchaseItems.length === 0) {
       showError('يرجى إضافة صنف واحد على الأقل لفاتورة الشراء');
@@ -417,7 +415,7 @@ const PurchasesModule = () => {
         items_json: JSON.stringify(finalItems)
       };
 
-      // Transactional commit
+      // Transactional commit with WAC calculation
       await purchasesRepo.createPurchaseWithInventoryUpdate(purchaseData, inventoryUpdates, inventoryRepo);
 
       // Best-effort thermal print receipt
@@ -469,7 +467,6 @@ const PurchasesModule = () => {
     setOcrImage(null);
   };
 
-  // Open Barcode Print Modal with customized items & sticker counts
   const openBarcodePrintModal = (items) => {
     const formatted = items.map((it) => ({
       ...it,
@@ -600,7 +597,7 @@ No additional text, only JSON.`
           setPurchaseItems(items);
         }
         setShowOCRModal(false);
-        setWizardStep(2); // Jump directly to items step for review
+        setWizardStep(2);
         setShowWizardModal(true);
         showSuccess('✅ تم استخراج بيانات الفاتورة بنجاح وتحويلها للمعالج');
       } else {
@@ -629,17 +626,17 @@ No additional text, only JSON.`
   const totalPurchases = purchases.reduce((sum, p) => sum + (p.total || 0), 0);
 
   return (
-    <div className="h-full flex flex-col gap-4">
+    <div className="h-full flex flex-col gap-3.5">
       {/* Header Bar */}
-      <div className="atelier-card p-4 flex justify-between items-center flex-wrap gap-3">
+      <div className="atelier-card p-3.5 flex justify-between items-center flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold shadow-sm">
             <ShoppingBag className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-[#2D2424] dark:text-white">إدارة المشتريات والتوريد</h1>
-            <p className="text-xs text-[#5C524F] dark:text-slate-400">
-              معالج تفاعلي بالتدريج، استوديو طباعة الباركود، وتحديث المخزون ومتوسط التكلفة (WAC)
+            <h1 className="text-base font-extrabold text-[#2D2424] dark:text-white">إدارة المشتريات والتوريد</h1>
+            <p className="text-[11px] text-[#5C524F] dark:text-slate-400">
+              معالج تفاعلي واسع، استوديو طباعة الباركود، وتحديث المخزون ومتوسط التكلفة (WAC)
             </p>
           </div>
         </div>
@@ -648,7 +645,7 @@ No additional text, only JSON.`
           <select
             value={filterDays}
             onChange={(e) => setFilterDays(parseInt(e.target.value))}
-            className="input-atelier py-1.5 px-3 text-xs font-bold"
+            className="input-atelier py-1 px-3 text-xs font-bold"
           >
             <option value={7}>آخر 7 أيام</option>
             <option value={30}>آخر 30 يوم</option>
@@ -669,7 +666,7 @@ No additional text, only JSON.`
               resetForm();
               setShowWizardModal(true);
             }}
-            className="btn-atelier-primary py-1.5 px-4 text-xs flex items-center gap-1.5 font-bold cursor-pointer"
+            className="btn-atelier-primary py-1.5 px-4 text-xs flex items-center gap-1.5 font-bold cursor-pointer shadow-md"
           >
             <Plus className="w-4 h-4" />
             <span>➕ تسجيل فاتورة شراء بالمعالج</span>
@@ -679,39 +676,39 @@ No additional text, only JSON.`
 
       {/* Summary KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="atelier-card p-4 flex items-center justify-between">
+        <div className="atelier-card p-3.5 flex items-center justify-between">
           <div>
-            <div className="text-[11px] text-gray-500 font-bold">إجمالي مشتريات الفترة</div>
-            <div className="text-xl font-black text-amber-600 dark:text-amber-400 tabular-nums">
+            <div className="text-[10px] text-gray-500 font-bold">إجمالي مشتريات الفترة</div>
+            <div className="text-lg font-black text-amber-600 dark:text-amber-400 tabular-nums">
               {formatCurrency(totalPurchases)}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
-            <ShoppingBag className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
+            <ShoppingBag className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="atelier-card p-4 flex items-center justify-between">
+        <div className="atelier-card p-3.5 flex items-center justify-between">
           <div>
-            <div className="text-[11px] text-gray-500 font-bold">عدد الفواتير المسجلة</div>
-            <div className="text-xl font-black text-[#2D2424] dark:text-white tabular-nums">
+            <div className="text-[10px] text-gray-500 font-bold">عدد الفواتير المسجلة</div>
+            <div className="text-lg font-black text-[#2D2424] dark:text-white tabular-nums">
               {purchases.length} فاتورة
             </div>
           </div>
-          <div className="w-10 h-10 rounded-2xl bg-blue-500/10 text-blue-600 flex items-center justify-center font-bold">
-            <FileText className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-2xl bg-blue-500/10 text-blue-600 flex items-center justify-center font-bold">
+            <FileText className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="atelier-card p-4 flex items-center justify-between">
+        <div className="atelier-card p-3.5 flex items-center justify-between">
           <div>
-            <div className="text-[11px] text-gray-500 font-bold">متوسط قيمة الفاتورة</div>
-            <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+            <div className="text-[10px] text-gray-500 font-bold">متوسط قيمة الفاتورة</div>
+            <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
               {formatCurrency(purchases.length > 0 ? totalPurchases / purchases.length : 0)}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold">
-            <Scale className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold">
+            <Scale className="w-4 h-4" />
           </div>
         </div>
       </div>
@@ -724,12 +721,12 @@ No additional text, only JSON.`
           placeholder="بحث برقم الفاتورة، اسم المورد، أو اسم الصنف..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="input-atelier w-full ps-9 py-2 text-xs"
+          className="input-atelier w-full ps-9 py-1.5 text-xs"
         />
       </div>
 
       {/* Purchases List */}
-      <div className="flex-1 overflow-y-auto space-y-3 scrollbar-thin pr-1">
+      <div className="flex-1 overflow-y-auto space-y-2.5 scrollbar-thin pr-1">
         {loading ? (
           <div className="p-8 text-center text-xs text-gray-400">جاري تحميل سجل المشتريات...</div>
         ) : filteredPurchases.length === 0 ? (
@@ -744,12 +741,12 @@ No additional text, only JSON.`
             return (
               <div
                 key={purchase.id}
-                className="atelier-card p-4 flex flex-col gap-3 hover:border-amber-500/40 transition-all shadow-sm"
+                className="atelier-card p-3.5 flex flex-col gap-2.5 hover:border-amber-500/40 transition-all shadow-sm"
               >
                 <div className="flex justify-between items-start flex-wrap gap-2">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-sm text-[#2D2424] dark:text-white">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-extrabold text-xs sm:text-sm text-[#2D2424] dark:text-white">
                         {purchase.supplier_name || 'مورد عام / غير محدد'}
                       </span>
                       {purchase.invoice_ref && (
@@ -767,7 +764,7 @@ No additional text, only JSON.`
                           : 'آجل'}
                       </span>
                     </div>
-                    <div className="text-[11px] text-gray-400 flex items-center gap-2">
+                    <div className="text-[10px] text-gray-400 flex items-center gap-2">
                       <Calendar className="w-3 h-3" />
                       <span>{formatDate(purchase.date)}</span>
                     </div>
@@ -775,39 +772,39 @@ No additional text, only JSON.`
 
                   <div className="flex items-center gap-3">
                     <div className="text-left">
-                      <div className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      <div className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">
                         {formatCurrency(purchase.total)}
                       </div>
-                      <div className="text-[10px] text-gray-500">{items.length} صنف</div>
+                      <div className="text-[9px] text-gray-500">{items.length} صنف</div>
                     </div>
 
                     <button
                       onClick={() => openBarcodePrintModal(items)}
-                      className="btn-atelier-secondary py-1.5 px-3 text-xs flex items-center gap-1.5 font-bold cursor-pointer"
+                      className="btn-atelier-secondary py-1 px-2.5 text-[11px] flex items-center gap-1 font-bold cursor-pointer"
                       title="استوديو طباعة باركود الكميات المشتراة"
                     >
-                      <QrCode className="w-3.5 h-3.5 text-amber-600" />
+                      <QrCode className="w-3 h-3 text-amber-600" />
                       <span>استوديو الباركود</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Items summary */}
-                <div className="bg-white/80 dark:bg-slate-900/80 p-2.5 rounded-xl border border-amber-500/10 divide-y divide-amber-500/5 text-xs">
+                <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-xl border border-amber-500/10 divide-y divide-amber-500/5 text-[11px]">
                   {items.map((it, idx) => (
-                    <div key={idx} className="py-1.5 flex justify-between items-center">
+                    <div key={idx} className="py-1 flex justify-between items-center">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-[#2D2424] dark:text-white">{it.name}</span>
-                        <span className="text-gray-400 text-[11px]">
+                        <span className="text-gray-400 text-[10px]">
                           (×{it.quantity} {it.unit || 'قطعة'})
                         </span>
                         {it.category && (
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300">
                             {it.category}
                           </span>
                         )}
                         {it.barcode && (
-                          <span className="text-[10px] font-mono text-gray-400 bg-gray-100 dark:bg-slate-800 px-1.5 rounded">
+                          <span className="text-[9px] font-mono text-gray-400 bg-gray-100 dark:bg-slate-800 px-1 rounded">
                             {it.barcode}
                           </span>
                         )}
@@ -825,22 +822,22 @@ No additional text, only JSON.`
       </div>
 
       {/* ========================================================================= */}
-      {/* INTERACTIVE 4-STEP PURCHASE WIZARD MODAL */}
+      {/* EXPANDED ULTRA-WIDE 4-STEP PURCHASE WIZARD MODAL */}
       {/* ========================================================================= */}
       {showWizardModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4" dir="rtl">
-          <div className="atelier-card bg-white dark:bg-slate-900 w-full max-w-5xl max-h-[94vh] overflow-y-auto p-6 shadow-2xl flex flex-col gap-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4" dir="rtl">
+          <div className="atelier-card bg-white dark:bg-slate-900 w-[98vw] max-w-[1360px] h-[95vh] max-h-[940px] p-4 sm:p-6 shadow-2xl flex flex-col justify-between overflow-hidden">
             
             {/* Wizard Header & Stepper Progress */}
-            <div className="border-b border-amber-500/20 pb-4">
-              <div className="flex justify-between items-center mb-3">
+            <div className="border-b border-amber-500/20 pb-3 shrink-0">
+              <div className="flex justify-between items-center mb-2.5">
                 <div>
-                  <h2 className="text-lg font-extrabold text-[#2D2424] dark:text-amber-300 flex items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-extrabold text-[#2D2424] dark:text-amber-300 flex items-center gap-2">
                     <span>🛒</span>
-                    <span>معالج تسجيل وتوريد المشتريات التفاعلي</span>
+                    <span>معالج تسجيل وتوريد المشتريات الشامل</span>
                   </h2>
-                  <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">
-                    خطوات بسيطة ومرتبة تبدأ من بيانات المورد وحتى المراجعة الشاملة وطباعة الباركود
+                  <p className="text-[10px] text-gray-500 dark:text-slate-400">
+                    واجهة موسعة لإدخال التوريدات، تحديد الوحدات، وتوليد الباركود القياسي وحفظ الفواتير
                   </p>
                 </div>
                 <button
@@ -855,7 +852,7 @@ No additional text, only JSON.`
               <div className="grid grid-cols-4 gap-2 text-center text-xs">
                 {[
                   { step: 1, title: '1. بيانات المورد والفاتورة', icon: Building2 },
-                  { step: 2, title: '2. البضاعة والأصناف', icon: Boxes },
+                  { step: 2, title: '2. البضاعة والأصناف والوحدات', icon: Boxes },
                   { step: 3, title: '3. التخزين والتشغيلة', icon: MapPin },
                   { step: 4, title: '4. المراجعة والاعتماد', icon: ClipboardList }
                 ].map((s) => {
@@ -865,7 +862,7 @@ No additional text, only JSON.`
                   return (
                     <div
                       key={s.step}
-                      className={`p-2 rounded-xl flex items-center justify-center gap-1.5 transition-all font-bold ${
+                      className={`p-1.5 sm:p-2 rounded-xl flex items-center justify-center gap-1.5 transition-all font-bold text-[11px] ${
                         isCurrent
                           ? 'bg-amber-500 text-slate-950 shadow-md ring-2 ring-amber-400/50'
                           : isCompleted
@@ -881,512 +878,509 @@ No additional text, only JSON.`
               </div>
             </div>
 
-            {/* STEP 1: SUPPLIER & INVOICE METADATA */}
-            {wizardStep === 1 && (
-              <div className="space-y-4 animate-in fade-in duration-200">
-                <div className="bg-amber-500/10 border border-amber-500/25 p-3 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
-                  <HelpCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">الخطوة الأولى (بيانات المورد والفاتورة):</span> أدخل اسم المورد وطريقة الدفع وتاريخ الفاتورة لتوثيق السند المحاسبي بدقة.
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-amber-50/50 dark:bg-slate-800/40 p-5 rounded-2xl border border-amber-500/20">
-                  <div>
-                    <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">
-                      اسم المورد / الشركة الموردة <span className="text-gray-400 font-normal">(اختياري)</span>:
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="مثال: شركة العطور المتحدة، مورد محلي..."
-                      value={supplierName}
-                      onChange={(e) => setSupplierName(e.target.value)}
-                      className="input-atelier w-full text-xs font-bold"
-                      autoFocus
-                    />
-                    <span className="text-[10px] text-gray-400 block mt-1">يظهر في تقارير الموردين ومتابعة الديون</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">
-                      هاتف المورد <span className="text-gray-400 font-normal">(اختياري)</span>:
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="مثال: 0912345678"
-                      value={supplierPhone}
-                      onChange={(e) => setSupplierPhone(e.target.value)}
-                      className="input-atelier w-full text-xs"
-                      dir="ltr"
-                    />
-                    <span className="text-[10px] text-gray-400 block mt-1">للتواصل السريع وتوثيق سند التوريد</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">
-                      رقم مرجع فاتورة المورد <span className="text-gray-400 font-normal">(اختياري)</span>:
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="مثال: INV-9842"
-                      value={invoiceRef}
-                      onChange={(e) => setInvoiceRef(e.target.value)}
-                      className="input-atelier w-full text-xs font-mono"
-                    />
-                    <span className="text-[10px] text-gray-400 block mt-1">رقم الفاتورة الورقية الخاصة بالمورد للرجوع إليها</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">تاريخ الفاتورة:</label>
-                    <input
-                      type="date"
-                      value={invoiceDate}
-                      onChange={(e) => setInvoiceDate(e.target.value)}
-                      className="input-atelier w-full text-xs font-bold"
-                    />
-                    <span className="text-[10px] text-gray-400 block mt-1">تاريخ استلام الشحنة وتثبيت السعر</span>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">طريقة الدفع والتسوية:</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {[
-                        { id: 'cash', label: 'نقدي (كاش)', desc: 'خصم فوري من الخزينة' },
-                        { id: 'card', label: 'بطاقة مصرفية', desc: 'دفع إلكتروني' },
-                        { id: 'bank_transfer', label: 'تحويل بنكي', desc: 'حوالة مصرفية' },
-                        { id: 'debt', label: 'آجل (دين للمورد)', desc: 'تسجيل دين في حساب المورد' }
-                      ].map((m) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => setPaymentType(m.id)}
-                          className={`p-3 rounded-xl border text-right transition-all cursor-pointer ${
-                            paymentType === m.id
-                              ? 'bg-amber-500/15 border-amber-500 text-amber-900 dark:text-amber-200 ring-1 ring-amber-500'
-                              : 'bg-white dark:bg-slate-900 border-white/10 text-gray-600 dark:text-gray-300'
-                          }`}
-                        >
-                          <div className="font-bold text-xs">{m.label}</div>
-                          <div className="text-[10px] text-gray-400 mt-0.5">{m.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 2: ITEMS, UNITS & QUANTITIES */}
-            {wizardStep === 2 && (
-              <div className="space-y-4 animate-in fade-in duration-200">
-                <div className="bg-amber-500/10 border border-amber-500/25 p-3 rounded-2xl flex items-start justify-between gap-2.5 text-xs text-amber-900 dark:text-amber-200">
-                  <div className="flex items-start gap-2">
+            {/* Wizard Body Container with High Ergonomics */}
+            <div className="flex-1 overflow-y-auto py-3 scrollbar-thin">
+              {/* STEP 1: SUPPLIER & INVOICE METADATA */}
+              {wizardStep === 1 && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="bg-amber-500/10 border border-amber-500/25 p-3 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
                     <HelpCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                     <div>
-                      <span className="font-bold">الخطوة الثانية (البضاعة والأصناف):</span> أضف الأصناف المشتراة، وحدد وحدة القياس (قطعة، زجاجة، ملّ، لتر، تولة...)، والكمية وسعر التكلفة.
+                      <span className="font-bold">الخطوة الأولى:</span> أدخل بيانات المورد الأساسية وطريقة الدفع لتوثيق السند المالي بدقة.
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowNewCategoryModal(true)}
-                    className="btn-atelier-secondary py-1 px-2.5 text-[11px] flex items-center gap-1 font-bold shrink-0 cursor-pointer"
-                  >
-                    <FolderPlus className="w-3.5 h-3.5 text-amber-500" />
-                    <span>➕ إضافة فئة</span>
-                  </button>
-                </div>
 
-                <div className="flex justify-between items-center gap-2">
-                  <div className="text-xs font-bold text-gray-500">
-                    عدد الأصناف المضافة: <span className="text-amber-500 font-extrabold">{purchaseItems.length} صنف</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={addExistingItem}
-                      className="btn-atelier-secondary py-1.5 px-3 text-xs flex items-center gap-1 cursor-pointer font-bold"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-blue-500" />
-                      <span>إضافة صنف من المخزون</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={addNewItem}
-                      className="btn-atelier-primary py-1.5 px-3 text-xs flex items-center gap-1 cursor-pointer font-bold"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>➕ إضافة منتج جديد</span>
-                    </button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-amber-50/50 dark:bg-slate-800/40 p-5 rounded-2xl border border-amber-500/20">
+                    <div>
+                      <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                        اسم المورد / الشركة الموردة <span className="text-gray-400 font-normal">(اختياري)</span>:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="مثال: شركة العطور المتحدة، مورد محلي..."
+                        value={supplierName}
+                        onChange={(e) => setSupplierName(e.target.value)}
+                        className="input-atelier w-full text-xs font-bold"
+                        autoFocus
+                      />
+                      <span className="text-[10px] text-gray-400 block mt-1">يظهر في كشف حساب الموردين والتقارير المالية</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                        هاتف المورد <span className="text-gray-400 font-normal">(اختياري)</span>:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="مثال: 0912345678"
+                        value={supplierPhone}
+                        onChange={(e) => setSupplierPhone(e.target.value)}
+                        className="input-atelier w-full text-xs font-mono"
+                        dir="ltr"
+                      />
+                      <span className="text-[10px] text-gray-400 block mt-1">للتواصل السريع وتوثيق سند التوريد</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                        رقم مرجع فاتورة المورد <span className="text-gray-400 font-normal">(اختياري)</span>:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="مثال: INV-9842"
+                        value={invoiceRef}
+                        onChange={(e) => setInvoiceRef(e.target.value)}
+                        className="input-atelier w-full text-xs font-mono"
+                      />
+                      <span className="text-[10px] text-gray-400 block mt-1">رقم الفاتورة الورقية الخاصة بالمورد للرجوع إليها</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1">تاريخ الفاتورة:</label>
+                      <input
+                        type="date"
+                        value={invoiceDate}
+                        onChange={(e) => setInvoiceDate(e.target.value)}
+                        className="input-atelier w-full text-xs font-bold"
+                      />
+                      <span className="text-[10px] text-gray-400 block mt-1">تاريخ استلام الشحنة وتثبيت السعر</span>
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">طريقة الدفع والتسوية:</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        {[
+                          { id: 'cash', label: 'نقدي (كاش)', desc: 'خصم فوري من الخزينة' },
+                          { id: 'card', label: 'بطاقة مصرفية', desc: 'دفع إلكتروني' },
+                          { id: 'bank_transfer', label: 'تحويل بنكي', desc: 'حوالة مصرفية' },
+                          { id: 'debt', label: 'آجل (دين للمورد)', desc: 'تسجيل دين في حساب المورد' }
+                        ].map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setPaymentType(m.id)}
+                            className={`p-3 rounded-xl border text-right transition-all cursor-pointer ${
+                              paymentType === m.id
+                                ? 'bg-amber-500/15 border-amber-500 text-amber-900 dark:text-amber-200 ring-1 ring-amber-500'
+                                : 'bg-white dark:bg-slate-900 border-white/10 text-gray-600 dark:text-gray-300 hover:bg-amber-500/5'
+                            }`}
+                          >
+                            <div className="font-bold text-xs">{m.label}</div>
+                            <div className="text-[10px] text-gray-400 mt-0.5">{m.desc}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
+              )}
 
-                {purchaseItems.length === 0 ? (
-                  <div className="p-8 text-center border-2 border-dashed border-amber-500/20 rounded-2xl bg-amber-500/5">
-                    <Boxes className="w-10 h-10 mx-auto text-amber-500/40 mb-2" />
-                    <div className="text-xs font-bold text-gray-500 dark:text-slate-400">
-                      لم يتم إضافة أي منتج بعد في هذه الفاتورة
+              {/* STEP 2: EXPANDED ITEMS, UNITS & LIVE WIDE TABLE */}
+              {wizardStep === 2 && (
+                <div className="space-y-3 animate-in fade-in duration-200">
+                  <div className="bg-amber-500/10 border border-amber-500/25 p-2.5 rounded-2xl flex items-center justify-between gap-2 text-xs text-amber-900 dark:text-amber-200">
+                    <div className="flex items-center gap-2">
+                      <HelpCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                      <div>
+                        <span className="font-bold">الخطوة الثانية:</span> قائمة الأصناف والمنتجات المشتراة. حدد وحدة القياس، الفئة، الكمية وسعر التكلفة.
+                      </div>
                     </div>
-                    <div className="text-[11px] text-gray-400 mt-1">
-                      اضغط على "إضافة صنف من المخزون" أو "إضافة منتج جديد" للبدء
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowNewCategoryModal(true)}
+                        className="btn-atelier-secondary py-1 px-2.5 text-[11px] flex items-center gap-1 font-bold shrink-0 cursor-pointer"
+                      >
+                        <FolderPlus className="w-3.5 h-3.5 text-amber-500" />
+                        <span>➕ إضافة فئة</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={addExistingItem}
+                        className="btn-atelier-secondary py-1 px-3 text-xs flex items-center gap-1 cursor-pointer font-bold"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-blue-500" />
+                        <span>إضافة صنف من المخزون</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={addNewItem}
+                        className="btn-atelier-primary py-1 px-3 text-xs flex items-center gap-1 cursor-pointer font-bold shadow-sm"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>➕ إضافة منتج جديد</span>
+                      </button>
                     </div>
                   </div>
-                ) : (
-                  <div className="border border-amber-500/20 rounded-2xl overflow-hidden shadow-sm">
-                    <table className="w-full text-right text-xs">
-                      <thead className="bg-[#F4EFEA] dark:bg-slate-800 font-bold text-[#5C524F] dark:text-slate-300">
-                        <tr>
-                          <th className="p-2.5">المنتج والتصنيف</th>
-                          <th className="p-2.5">وحدة القياس</th>
-                          <th className="p-2.5 text-center">الكمية</th>
-                          <th className="p-2.5 text-left">سعر التكلفة (د.ل)</th>
-                          <th className="p-2.5 text-left">
-                            سعر البيع (د.ل) <span className="text-[9px] font-normal text-gray-400">(اختياري)</span>
-                          </th>
-                          <th className="p-2.5 text-left">الإجمالي</th>
-                          <th className="p-2.5 text-center">حذف</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-amber-500/10">
-                        {purchaseItems.map((item, index) => (
-                          <tr key={item.id || index} className="hover:bg-amber-500/5 transition-colors">
-                            {/* Product & Category */}
-                            <td className="p-2.5 min-w-[240px]">
-                              {item.is_new ? (
-                                <div className="space-y-1.5">
-                                  <input
-                                    type="text"
-                                    placeholder="اسم المنتج الجديد *"
-                                    value={item.name}
-                                    onChange={(e) => updatePurchaseItem(index, 'name', e.target.value)}
-                                    className="input-atelier w-full py-1 text-xs font-bold"
-                                  />
-                                  <div className="grid grid-cols-2 gap-1.5">
+
+                  {purchaseItems.length === 0 ? (
+                    <div className="p-12 text-center border-2 border-dashed border-amber-500/20 rounded-2xl bg-amber-500/5">
+                      <Boxes className="w-12 h-12 mx-auto text-amber-500/40 mb-2" />
+                      <div className="text-sm font-bold text-gray-600 dark:text-slate-300">
+                        لم يتم إضافة أي منتج بعد في هذه الفاتورة
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        اضغط على "إضافة صنف من المخزون" أو "إضافة منتج جديد" للبدء فوراً
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border border-amber-500/20 rounded-2xl overflow-hidden shadow-sm max-h-[56vh] overflow-y-auto scrollbar-thin">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-[#F4EFEA] dark:bg-slate-800 font-bold text-[#5C524F] dark:text-slate-300 sticky top-0 z-10">
+                          <tr>
+                            <th className="p-2.5">المنتج والتصنيف</th>
+                            <th className="p-2.5">وحدة القياس</th>
+                            <th className="p-2.5 text-center">الكمية</th>
+                            <th className="p-2.5 text-left">سعر التكلفة (د.ل)</th>
+                            <th className="p-2.5 text-left">
+                              سعر البيع (د.ل) <span className="text-[9px] font-normal text-gray-400">(اختياري)</span>
+                            </th>
+                            <th className="p-2.5 text-left">الإجمالي</th>
+                            <th className="p-2.5 text-center">حذف</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-amber-500/10">
+                          {purchaseItems.map((item, index) => (
+                            <tr key={item.id || index} className="hover:bg-amber-500/5 transition-colors">
+                              {/* Product & Category & Barcode */}
+                              <td className="p-2.5 min-w-[280px]">
+                                {item.is_new ? (
+                                  <div className="space-y-1.5">
+                                    <input
+                                      type="text"
+                                      placeholder="اسم المنتج الجديد *"
+                                      value={item.name}
+                                      onChange={(e) => updatePurchaseItem(index, 'name', e.target.value)}
+                                      className="input-atelier w-full py-1 text-xs font-bold"
+                                    />
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                      <select
+                                        value={item.category}
+                                        onChange={(e) => updatePurchaseItem(index, 'category', e.target.value)}
+                                        className="input-atelier py-0.5 px-1.5 text-[10px]"
+                                      >
+                                        {categories.map((cat) => (
+                                          <option key={cat} value={cat}>
+                                            {cat}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          type="text"
+                                          placeholder="الباركود (اختياري)"
+                                          value={item.barcode}
+                                          onChange={(e) => updatePurchaseItem(index, 'barcode', e.target.value)}
+                                          className="input-atelier py-0.5 px-1.5 text-[10px] flex-1 font-mono"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => generateBarcodeForItem(index)}
+                                          className="p-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 text-[10px] font-bold shrink-0 cursor-pointer"
+                                          title="توليد باركود قياسي صالح فوراً"
+                                        >
+                                          ⚡
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1">
                                     <select
-                                      value={item.category}
-                                      onChange={(e) => updatePurchaseItem(index, 'category', e.target.value)}
-                                      className="input-atelier py-0.5 px-1.5 text-[10px]"
+                                      value={item.product_id}
+                                      onChange={(e) => updatePurchaseItem(index, 'product_id', e.target.value)}
+                                      className="input-atelier w-full py-1 text-xs font-bold"
                                     >
-                                      {categories.map((cat) => (
-                                        <option key={cat} value={cat}>
-                                          {cat}
+                                      <option value="">-- اختر المنتج من المخزون --</option>
+                                      {products.map((p) => (
+                                        <option key={p.id} value={p.id}>
+                                          {p.name} (المتوفر: {p.qty} {p.unit} — التكلفة: {formatCurrency(p.cost)})
                                         </option>
                                       ))}
                                     </select>
-                                    <div className="flex items-center gap-1">
-                                      <input
-                                        type="text"
-                                        placeholder="الباركود (اختياري)"
-                                        value={item.barcode}
-                                        onChange={(e) => updatePurchaseItem(index, 'barcode', e.target.value)}
-                                        className="input-atelier py-0.5 px-1.5 text-[10px] flex-1 font-mono"
-                                      />
-                                      <button
-                                        type="button"
-                                        onClick={() => generateBarcodeForItem(index)}
-                                        className="p-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 text-[10px] font-bold shrink-0 cursor-pointer"
-                                        title="توليد باركود قياسي صالح فوراً"
-                                      >
-                                        ⚡
-                                      </button>
+                                    <div className="flex items-center justify-between text-[10px] text-gray-400">
+                                      <span>الفئة: {item.category}</span>
+                                      {item.barcode && (
+                                        <span className="font-mono bg-black/10 dark:bg-slate-800 px-1.5 rounded">
+                                          {item.barcode}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
-                                </div>
-                              ) : (
-                                <div className="space-y-1">
-                                  <select
-                                    value={item.product_id}
-                                    onChange={(e) => updatePurchaseItem(index, 'product_id', e.target.value)}
-                                    className="input-atelier w-full py-1 text-xs font-bold"
-                                  >
-                                    <option value="">-- اختر المنتج من المخزون --</option>
-                                    {products.map((p) => (
-                                      <option key={p.id} value={p.id}>
-                                        {p.name} (المتوفر: {p.qty} {p.unit} — التكلفة: {formatCurrency(p.cost)})
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <div className="flex items-center justify-between text-[10px] text-gray-400">
-                                    <span>الفئة: {item.category}</span>
-                                    {item.barcode && (
-                                      <span className="font-mono bg-black/10 dark:bg-slate-800 px-1 rounded">
-                                        {item.barcode}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </td>
+                                )}
+                              </td>
 
-                            {/* Unit Selector */}
-                            <td className="p-2.5 min-w-[120px]">
-                              <select
-                                value={item.unit}
-                                onChange={(e) => updatePurchaseItem(index, 'unit', e.target.value)}
-                                className="input-atelier w-full py-1 text-xs font-bold"
-                              >
-                                {DEFAULT_UNITS.map((u) => (
-                                  <option key={u.value} value={u.value}>
-                                    {u.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-
-                            {/* Quantity with Counter Steppers */}
-                            <td className="p-2.5 text-center">
-                              <div className="inline-flex items-center gap-1 bg-black/5 dark:bg-slate-800 p-0.5 rounded-lg border border-white/5">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updatePurchaseItem(index, 'quantity', Math.max(0.1, (item.quantity || 1) - 1))
-                                  }
-                                  className="w-6 h-6 flex items-center justify-center rounded bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 text-xs font-bold cursor-pointer"
+                              {/* Unit Selector */}
+                              <td className="p-2.5 min-w-[130px]">
+                                <select
+                                  value={item.unit}
+                                  onChange={(e) => updatePurchaseItem(index, 'unit', e.target.value)}
+                                  className="input-atelier w-full py-1 text-xs font-bold"
                                 >
-                                  -
-                                </button>
+                                  {DEFAULT_UNITS.map((u) => (
+                                    <option key={u.value} value={u.value}>
+                                      {u.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* Quantity Counter */}
+                              <td className="p-2.5 text-center min-w-[110px]">
+                                <div className="inline-flex items-center gap-1 bg-black/5 dark:bg-slate-800 p-0.5 rounded-lg border border-white/5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updatePurchaseItem(index, 'quantity', Math.max(0.1, (item.quantity || 1) - 1))
+                                    }
+                                    className="w-6 h-6 flex items-center justify-center rounded bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 text-xs font-bold cursor-pointer"
+                                  >
+                                    -
+                                  </button>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0.1"
+                                    value={item.quantity}
+                                    onChange={(e) =>
+                                      updatePurchaseItem(index, 'quantity', safeParseFloat(e.target.value, 1))
+                                    }
+                                    className="w-14 text-center py-0.5 text-xs font-bold bg-transparent border-0 focus:outline-none"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => updatePurchaseItem(index, 'quantity', (item.quantity || 1) + 1)}
+                                    className="w-6 h-6 flex items-center justify-center rounded bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 text-xs font-bold cursor-pointer"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </td>
+
+                              {/* Cost per unit */}
+                              <td className="p-2.5 text-left min-w-[90px]">
                                 <input
                                   type="number"
-                                  step="any"
-                                  min="0.1"
-                                  value={item.quantity}
+                                  step="0.1"
+                                  min="0"
+                                  value={item.cost_per_unit || ''}
+                                  placeholder="التكلفة"
                                   onChange={(e) =>
-                                    updatePurchaseItem(index, 'quantity', safeParseFloat(e.target.value, 1))
+                                    updatePurchaseItem(index, 'cost_per_unit', safeParseFloat(e.target.value, 0))
                                   }
-                                  className="w-14 text-center py-0.5 text-xs font-bold bg-transparent border-0 focus:outline-none"
+                                  className="input-atelier w-20 text-left py-1 text-xs font-bold tabular-nums"
                                 />
+                              </td>
+
+                              {/* Suggested Retail Price */}
+                              <td className="p-2.5 text-left min-w-[90px]">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  value={item.sell_price || ''}
+                                  placeholder="سعر البيع"
+                                  onChange={(e) =>
+                                    updatePurchaseItem(index, 'sell_price', safeParseFloat(e.target.value, 0))
+                                  }
+                                  className="input-atelier w-20 text-left py-1 text-xs font-bold tabular-nums"
+                                />
+                              </td>
+
+                              {/* Total Cost */}
+                              <td className="p-2.5 text-left font-bold text-emerald-600 dark:text-emerald-400 tabular-nums min-w-[100px]">
+                                {formatCurrency(item.total_cost)}
+                              </td>
+
+                              {/* Delete Action */}
+                              <td className="p-2.5 text-center">
                                 <button
                                   type="button"
-                                  onClick={() => updatePurchaseItem(index, 'quantity', (item.quantity || 1) + 1)}
-                                  className="w-6 h-6 flex items-center justify-center rounded bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 text-xs font-bold cursor-pointer"
+                                  onClick={() => removePurchaseItem(index)}
+                                  className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
+                                  title="حذف هذا الصنف"
                                 >
-                                  +
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
-                              </div>
-                            </td>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
 
-                            {/* Cost per unit */}
-                            <td className="p-2.5 text-left">
-                              <input
-                                type="number"
-                                step="0.1"
-                                min="0"
-                                value={item.cost_per_unit || ''}
-                                placeholder="التكلفة"
-                                onChange={(e) =>
-                                  updatePurchaseItem(index, 'cost_per_unit', safeParseFloat(e.target.value, 0))
-                                }
-                                className="input-atelier w-20 text-left py-1 text-xs font-bold tabular-nums"
-                              />
-                            </td>
+                  {/* Subtotal Banner */}
+                  <div className="bg-[#F8F6F0] dark:bg-slate-800 p-3 rounded-2xl flex justify-between items-center border border-amber-500/20 font-bold shrink-0">
+                    <span className="text-xs text-gray-500">إجمالي قيمة الأصناف المضافة ({purchaseItems.length} صنف):</span>
+                    <span className="text-xl text-emerald-600 dark:text-emerald-400 font-black tabular-nums">
+                      {formatCurrency(purchaseItems.reduce((sum, item) => sum + (item.total_cost || 0), 0))}
+                    </span>
+                  </div>
+                </div>
+              )}
 
-                            {/* Suggested Retail Price */}
-                            <td className="p-2.5 text-left">
-                              <input
-                                type="number"
-                                step="0.1"
-                                min="0"
-                                value={item.sell_price || ''}
-                                placeholder="سعر البيع"
-                                onChange={(e) =>
-                                  updatePurchaseItem(index, 'sell_price', safeParseFloat(e.target.value, 0))
-                                }
-                                className="input-atelier w-20 text-left py-1 text-xs font-bold tabular-nums"
-                              />
-                            </td>
+              {/* STEP 3: STORAGE, BATCH & DELIVERY NOTES */}
+              {wizardStep === 3 && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="bg-amber-500/10 border border-amber-500/25 p-3 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+                    <HelpCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">الخطوة الثالثة:</span> بيانات التخزين والتشغيلة وتاريخ الانتهاء لتوثيق الجودة وموقع الرف.
+                    </div>
+                  </div>
 
-                            {/* Total Cost */}
-                            <td className="p-2.5 text-left font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                              {formatCurrency(item.total_cost)}
-                            </td>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-amber-50/50 dark:bg-slate-800/40 p-5 rounded-2xl border border-amber-500/20">
+                    <div>
+                      <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">
+                        رقم التشغيلة / الدفعة (Batch No) <span className="text-gray-400 font-normal">(اختياري)</span>:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="مثال: BATCH-2026-08"
+                        value={batchNumber}
+                        onChange={(e) => setBatchNumber(e.target.value)}
+                        className="input-atelier w-full text-xs font-mono font-bold"
+                      />
+                      <span className="text-[10px] text-gray-400 block mt-1">تتبع جودة الشحنات وتواريخ إنتاجها</span>
+                    </div>
 
-                            {/* Delete Item */}
-                            <td className="p-2.5 text-center">
-                              <button
-                                type="button"
-                                onClick={() => removePurchaseItem(index)}
-                                className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
-                                title="حذف هذا الصنف"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                    <div>
+                      <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">
+                        موقع التخزين / الرف <span className="text-gray-400 font-normal">(اختياري)</span>:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="مثال: الرف الشرقي A-4 أو المخزن الداخلي"
+                        value={storageLocation}
+                        onChange={(e) => setStorageLocation(e.target.value)}
+                        className="input-atelier w-full text-xs"
+                      />
+                      <span className="text-[10px] text-gray-400 block mt-1">مكان تخزين البضاعة في المحل أو المستودع</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">
+                        تاريخ الصلاحية / الانتهاء <span className="text-gray-400 font-normal">(اختياري)</span>:
+                      </label>
+                      <input
+                        type="date"
+                        value={expiryDate}
+                        onChange={(e) => setExpiryDate(e.target.value)}
+                        className="input-atelier w-full text-xs"
+                      />
+                      <span className="text-[10px] text-gray-400 block mt-1">خاص بالزيوت والمستحضرات العطرية</span>
+                    </div>
+
+                    <div className="md:col-span-3">
+                      <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">
+                        ملاحظات التوريد والاستلام <span className="text-gray-400 font-normal">(اختياري)</span>:
+                      </label>
+                      <textarea
+                        placeholder="أية ملاحظات إضافية حول التوريد أو حالة البضاعة المستلمة..."
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        className="input-atelier w-full h-20 text-xs resize-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 4: COMPREHENSIVE REVIEW & FINAL COMMIT */}
+              {wizardStep === 4 && (
+                <div className="space-y-3.5 animate-in fade-in duration-200">
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-2xl flex items-start gap-2.5 text-xs text-emerald-900 dark:text-emerald-200">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">الخطوة الرابعة:</span> مراجعة تفاصيل الفاتورة والأصناف قبل الاعتماد النهائي. فور الحفظ، ستفتح شاشة طباعة الباركود للملصقات مباشرة.
+                    </div>
+                  </div>
+
+                  {/* Summary Metadata Strip */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-amber-50/50 dark:bg-slate-800/40 p-4 rounded-2xl border border-amber-500/20 text-xs">
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">اسم المورد:</span>
+                      <span className="font-bold">{supplierName || 'مورد عام'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">تاريخ الفاتورة:</span>
+                      <span className="font-bold">{invoiceDate}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">طريقة الدفع:</span>
+                      <span className="font-bold text-amber-600 dark:text-amber-400">
+                        {paymentType === 'cash'
+                          ? 'كاش (نقدي)'
+                          : paymentType === 'card'
+                          ? 'بطاقة مصرفية'
+                          : paymentType === 'bank_transfer'
+                          ? 'تحويل بنكي'
+                          : 'آجل (دين للمورد)'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">رقم المرجع / الرف:</span>
+                      <span className="font-mono">{invoiceRef || storageLocation || '—'}</span>
+                    </div>
+                  </div>
+
+                  {/* Items Review Table */}
+                  <div className="border border-white/10 rounded-2xl overflow-hidden text-xs max-h-[44vh] overflow-y-auto scrollbar-thin">
+                    <table className="w-full text-right">
+                      <thead className="bg-[#F4EFEA] dark:bg-slate-800 font-bold text-[#5C524F] dark:text-slate-300">
+                        <tr>
+                          <th className="p-2.5">الصنف</th>
+                          <th className="p-2.5">الفئة</th>
+                          <th className="p-2.5 text-center">الكمية</th>
+                          <th className="p-2.5 text-left">التكلفة</th>
+                          <th className="p-2.5 text-left">سعر البيع المقترح</th>
+                          <th className="p-2.5 text-left">الإجمالي</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-amber-500/10">
+                        {purchaseItems.map((it, idx) => (
+                          <tr key={idx} className="hover:bg-amber-500/5">
+                            <td className="p-2.5 font-bold">{it.name}</td>
+                            <td className="p-2.5 text-gray-400">{it.category}</td>
+                            <td className="p-2.5 text-center font-bold">
+                              {it.quantity} {it.unit}
+                            </td>
+                            <td className="p-2.5 text-left font-mono">{formatCurrency(it.cost_per_unit)}</td>
+                            <td className="p-2.5 text-left font-mono text-emerald-600">
+                              {formatCurrency(it.sell_price || it.cost_per_unit * 1.35)}
+                            </td>
+                            <td className="p-2.5 text-left font-bold text-amber-600 tabular-nums">
+                              {formatCurrency(it.total_cost)}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                )}
 
-                {/* Subtotal Banner */}
-                <div className="bg-[#F8F6F0] dark:bg-slate-800 p-3 rounded-2xl flex justify-between items-center border border-amber-500/20 font-bold">
-                  <span className="text-xs text-gray-500">إجمالي قيمة البضاعة حتى الآن:</span>
-                  <span className="text-xl text-emerald-600 dark:text-emerald-400 font-black tabular-nums">
-                    {formatCurrency(purchaseItems.reduce((sum, item) => sum + (item.total_cost || 0), 0))}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: STORAGE, BATCH & DELIVERY NOTES */}
-            {wizardStep === 3 && (
-              <div className="space-y-4 animate-in fade-in duration-200">
-                <div className="bg-amber-500/10 border border-amber-500/25 p-3 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
-                  <HelpCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">الخطوة الثالثة (بيانات التخزين والتشغيلة - اختيارية):</span> يمكنك توثيق رقم الدفعة/التشغيلة وموقع التخزين وتاريخ الصلاحية لسهولة تتبع العطور والمخزون لاحقاً.
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-amber-50/50 dark:bg-slate-800/40 p-5 rounded-2xl border border-amber-500/20">
-                  <div>
-                    <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">
-                      رقم التشغيلة / الدفعة (Batch No) <span className="text-gray-400 font-normal">(اختياري)</span>:
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="مثال: BATCH-2026-08"
-                      value={batchNumber}
-                      onChange={(e) => setBatchNumber(e.target.value)}
-                      className="input-atelier w-full text-xs font-mono font-bold"
-                    />
-                    <span className="text-[10px] text-gray-400 block mt-1">تتبع جودة الشحنات وتواريخ إنتاجها</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">
-                      موقع التخزين / الرف <span className="text-gray-400 font-normal">(اختياري)</span>:
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="مثال: الرف الشرقي A-4 أو المخزن الداخلي"
-                      value={storageLocation}
-                      onChange={(e) => setStorageLocation(e.target.value)}
-                      className="input-atelier w-full text-xs"
-                    />
-                    <span className="text-[10px] text-gray-400 block mt-1">مكان تخزين البضاعة في المحل أو المستودع</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">
-                      تاريخ الصلاحية / الانتهاء <span className="text-gray-400 font-normal">(اختياري)</span>:
-                    </label>
-                    <input
-                      type="date"
-                      value={expiryDate}
-                      onChange={(e) => setExpiryDate(e.target.value)}
-                      className="input-atelier w-full text-xs"
-                    />
-                    <span className="text-[10px] text-gray-400 block mt-1">خاص بالزيوت والمستحضرات العطرية</span>
-                  </div>
-
-                  <div className="md:col-span-3">
-                    <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1.5">
-                      ملاحظات التوريد والاستلام <span className="text-gray-400 font-normal">(اختياري)</span>:
-                    </label>
-                    <textarea
-                      placeholder="أية ملاحظات إضافية حول التوريد أو حالة البضاعة المستلمة..."
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      className="input-atelier w-full h-20 text-xs resize-none"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 4: COMPREHENSIVE REVIEW & FINAL COMMIT */}
-            {wizardStep === 4 && (
-              <div className="space-y-4 animate-in fade-in duration-200">
-                <div className="bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-2xl flex items-start gap-2.5 text-xs text-emerald-900 dark:text-emerald-200">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">الخطوة الرابعة (المراجعة الشاملة والاعتماد):</span> راجع بيانات الفاتورة والأصناف والتكلفة الإجمالية قبل الحفظ النهائي. فور اعتماد الفاتورة، ستفتح شاشة طباعة الباركود تلقائياً.
-                  </div>
-                </div>
-
-                {/* Summary Metadata Card */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-amber-50/50 dark:bg-slate-800/40 p-4 rounded-2xl border border-amber-500/20 text-xs">
-                  <div>
-                    <span className="text-gray-400 block text-[10px]">اسم المورد:</span>
-                    <span className="font-bold">{supplierName || 'مورد عام'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 block text-[10px]">تاريخ الفاتورة:</span>
-                    <span className="font-bold">{invoiceDate}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 block text-[10px]">طريقة الدفع:</span>
-                    <span className="font-bold text-amber-600 dark:text-amber-400">
-                      {paymentType === 'cash'
-                        ? 'كاش (نقدي)'
-                        : paymentType === 'card'
-                        ? 'بطاقة مصرفية'
-                        : paymentType === 'bank_transfer'
-                        ? 'تحويل بنكي'
-                        : 'آجل (دين للمورد)'}
+                  {/* Grand Total Banner */}
+                  <div className="bg-[#F8F6F0] dark:bg-slate-800 p-3.5 rounded-2xl flex justify-between items-center border border-amber-500/30">
+                    <div>
+                      <span className="text-[11px] text-gray-500 block">إجمالي عدد الأصناف: {purchaseItems.length} صنف</span>
+                      <span className="text-sm font-bold text-[#2D2424] dark:text-white">إجمالي قيمة الفاتورة المستحقة:</span>
+                    </div>
+                    <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      {formatCurrency(purchaseItems.reduce((sum, item) => sum + (item.total_cost || 0), 0))}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-gray-400 block text-[10px]">رقم المرجع / الرف:</span>
-                    <span className="font-mono">{invoiceRef || storageLocation || '—'}</span>
-                  </div>
                 </div>
-
-                {/* Items Review Table */}
-                <div className="border border-white/10 rounded-2xl overflow-hidden text-xs max-h-56 overflow-y-auto scrollbar-thin">
-                  <table className="w-full text-right">
-                    <thead className="bg-[#F4EFEA] dark:bg-slate-800 font-bold text-[#5C524F] dark:text-slate-300">
-                      <tr>
-                        <th className="p-2.5">الصنف</th>
-                        <th className="p-2.5">الفئة</th>
-                        <th className="p-2.5 text-center">الكمية</th>
-                        <th className="p-2.5 text-left">التكلفة</th>
-                        <th className="p-2.5 text-left">سعر البيع المقترح</th>
-                        <th className="p-2.5 text-left">الإجمالي</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-amber-500/10">
-                      {purchaseItems.map((it, idx) => (
-                        <tr key={idx} className="hover:bg-amber-500/5">
-                          <td className="p-2.5 font-bold">{it.name}</td>
-                          <td className="p-2.5 text-gray-400">{it.category}</td>
-                          <td className="p-2.5 text-center font-bold">
-                            {it.quantity} {it.unit}
-                          </td>
-                          <td className="p-2.5 text-left font-mono">{formatCurrency(it.cost_per_unit)}</td>
-                          <td className="p-2.5 text-left font-mono text-emerald-600">
-                            {formatCurrency(it.sell_price || it.cost_per_unit * 1.35)}
-                          </td>
-                          <td className="p-2.5 text-left font-bold text-amber-600 tabular-nums">
-                            {formatCurrency(it.total_cost)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Big Grand Total Banner */}
-                <div className="bg-[#F8F6F0] dark:bg-slate-800 p-4 rounded-2xl flex justify-between items-center border border-amber-500/30">
-                  <div>
-                    <span className="text-xs text-gray-500 block">إجمالي عدد الأصناف: {purchaseItems.length} صنف</span>
-                    <span className="text-sm font-bold text-[#2D2424] dark:text-white">إجمالي قيمة الفاتورة المستحقة:</span>
-                  </div>
-                  <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
-                    {formatCurrency(purchaseItems.reduce((sum, item) => sum + (item.total_cost || 0), 0))}
-                  </span>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Wizard Navigation Footer */}
-            <div className="flex justify-between items-center gap-3 pt-3 border-t border-white/10">
+            <div className="flex justify-between items-center gap-3 pt-3 border-t border-white/10 shrink-0">
               <div>
                 {wizardStep > 1 && (
                   <button
                     type="button"
                     onClick={handlePrevStep}
-                    className="btn-atelier-secondary py-2 px-5 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    className="btn-atelier-secondary py-1.5 px-5 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                   >
                     <ArrowRight className="w-4 h-4" />
                     <span>السابق</span>
@@ -1398,7 +1392,7 @@ No additional text, only JSON.`
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="btn-atelier-secondary py-2 px-4 text-xs font-bold cursor-pointer"
+                  className="btn-atelier-secondary py-1.5 px-4 text-xs font-bold cursor-pointer"
                 >
                   إلغاء
                 </button>
@@ -1407,7 +1401,7 @@ No additional text, only JSON.`
                   <button
                     type="button"
                     onClick={handleNextStep}
-                    className="btn-atelier-primary py-2 px-6 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    className="btn-atelier-primary py-1.5 px-6 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md"
                   >
                     <span>التالي</span>
                     <ArrowLeft className="w-4 h-4" />
@@ -1417,7 +1411,7 @@ No additional text, only JSON.`
                     type="button"
                     onClick={savePurchase}
                     disabled={saving}
-                    className="btn-atelier-primary py-2.5 px-8 text-xs font-extrabold flex items-center gap-2 disabled:opacity-50 cursor-pointer shadow-lg"
+                    className="btn-atelier-primary py-2 px-8 text-xs font-extrabold flex items-center gap-2 disabled:opacity-50 cursor-pointer shadow-lg"
                   >
                     {saving ? (
                       <>
@@ -1439,14 +1433,14 @@ No additional text, only JSON.`
       )}
 
       {/* ========================================================================= */}
-      {/* BARCODE PRINT STUDIO MODAL (POST-COMMIT OR DEDICATED PRINTING) */}
+      {/* BARCODE PRINT STUDIO MODAL (POST-COMMIT OR ON-DEMAND) */}
       {/* ========================================================================= */}
       {barcodeModalData && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" dir="rtl">
-          <div className="atelier-card bg-white dark:bg-slate-900 w-full max-w-4xl max-h-[92vh] overflow-y-auto p-6 shadow-2xl flex flex-col gap-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4" dir="rtl">
+          <div className="atelier-card bg-white dark:bg-slate-900 w-full max-w-5xl max-h-[92vh] overflow-y-auto p-5 sm:p-6 shadow-2xl flex flex-col gap-4">
             <div className="flex justify-between items-center border-b border-amber-500/20 pb-3">
               <div>
-                <h2 className="text-lg font-bold text-[#2D2424] dark:text-amber-300 flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-bold text-[#2D2424] dark:text-amber-300 flex items-center gap-2">
                   <QrCode className="w-5 h-5 text-amber-500" />
                   <span>استوديو طباعة الباركود القياسي القابل للقراءة</span>
                 </h2>
@@ -1649,9 +1643,7 @@ No additional text, only JSON.`
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* QUICK NEW CATEGORY MODAL */}
-      {/* ========================================================================= */}
+      {/* Quick Add Category Modal */}
       {showNewCategoryModal && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4" dir="rtl">
           <div className="atelier-card bg-white dark:bg-slate-900 w-full max-w-md p-5 shadow-2xl flex flex-col gap-4">
@@ -1695,9 +1687,7 @@ No additional text, only JSON.`
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* OCR MODAL */}
-      {/* ========================================================================= */}
+      {/* OCR Modal */}
       {showOCRModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" dir="rtl">
           <div className="atelier-card bg-white dark:bg-slate-900 w-full max-w-lg p-6 shadow-2xl flex flex-col gap-4">

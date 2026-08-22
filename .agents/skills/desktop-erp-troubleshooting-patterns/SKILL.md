@@ -203,3 +203,23 @@ Traditional flat ERP purchase forms overwhelm operators with 15+ simultaneous in
 3. **100% Offline True Vector Scannable Barcode Standard**:
    - Never use fake text characters or CSS font approximations.
    - Use clean, mathematically compliant SVG vector renderers (Code-128B / EAN-13) with precise module widths, quiet zones, high contrast (`#FFFFFF` background, `#000000` bars), and crisp edge rendering for guaranteed laser/CCD scanner readability on 50x30mm thermal rolls and A4 sheets.
+
+---
+
+## 9. SQLite ISO String Date Comparison Guardrails & Full Shift Close Reconciliation
+
+### The Root Cause (Date Upper Bound Trap)
+In SQLite, dates are typically stored as ISO strings (`TEXT NOT NULL`, e.g. `'2026-08-22T06:28:09.000Z'`).
+Calling `new Date(8640000000000000).toISOString()` to create an "infinite upper bound" produces `'+275760-09-13T00:00:00.000Z'`.
+In ASCII lexicographical comparison, `'+'` (ASCII 43) is strictly less than `'2'` (ASCII 50).
+Therefore, `WHERE date <= '+275760...'` evaluates to **FALSE for every modern timestamp**, returning 0 rows silently!
+
+### Prevention Rule:
+- Always use `new Date(Date.now() + 86400000).toISOString()` or `endDate + 'T23:59:59.999Z'`.
+- Never use max-epoch dates with leading plus signs for string-based SQL queries.
+
+### Shift Close Reconciliation Standard:
+- **Cash Drawer Formula**:
+  `Expected Cash = (Cash Sales) + (Cash Capital Injections) - (Cash Withdrawals) - (Cash Purchases)`.
+- Always compute and display exact variance (`فائض` if positive, `عجز` if negative).
+- Aggregate and print all daily operational streams: Sales, Purchases, Losses, Withdrawals, Injections, Gifts, and Shift Notes.
