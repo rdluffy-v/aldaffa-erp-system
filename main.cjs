@@ -1358,32 +1358,6 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
   }
 });
 
-    const printWindow = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        nodeIntegration: false
-      }
-    });
-
-    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(reportHtml));
-
-    printWindow.webContents.print({
-      silent: false,
-      printBackground: true
-    }, (success, errorType) => {
-      if (!success) {
-        console.error('Print failed:', errorType);
-      }
-      printWindow.close();
-    });
-
-    return { success: true };
-  } catch (error) {
-    console.error('Print shift report error:', error);
-    return { success: false, error: error.message };
-  }
-});
-
 // A4 Stock / Inventory Report Printing
 ipcMain.handle('print:inventory-report', async (event, inventoryData) => {
   try {
@@ -1926,20 +1900,11 @@ ipcMain.handle('print:test-pdf', async (event, templateConfig = {}) => {
   }
 });
 
-// Auto-save and flush database WAL & auto backup on app exit
+// Auto-save and flush database WAL on app exit
 function safeFlushAndBackup() {
-  if (db) {
+  if (db && db.open) {
     try {
       db.pragma('wal_checkpoint(FULL)');
-      const userDataPath = app.getPath('userData');
-      const backupsDir = path.join(userDataPath, 'backups');
-      if (!fs.existsSync(backupsDir)) {
-        fs.mkdirSync(backupsDir, { recursive: true });
-      }
-      const exitBackupPath = path.join(backupsDir, 'aldaffa_auto_exit_backup.db');
-      db.backup(exitBackupPath)
-        .then(() => console.log('Auto exit database backup saved successfully'))
-        .catch((e) => console.error('Failed auto exit backup:', e));
     } catch (e) {
       console.error('Safe flush on exit error:', e);
     }
