@@ -45,7 +45,11 @@ import {
   ClipboardList,
   AlertCircle,
   Package,
-  Receipt
+  Receipt,
+  Usb,
+  RefreshCw,
+  Terminal,
+  HardDrive
 } from 'lucide-react';
 
 const purchasesRepo = new PurchasesRepository();
@@ -121,6 +125,17 @@ const PurchasesModule = () => {
   // Barcode Print Studio State
   const [barcodeModalData, setBarcodeModalData] = useState(null); // { items: [...with printCount, selected] }
   const [barcodeLayout, setBarcodeLayout] = useState('thermal'); // 'thermal' | 'a4_grid'
+  const [hardwareInfo, setHardwareInfo] = useState({
+    systemPrinters: [],
+    usbPrinters: [],
+    usbScanners: [],
+    lpDevices: [],
+    cupsRunning: false
+  });
+  const [selectedPrinter, setSelectedPrinter] = useState('');
+  const [checkingHardware, setCheckingHardware] = useState(false);
+  const [printingBarcodes, setPrintingBarcodes] = useState(false);
+  const [showCupsGuide, setShowCupsGuide] = useState(false);
 
   // Purchase Form Fields
   const [supplierName, setSupplierName] = useState('');
@@ -201,6 +216,200 @@ const PurchasesModule = () => {
       showSuccess('✅ تم حفظ مفتاح Gemini API');
     } catch (error) {
       showError(`خطأ في حفظ المفتاح: ${error.message}`);
+    }
+  };
+
+  const loadHardwareInfo = useCallback(async () => {
+    setCheckingHardware(true);
+    try {
+      if (typeof window !== 'undefined' && window.require) {
+        const { ipcRenderer } = window.require('electron');
+        const res = await ipcRenderer.invoke('hardware:get-devices');
+        if (res && res.success) {
+          setHardwareInfo(res);
+          if (res.systemPrinters && res.systemPrinters.length > 0 && !selectedPrinter) {
+            const def = res.systemPrinters.find((p) => p.isDefault) || res.systemPrinters[0];
+            setSelectedPrinter(def.name);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('loadHardwareInfo error:', e);
+    } finally {
+      setCheckingHardware(false);
+    }
+  }, [selectedPrinter]);
+
+  useEffect(() => {
+    loadHardwareInfo();
+  }, [loadHardwareInfo]);
+
+  const handleExecuteBarcodePrint = async () => {
+    if (!barcodeModalData || !barcodeModalData.items) return;
+    const selectedItems = barcodeModalData.items.filter((i) => i.selected && (i.printCount || 0) > 0);
+    if (selectedItems.length === 0) {
+      showWarning('يرجى تحديد صنف واحد على الأقل مع عدد ملصقات أكبر من 0');
+      return;
+    }
+
+    setPrintingBarcodes(true);
+    try {
+      const isThermal = barcodeLayout === 'thermal';
+
+      const labelsHtml = selectedItems
+        .flatMap((item) => {
+          const count = item.printCount || 0;
+          return Array.from({ length: count }).map(
+            () => `
+            <div class="barcode-card">
+              <div class="shop-name">الدفة للعطور الملكية</div>
+              <div class="product-name">${item.name}</div>
+              <div class="barcode-svg-container">
+                <svg id="barcode-${item.barcode || 'AL-PERFUME'}" class="barcode-svg"></svg>
+              </div>
+              <div class="barcode-num">${item.barcode || ''}</div>
+              <div class="price-tag">${formatCurrency(item.sell_price || item.cost_per_unit * 1.35)}</div>
+            </div>
+          `
+          );
+        })
+        .join('');
+
+      const fullHtml = `
+<!DOCTYPE html>
+<html dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>طباعة ملصقات باركود</title>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+  <style>
+    @page {
+      size: ${isThermal ? '50mm 30mm' : 'A4'};
+      margin: ${isThermal ? '0' : '8mm'};
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #fff;
+      color: #000;
+      -webkit-print-color-adjust: exact;
+    }
+    ${
+      isThermal
+        ? `
+      .label-wrapper {
+        width: 50mm;
+        height: 30mm;
+        page-break-after: always;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+        text-align: center;
+        padding: 2mm 2.5mm;
+        overflow: hidden;
+      }
+      .barcode-card {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+        text-align: center;
+      }
+      .shop-name { font-size: 8px; font-weight: bold; color: #444; }
+      .product-name { font-size: 10px; font-weight: 900; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45mm; }
+      .barcode-svg-container { width: 100%; height: 11mm; display: flex; justify-content: center; align-items: center; }
+      .barcode-svg { width: 42mm; height: 11mm; }
+      .barcode-num { font-size: 8px; font-family: monospace; font-weight: bold; letter-spacing: 1px; }
+      .price-tag { font-size: 10px; font-weight: 900; color: #000; }
+    `
+        : `
+      .grid-container {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4mm;
+      }
+      .barcode-card {
+        border: 1px dashed #bbb;
+        border-radius: 4px;
+        padding: 3mm;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 28mm;
+        text-align: center;
+        page-break-inside: avoid;
+      }
+      .shop-name { font-size: 8px; font-weight: bold; color: #555; }
+      .product-name { font-size: 10px; font-weight: bold; }
+      .barcode-svg-container { width: 100%; height: 12mm; display: flex; justify-content: center; }
+      .barcode-num { font-size: 9px; font-family: monospace; }
+      .price-tag { font-size: 11px; font-weight: bold; }
+    `
+    }
+  </style>
+</head>
+<body>
+  ${
+    isThermal
+      ? labelsHtml
+          .split('</div>')
+          .filter(Boolean)
+          .map((card) => `<div class="label-wrapper">${card}</div></div>`)
+          .join('')
+      : `
+    <div class="grid-container">
+      ${labelsHtml}
+    </div>
+  `
+  }
+  <script>
+    window.onload = function() {
+      ${selectedItems
+        .map(
+          (item) => `
+        try {
+          JsBarcode("#barcode-${item.barcode || 'AL-PERFUME'}", "${item.barcode || 'AL-PERFUME'}", {
+            format: "CODE128",
+            width: 1.5,
+            height: 35,
+            displayValue: false,
+            margin: 0
+          });
+        } catch(e) {}
+      `
+        )
+        .join('')}
+      setTimeout(function() {
+        window.print();
+      }, 250);
+    };
+  <\/script>
+</body>
+</html>
+      `;
+
+      if (typeof window !== 'undefined' && window.require) {
+        const { ipcRenderer } = window.require('electron');
+        await ipcRenderer.invoke('print:barcodes-direct', {
+          html: fullHtml,
+          printerName: selectedPrinter || undefined,
+          silent: false,
+          widthMm: isThermal ? 50 : 210,
+          heightMm: isThermal ? 30 : 297
+        });
+        showSuccess('✅ تم إرسال ملصقات الباركود إلى أمر الطباعة بنجاح');
+      } else {
+        window.print();
+        showSuccess('✅ تم إرسال ملصقات الباركود إلى أمر الطباعة');
+      }
+    } catch (err) {
+      showError(`فشل الطباعة: ${err.message}`);
+    } finally {
+      setPrintingBarcodes(false);
     }
   };
 
@@ -1456,21 +1665,138 @@ No additional text, only JSON.`
               </button>
             </div>
 
-            {/* Print Controls Bar */}
-            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+            {/* Hardware & USB Live Detection Status Banner */}
+            <div className="p-3.5 bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-blue-500/10 border border-amber-500/30 rounded-2xl flex flex-col gap-2.5 text-xs">
+              <div className="flex justify-between items-center flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 font-bold text-[#2D2424] dark:text-white">
+                    <Usb className="w-4 h-4 text-emerald-500" />
+                    <span>حالة منافذ الـ USB والأجهزة:</span>
+                  </div>
+
+                  {hardwareInfo.usbPrinters && hardwareInfo.usbPrinters.length > 0 ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span>متصل: {hardwareInfo.usbPrinters.map((p) => p.name).join(', ')}</span>
+                      {hardwareInfo.lpDevices && hardwareInfo.lpDevices.length > 0 && (
+                        <span className="font-mono text-[10px] text-gray-500">({hardwareInfo.lpDevices.join(', ')})</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                      لم يتم رصد طابعة USB مباشرة (تأكد من توصيل كابل الـ USB وتشغيل الطابعة)
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={loadHardwareInfo}
+                    disabled={checkingHardware}
+                    className="btn-atelier-secondary py-1 px-2.5 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${checkingHardware ? 'animate-spin' : ''}`} />
+                    <span>{checkingHardware ? 'جاري الفحص...' : '⚡ إعادة فحص الأجهزة'}</span>
+                  </button>
+
+                  {!hardwareInfo.cupsRunning && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCupsGuide(!showCupsGuide)}
+                      className="btn-atelier-secondary py-1 px-2.5 text-[11px] text-amber-700 dark:text-amber-300 font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Terminal className="w-3 h-3" />
+                      <span>{showCupsGuide ? 'إخفاء أمر التثبيت' : '💡 تفعيل الطابعة بالنظام'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Linux CUPS Setup Helper Banner if CUPS is not active */}
+              {showCupsGuide && (
+                <div className="p-2.5 bg-black/20 dark:bg-slate-950/80 border border-amber-500/30 rounded-xl space-y-1 text-[11px] animate-in fade-in duration-200">
+                  <div className="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5" />
+                    <span>لإظهار طابعة الـ USB في قائمة طابعات النظام التلقائية على لينكس:</span>
+                  </div>
+                  <p className="text-gray-400">
+                    تم اكتشاف الطابعة عبر المنفذ <code className="text-emerald-400">/dev/usb/lp0</code>. لربطها التلقائي بمحرك الطباعة، افتح الطرفية ونفذ الأمر التالي لمرة واحدة:
+                  </p>
+                  <div className="p-1.5 bg-black/60 rounded font-mono text-[10px] text-amber-300 select-all" dir="ltr">
+                    sudo apt-get install -y cups cups-daemon printer-driver-all && sudo usermod -aG lp $USER && sudo systemctl enable --now cups
+                  </div>
+                </div>
+              )}
+
+              {/* Target System Printer Selector */}
+              <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-white/10">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-gray-500">الطابعة المستهدفة:</span>
+                  {hardwareInfo.systemPrinters && hardwareInfo.systemPrinters.length > 0 ? (
+                    <select
+                      value={selectedPrinter}
+                      onChange={(e) => setSelectedPrinter(e.target.value)}
+                      className="input-atelier py-1 px-2 text-xs font-bold"
+                    >
+                      {hardwareInfo.systemPrinters.map((p, idx) => (
+                        <option key={idx} value={p.name}>
+                          {p.name} {p.isDefault ? '(الافتراضية)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-[11px] text-gray-400 font-bold">
+                      {hardwareInfo.usbPrinters?.length > 0
+                        ? `طابعة USB المكتشفة (${hardwareInfo.usbPrinters[0].name})`
+                        : 'معالج الطباعة القياسي (Default System Print)'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-gray-600 dark:text-slate-300">مقاس الملصق:</span>
+                  <button
+                    type="button"
+                    onClick={() => setBarcodeLayout('thermal')}
+                    className={`py-1 px-2.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                      barcodeLayout === 'thermal'
+                        ? 'bg-amber-500 text-slate-950 border-amber-500'
+                        : 'bg-black/10 border-white/10 text-gray-400'
+                    }`}
+                  >
+                    حراري بكرات (50×30mm)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBarcodeLayout('a4_grid')}
+                    className={`py-1 px-2.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                      barcodeLayout === 'a4_grid'
+                        ? 'bg-amber-500 text-slate-950 border-amber-500'
+                        : 'bg-black/10 border-white/10 text-gray-400'
+                    }`}
+                  >
+                    ورق ملصقات A4
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Action Buttons for Quantities */}
+            <div className="p-2.5 bg-amber-500/5 border border-amber-500/15 rounded-2xl flex flex-wrap items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-amber-900 dark:text-amber-300">أزرار سريعة للكميات:</span>
+                <span className="font-bold text-amber-900 dark:text-amber-300 text-[11px]">أزرار سريعة للكميات:</span>
                 <button
                   type="button"
                   onClick={() => setAllPrintCounts('invoice_qty')}
-                  className="btn-atelier-secondary py-1 px-2.5 text-[11px] font-bold cursor-pointer"
+                  className="btn-atelier-secondary py-1 px-2 text-[10px] font-bold cursor-pointer"
                 >
                   نفس كمية الفاتورة
                 </button>
                 <button
                   type="button"
                   onClick={() => setAllPrintCounts('single')}
-                  className="btn-atelier-secondary py-1 px-2.5 text-[11px] font-bold cursor-pointer"
+                  className="btn-atelier-secondary py-1 px-2 text-[10px] font-bold cursor-pointer"
                 >
                   ملصق 1 لكل صنف
                 </button>
@@ -1487,32 +1813,6 @@ No additional text, only JSON.`
                   className="btn-atelier-secondary py-1 px-2 text-[10px] cursor-pointer"
                 >
                   إلغاء التحديد
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-gray-600 dark:text-slate-300">مقاس الطباعة:</span>
-                <button
-                  type="button"
-                  onClick={() => setBarcodeLayout('thermal')}
-                  className={`py-1 px-2.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-                    barcodeLayout === 'thermal'
-                      ? 'bg-amber-500 text-slate-950 border-amber-500'
-                      : 'bg-black/10 border-white/10 text-gray-400'
-                  }`}
-                >
-                  طابعة حرارية (50×30mm)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBarcodeLayout('a4_grid')}
-                  className={`py-1 px-2.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-                    barcodeLayout === 'a4_grid'
-                      ? 'bg-amber-500 text-slate-950 border-amber-500'
-                      : 'bg-black/10 border-white/10 text-gray-400'
-                  }`}
-                >
-                  ورق ملصقات A4
                 </button>
               </div>
             </div>
@@ -1617,22 +1917,22 @@ No additional text, only JSON.`
             {/* Print Action Buttons */}
             <div className="flex gap-2 pt-2 border-t border-white/10">
               <button
-                onClick={() => {
-                  window.print();
-                  showSuccess('✅ تم إرسال ملصقات الباركود إلى أمر الطباعة');
-                }}
-                className="flex-1 btn-atelier-primary py-2.5 text-xs flex items-center justify-center gap-2 font-bold cursor-pointer"
+                type="button"
+                onClick={handleExecuteBarcodePrint}
+                disabled={printingBarcodes}
+                className="flex-1 btn-atelier-primary py-2.5 text-xs flex items-center justify-center gap-2 font-bold cursor-pointer shadow-lg disabled:opacity-50"
               >
-                <Printer className="w-4 h-4" />
+                <Printer className={`w-4 h-4 ${printingBarcodes ? 'animate-bounce' : ''}`} />
                 <span>
-                  طباعة الآن (
-                  {barcodeModalData.items
-                    .filter((i) => i.selected)
-                    .reduce((s, i) => s + (i.printCount || 0), 0)}{' '}
-                  ملصق)
+                  {printingBarcodes
+                    ? 'جاري إرسال أمر الطباعة...'
+                    : `طباعة الآن (${barcodeModalData.items
+                        .filter((i) => i.selected)
+                        .reduce((s, i) => s + (i.printCount || 0), 0)} ملصق)`}
                 </span>
               </button>
               <button
+                type="button"
                 onClick={() => setBarcodeModalData(null)}
                 className="btn-atelier-secondary py-2.5 px-6 text-xs font-bold cursor-pointer"
               >

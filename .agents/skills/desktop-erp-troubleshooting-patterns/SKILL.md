@@ -271,3 +271,32 @@ This causes immediate operation failure and blocks critical transactions.
    }
    ```
 3. **Interactive Connection Probing**: Provide a single-click "Test Connection" (`handleTestConnection`) button in the UI sending a 1-token probe request to give users instant visual confirmation of latency and credential validity.
+
+---
+
+## 14. Hardware USB Printer & Scanner Live Discovery and Linux Print Subsystems
+
+### Root Cause
+1. **Linux Printing Daemon Inactivity**: Minimal or developer Linux distros (e.g. Kali Linux, Ubuntu Server/Minimal) frequently omit the CUPS print daemon (`cups.service`). Even when a USB thermal/barcode printer (e.g. `1fc9:2016 Printer-80`) is physically attached and creates `/dev/usb/lp0`, Chromium and Electron's `webContents.getPrintersAsync()` and `window.print()` will find 0 destinations because the OS spooler is absent.
+2. **Missing Low-Level Hardware Probing**: Desktop ERP applications that only call `window.print()` leave merchants blind as to whether their USB cable or printer is recognized by the operating system.
+
+### Prevention & Guardrail
+1. **Dual-Layered Hardware Discovery (USB Bus + OS Queues)**:
+   In the Electron main process, implement hardware discovery (`hardware:get-devices`) querying both the OS print subsystem (`webContents.getPrintersAsync()`) and raw USB bus devices (`lsusb`, `/dev/usb/lp*`):
+   ```javascript
+   ipcMain.handle('hardware:get-devices', async () => {
+     const systemPrinters = await mainWindow.webContents.getPrintersAsync();
+     const lpDevices = fs.existsSync('/dev/usb') ? fs.readdirSync('/dev/usb').filter(f => f.startsWith('lp')) : [];
+     const usbPrinters = parseLsusbForPrinters();
+     const cupsRunning = checkCupsStatus();
+     return { systemPrinters, usbPrinters, lpDevices, cupsRunning };
+   });
+   ```
+2. **Live Hardware Badges in Barcode & POS Modals**:
+   Always display a live badge indicating physical USB connectivity (`🟢 متصل بالـ USB: Printer-80 على /dev/usb/lp0`).
+3. **Dedicated Electron Direct Print Window**:
+   Never rely solely on `window.print()`. Use a dedicated hidden `BrowserWindow` with `@page { size: 50mm 30mm; margin: 0; }` and pass target `deviceName` directly to `webContents.print({ silent: false, deviceName })`.
+4. **Actionable OS Enabler**:
+   When CUPS is inactive on Linux, provide the single-line enabler command inside the UI:
+   `sudo apt-get install -y cups cups-daemon printer-driver-all && sudo usermod -aG lp $USER && sudo systemctl enable --now cups`.
+

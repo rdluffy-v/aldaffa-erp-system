@@ -1905,6 +1905,111 @@ ipcMain.handle('print:test-pdf', async (event, templateConfig = {}) => {
   }
 });
 
+// Hardware & USB Printer/Scanner Discovery Handler
+ipcMain.handle('hardware:get-devices', async () => {
+  const result = {
+    systemPrinters: [],
+    usbPrinters: [],
+    usbScanners: [],
+    rawUsbDevices: [],
+    lpDevices: [],
+    cupsRunning: false,
+    platform: process.platform
+  };
+
+  // 1. Query OS System Printers (via Electron)
+  try {
+    if (mainWindow && mainWindow.webContents) {
+      result.systemPrinters = await mainWindow.webContents.getPrintersAsync();
+    }
+  } catch (e) {
+    console.warn('getPrintersAsync error:', e.message);
+  }
+
+  // 2. Query Linux /dev/usb/lp devices
+  if (process.platform === 'linux') {
+    try {
+      if (fs.existsSync('/dev/usb')) {
+        const lpDevs = fs.readdirSync('/dev/usb').filter(f => f.startsWith('lp'));
+        result.lpDevices = lpDevs.map(f => `/dev/usb/${f}`);
+      }
+    } catch (e) {}
+
+    // 3. Query CUPS status
+    try {
+      const { execSync } = require('child_process');
+      const cupsCheck = execSync('systemctl is-active cups 2>&1 || true', { encoding: 'utf8' }).trim();
+      result.cupsRunning = cupsCheck === 'active';
+    } catch (e) {}
+  }
+
+  // 4. Query USB Bus Devices (lsusb on Linux)
+  if (process.platform === 'linux') {
+    try {
+      const { execSync } = require('child_process');
+      const lsusb = execSync('lsusb 2>&1 || true', { encoding: 'utf8' });
+      const lines = lsusb.trim().split('\n');
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const isPrinter = /printer|pos|thermal|xprinter|tsc|zebra|epson|80mm|58mm/i.test(line);
+        const isScanner = /barcode|scanner|hid|honeywell|datalogic|symbol|reader/i.test(line);
+        const deviceName = line.replace(/^Bus \d+ Device \d+: ID [a-f0-9:]+ /i, '').trim();
+
+        const item = {
+          raw: line,
+          name: deviceName,
+          isPrinter,
+          isScanner
+        };
+
+        if (isPrinter) result.usbPrinters.push(item);
+        else if (isScanner) result.usbScanners.push(item);
+        else result.rawUsbDevices.push(item);
+      }
+    } catch (e) {}
+  }
+
+  return { success: true, ...result };
+});
+
+// Dedicated Direct Barcode Printing Handler
+ipcMain.handle('print:barcodes-direct', async (event, printData) => {
+  try {
+    const { html, printerName, silent = false, widthMm = 50, heightMm = 30 } = printData;
+
+    const printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: { nodeIntegration: false }
+    });
+
+    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+
+    const printOptions = {
+      silent: !!silent,
+      printBackground: true,
+      margins: { marginType: 'none' }
+    };
+
+    if (printerName && typeof printerName === 'string' && printerName.trim()) {
+      printOptions.deviceName = printerName.trim();
+    }
+
+    printWindow.webContents.print(printOptions, (success, errorType) => {
+      if (!success) {
+        console.error('Barcode print error:', errorType);
+      }
+      printWindow.close();
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Direct barcode print error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+
 // Auto-save and flush database WAL on app exit
 function safeFlushAndBackup() {
   if (db && db.open) {

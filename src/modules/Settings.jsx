@@ -41,7 +41,9 @@ import {
   ChevronUp,
   Shield,
   Clock,
-  Compass
+  Compass,
+  Usb,
+  Terminal
 } from 'lucide-react';
 import { BarcodeSVG } from '../utils/barcodeGenerator.jsx';
 
@@ -398,6 +400,17 @@ const SettingsModule = () => {
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
 
+  // Hardware Scanner State
+  const [hardwareInfo, setHardwareInfo] = useState({
+    systemPrinters: [],
+    usbPrinters: [],
+    usbScanners: [],
+    lpDevices: [],
+    cupsRunning: false
+  });
+  const [checkingHardware, setCheckingHardware] = useState(false);
+  const [showCupsInstallGuide, setShowCupsInstallGuide] = useState(false);
+
   // Safe IPC invoke helper
   const invokeIpc = useCallback(async (channel, payload) => {
     try {
@@ -462,12 +475,27 @@ const SettingsModule = () => {
       // Load Archives List & Sandbox status
       loadArchives();
       checkSandbox();
+      handleScanHardware();
     } catch (error) {
       showError('خطأ أثناء تحميل الإعدادات: ' + error.message);
     } finally {
       setLoading(false);
     }
   }, [showError, invokeIpc]);
+
+  const handleScanHardware = useCallback(async () => {
+    setCheckingHardware(true);
+    try {
+      const res = await invokeIpc('hardware:get-devices');
+      if (res && res.success) {
+        setHardwareInfo(res);
+      }
+    } catch (e) {
+      console.warn('handleScanHardware error:', e);
+    } finally {
+      setCheckingHardware(false);
+    }
+  }, [invokeIpc]);
 
   useEffect(() => {
     loadAllSettings();
@@ -1065,6 +1093,98 @@ const SettingsModule = () => {
             >
               {/* Form Controls (7 cols) */}
               <div className="lg:col-span-7 flex flex-col gap-5">
+                {/* Hardware & USB Live Discovery Hub */}
+                <div className="glass-card p-5 border border-emerald-500/30 bg-emerald-950/10 space-y-3.5">
+                  <div className="flex justify-between items-center border-b border-white/10 pb-2.5">
+                    <div className="flex items-center gap-2 text-sm font-extrabold text-[#e6edf3]">
+                      <Usb className="w-4 h-4 text-emerald-400" />
+                      <span>مركز فحص الطابعات ومنافذ الـ USB (Hardware Hub)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleScanHardware}
+                      disabled={checkingHardware}
+                      className="btn-secondary text-xs flex items-center gap-1.5 py-1 px-3"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${checkingHardware ? 'animate-spin' : ''}`} />
+                      <span>{checkingHardware ? 'جاري الفحص...' : '⚡ إعادة فحص الأجهزة'}</span>
+                    </button>
+                  </div>
+
+                  {/* Connected USB Devices List */}
+                  <div className="space-y-2 text-xs">
+                    <div className="font-bold text-[#adbac7]">الطابعات والأجهزة المكتشفة عبر USB:</div>
+                    {hardwareInfo.usbPrinters && hardwareInfo.usbPrinters.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {hardwareInfo.usbPrinters.map((p, idx) => (
+                          <div key={idx} className="p-2.5 bg-[#161b22] border border-emerald-500/30 rounded-xl flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              <span className="font-bold text-emerald-400">{p.name}</span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/15 text-emerald-300">
+                              {hardwareInfo.lpDevices && hardwareInfo.lpDevices[idx] ? hardwareInfo.lpDevices[idx] : 'USB Raw'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-[#161b22] border border-amber-500/20 rounded-xl text-gray-400 text-xs">
+                        ⚠️ لم يتم اكتشاف طابعة USB نشطة حالياً. تأكد من توصيل كابل USB الخاص بالطابعة وتشغيل زر الطاقة.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* System Printers (CUPS / Spooler) */}
+                  <div className="space-y-2 text-xs pt-2 border-t border-white/5">
+                    <div className="font-bold text-[#adbac7]">طابعات النظام المثبتة (OS Printers):</div>
+                    {hardwareInfo.systemPrinters && hardwareInfo.systemPrinters.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {hardwareInfo.systemPrinters.map((sp, idx) => (
+                          <div key={idx} className="p-2 bg-[#161b22] border border-white/5 rounded-lg flex items-center justify-between text-[11px]">
+                            <span className="font-semibold text-[#e6edf3] truncate">{sp.name}</span>
+                            {sp.isDefault && (
+                              <span className="px-1.5 py-0.5 text-[9px] rounded bg-[#fbbf24]/20 text-[#fbbf24] font-bold">
+                                افتراضية
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-[#161b22] border border-white/5 rounded-xl text-gray-400 text-xs flex justify-between items-center">
+                        <span>لا توجد طابعات مضافة في نظام التشغيل مباشرة</span>
+                        {!hardwareInfo.cupsRunning && (
+                          <button
+                            type="button"
+                            onClick={() => setShowCupsInstallGuide(!showCupsInstallGuide)}
+                            className="text-amber-400 hover:underline text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Terminal className="w-3 h-3" />
+                            <span>{showCupsInstallGuide ? 'إخفاء الدليل' : 'أمر تفعيل CUPS لينكس'}</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Linux CUPS One-Liner helper */}
+                  {showCupsInstallGuide && (
+                    <div className="p-3 bg-black/40 border border-amber-500/30 rounded-xl space-y-1.5 text-xs animate-in fade-in duration-200">
+                      <div className="font-bold text-amber-400 flex items-center gap-1">
+                        <Terminal className="w-3.5 h-3.5" />
+                        <span>أمر تثبيت خادم الطباعة CUPS على لينكس (مرة واحدة):</span>
+                      </div>
+                      <p className="text-[11px] text-gray-400">
+                        افتح الطرفية (Terminal) وألصق الأمر التالي لتمكين نظام لينكس من إدارة الطابعات وتمريرها للمنظومة:
+                      </p>
+                      <div className="p-2 bg-black/70 rounded font-mono text-[11px] text-emerald-400 select-all" dir="ltr">
+                        sudo apt-get install -y cups cups-daemon printer-driver-all && sudo usermod -aG lp $USER && sudo systemctl enable --now cups
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Mode Selector */}
                 <div className="glass-card p-5">
                   <h2 className="text-sm font-bold text-[#fbbf24] flex items-center gap-2 mb-3">
