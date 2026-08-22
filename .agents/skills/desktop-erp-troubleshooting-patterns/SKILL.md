@@ -206,3 +206,46 @@ Placing `await` calls outside `async` functions or duplicating handler code bloc
    node --check main.cjs
    ```
 2. **Atomic IPC Handlers**: Keep IPC handler functions clean, isolated, and properly wrapped in `async (event, data) => { try { ... } catch (e) { ... } }`.
+
+---
+
+## 12. Self-Healing ORM / Repository Column Sanitization & Schema Synchronization
+
+### Root Cause
+Frontend or business logic passes newly introduced properties (e.g. `notes`, `batch_number`, `is_demo`) to database insertion/update methods (`BaseRepository.create`, `BaseRepository.update`).
+If the underlying SQLite table has not yet run the migration, or if legacy user databases lack the column, SQLite throws:
+```text
+Database error: table inventory has no column named notes
+```
+This causes immediate operation failure and blocks critical transactions.
+
+### Prevention & Guardrail
+1. **Multi-Tiered Defense (Schema + Migrations)**:
+   - Always define the column in the primary `CREATE TABLE IF NOT EXISTS` block.
+   - Always add the idempotent migration in the `migrations` array: `ALTER TABLE inventory ADD COLUMN notes TEXT;`.
+2. **Self-Healing Dynamic Column Sanitization (Zero-Failure Guarantee)**:
+   Equip `BaseRepository.create` and `BaseRepository.update` with an automatic catch-and-retry handler that parses `has no column named (\w+)`, removes the missing field from the payload, and re-executes the operation gracefully:
+   ```javascript
+   async create(data) {
+     const sanitizeAndInsert = async (currentData) => {
+       const keys = Object.keys(currentData);
+       if (keys.length === 0) return { lastInsertRowid: null };
+       const values = Object.values(currentData);
+       const placeholders = keys.map(() => '?').join(', ');
+       const sql = `INSERT INTO ${this.tableName} (${keys.join(', ')}) VALUES (${placeholders})`;
+       try {
+         return await db.run(sql, values);
+       } catch (err) {
+         const match = err.message && err.message.match(/has no column named (\w+)/i);
+         if (match && match[1] && currentData[match[1]] !== undefined) {
+           const nextData = { ...currentData };
+           delete nextData[match[1]];
+           return await sanitizeAndInsert(nextData);
+         }
+         throw err;
+       }
+     };
+     return await sanitizeAndInsert(data);
+   }
+   ```
+

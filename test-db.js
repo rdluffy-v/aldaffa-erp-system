@@ -34,7 +34,10 @@ const schema = `
     original_price REAL DEFAULT 0,
     unit TEXT DEFAULT 'piece',
     discount_rate REAL DEFAULT 0,
-    capacity REAL DEFAULT 0
+    capacity REAL DEFAULT 0,
+    barcode TEXT,
+    min_qty REAL DEFAULT 5,
+    notes TEXT
   );
 
   CREATE TABLE IF NOT EXISTS sales (

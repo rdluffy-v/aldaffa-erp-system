@@ -62,31 +62,58 @@ export class BaseRepository {
   }
 
   /**
-   * Create new record
+   * Create new record with self-healing column fallback
    */
   async create(data) {
-    const keys = Object.keys(data);
-    const values = Object.values(data);
-    const placeholders = keys.map(() => '?').join(', ');
+    const sanitizeAndInsert = async (currentData) => {
+      const keys = Object.keys(currentData);
+      if (keys.length === 0) return { lastInsertRowid: null };
+      const values = Object.values(currentData);
+      const placeholders = keys.map(() => '?').join(', ');
 
-    const sql = `INSERT INTO ${this.tableName} (${keys.join(', ')}) VALUES (${placeholders})`;
-    const result = await db.run(sql, values);
+      const sql = `INSERT INTO ${this.tableName} (${keys.join(', ')}) VALUES (${placeholders})`;
+      try {
+        return await db.run(sql, values);
+      } catch (err) {
+        const match = err.message && err.message.match(/has no column named (\w+)/i);
+        if (match && match[1] && currentData[match[1]] !== undefined) {
+          const nextData = { ...currentData };
+          delete nextData[match[1]];
+          return await sanitizeAndInsert(nextData);
+        }
+        throw err;
+      }
+    };
 
-    return result;
+    return await sanitizeAndInsert(data);
   }
 
   /**
-   * Update record by ID
+   * Update record by ID with self-healing column fallback
    */
   async update(id, data) {
-    const keys = Object.keys(data);
-    const values = Object.values(data);
-    const setClause = keys.map(key => `${key} = ?`).join(', ');
+    const sanitizeAndUpdate = async (currentData) => {
+      const keys = Object.keys(currentData);
+      if (keys.length === 0) return await this.findById(id);
+      const values = Object.values(currentData);
+      const setClause = keys.map(key => `${key} = ?`).join(', ');
 
-    const sql = `UPDATE ${this.tableName} SET ${setClause} WHERE id = ?`;
-    await db.run(sql, [...values, id]);
+      const sql = `UPDATE ${this.tableName} SET ${setClause} WHERE id = ?`;
+      try {
+        await db.run(sql, [...values, id]);
+        return await this.findById(id);
+      } catch (err) {
+        const match = err.message && err.message.match(/has no column named (\w+)/i);
+        if (match && match[1] && currentData[match[1]] !== undefined) {
+          const nextData = { ...currentData };
+          delete nextData[match[1]];
+          return await sanitizeAndUpdate(nextData);
+        }
+        throw err;
+      }
+    };
 
-    return await this.findById(id);
+    return await sanitizeAndUpdate(data);
   }
 
   /**

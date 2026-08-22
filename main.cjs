@@ -40,7 +40,11 @@ function initDatabase() {
       unit TEXT DEFAULT 'piece',
       discount_rate REAL DEFAULT 0,
       capacity REAL DEFAULT 0,
-      image_url TEXT
+      image_url TEXT,
+      barcode TEXT,
+      min_qty REAL DEFAULT 5,
+      notes TEXT,
+      is_demo INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS sales (
@@ -177,6 +181,7 @@ function initDatabase() {
   const migrations = [
     "ALTER TABLE inventory ADD COLUMN barcode TEXT;",
     "ALTER TABLE inventory ADD COLUMN min_qty REAL DEFAULT 5;",
+    "ALTER TABLE inventory ADD COLUMN notes TEXT;",
     "ALTER TABLE inventory ADD COLUMN is_demo INTEGER DEFAULT 0;",
     "ALTER TABLE inventory ADD COLUMN image_url TEXT;",
     "ALTER TABLE inventory ADD COLUMN discount_rate REAL DEFAULT 0;",
