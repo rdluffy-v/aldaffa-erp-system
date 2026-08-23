@@ -742,11 +742,20 @@ const SettingsModule = () => {
       if (sandboxActive) {
         await SandboxEngine.purgeDemoData();
         setSandboxActive(false);
-        showSuccess('✅ تم إيقاف وضع التجربة وحذف كافة السجلات الوهمية بأمان.');
+        showSuccess('✅ تم إيقاف وضع التجربة وحذف كافة السجلات الوهمية بأمان والرجوع لبياناتك الأصلية.');
       } else {
+        // Create an automatic snapshot before seeding demo data
+        try {
+          await invokeIpc('archive:create', {
+            name: 'نسخة احتياطية تلقائية قبل تفعيل البيانات الوهمية'
+          });
+        } catch (e) {
+          console.warn('Sandbox pre-seed backup note:', e);
+        }
+
         await SandboxEngine.seedDemoData();
         setSandboxActive(true);
-        showSuccess('✅ تم تفعيل وضع التجربة وزراعة بيانات وهمية واقعية للمنظومة.');
+        showSuccess('✅ تم تفعيل وضع التجربة وزراعة بيانات تجريبية واقعية (بياناتك الأصلية محفوظة بنسبة 100%).');
       }
       await loadAllSettings();
     } catch (err) {

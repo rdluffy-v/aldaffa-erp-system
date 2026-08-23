@@ -33,6 +33,7 @@ import {
   Sparkles,
   Lock,
   FileText,
+  QrCode,
   SettingsIcon
 } from 'lucide-react';
 
@@ -50,6 +51,7 @@ import InvoicesModule from './modules/Invoices.jsx';
 import DebtorsModule from './modules/Debtors.jsx';
 import InventoryFullModule from './modules/InventoryFull.jsx';
 import PurchasesModule from './modules/Purchases.jsx';
+import BarcodeStudioModule from './modules/BarcodeStudio.jsx';
 import WithdrawalsModule from './modules/Withdrawals.jsx';
 import CapitalInjectionsModule from './modules/CapitalInjections.jsx';
 import GiftsModule from './modules/Gifts.jsx';
@@ -74,6 +76,7 @@ const MODULE_DEFINITIONS = [
   { id: 'debtors', defaultLabel: 'الديون', icon: CreditCard, component: DebtorsModule },
   { id: 'inventory', defaultLabel: 'المخزون', icon: Package, component: InventoryFullModule },
   { id: 'purchases', defaultLabel: 'المشتريات', icon: ShoppingBag, component: PurchasesModule },
+  { id: 'barcodes', defaultLabel: 'استوديو الباركود', icon: QrCode, component: BarcodeStudioModule },
   { id: 'withdrawals', defaultLabel: 'السحوبات', icon: Wallet, component: WithdrawalsModule },
   { id: 'capital', defaultLabel: 'الضخ', icon: Banknote, component: CapitalInjectionsModule },
   { id: 'gifts', defaultLabel: 'الهدايا', icon: Gift, component: GiftsModule },

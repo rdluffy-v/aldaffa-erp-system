@@ -300,3 +300,34 @@ This causes immediate operation failure and blocks critical transactions.
    When CUPS is inactive on Linux, provide the single-line enabler command inside the UI:
    `sudo apt-get install -y cups cups-daemon printer-driver-all && sudo usermod -aG lp $USER && sudo systemctl enable --now cups`.
 
+---
+
+## 15. Sandbox Demo Data Isolation, Zero Real-Data Loss & Multi-Table Purging Architecture
+
+### Root Cause
+1. **Partial Table Purging**: Deleting mock data from only primary tables (like `sales`) while omitting secondary tables (`inventory`, `debtors`, `purchases`, `withdrawals`, `capital_injections`, `gifts`, `losses`, `notes`, `shift_reports`) leaves zombie demo data persisting across other ERP modules when switching back to production.
+2. **In-Memory Store Stale Cache**: In frontend state managers (Zustand/Redux), database mutations do not automatically update active React state unless explicit re-fetching is triggered across all modules.
+3. **Accidental User Data Destruction Risk**: Failing to strictly partition real records (`is_demo = 0`) from generated mock data (`is_demo = 1`) risks deleting user-created data.
+
+### Prevention & Guardrail
+1. **Automatic Pre-Seed Snapshot Backup**:
+   Before inserting any demo data, always take an automated snapshot backup of the database (`aldaffa_real_data_backup_<timestamp>.db`).
+2. **Strict Non-Destructive Partitioning**:
+   Ensure all user inputs across all repositories explicitly default to `is_demo = 0`. Tag all mock records with `is_demo = 1`.
+3. **Atomic Multi-Table Purge**:
+   When disabling Sandbox mode, execute `DELETE FROM <table> WHERE is_demo = 1` across ALL 15 application tables in a single SQLite transaction:
+   ```javascript
+   const ALL_SANDBOX_TABLES = [
+     'inventory', 'sales', 'sale_items', 'debtors', 'debt_history',
+     'purchases', 'shift_reports', 'withdrawals', 'capital_injections',
+     'gifts', 'losses', 'notes', 'returns', 'categories'
+   ];
+   for (const table of ALL_SANDBOX_TABLES) {
+     queries.push({ sql: `DELETE FROM ${table} WHERE is_demo = 1`, params: [] });
+   }
+   await db.transaction(queries);
+   ```
+4. **Global Reactive Store & UI Synchronization**:
+   Broadcast a refresh event (`window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'))`) and invoke store reloaders (`useInventoryStore.getState().loadProducts()`) to immediately refresh all screens without requiring app restart.
+
+

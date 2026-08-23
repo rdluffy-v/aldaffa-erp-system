@@ -13,6 +13,7 @@ export const DEFAULT_MODULE_LABELS = {
   debtors: 'الديون',
   inventory: 'المخزون',
   purchases: 'المشتريات',
+  barcodes: 'استوديو الباركود',
   withdrawals: 'السحوبات',
   capital: 'الضخ',
   gifts: 'الهدايا',

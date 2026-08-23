@@ -13,7 +13,7 @@ import { db } from '../database/connection.js';
 import { useInventoryStore } from '../stores/useInventoryStore.js';
 import { useUIStore } from '../stores/useUIStore.js';
 import { formatCurrency, formatDate, generateId, safeParseFloat, generateValidBarcode } from '../utils/helpers.js';
-import { BarcodeSVG } from '../utils/barcodeGenerator.jsx';
+import { BarcodeSVG, generateBarcodeSvgString } from '../utils/barcodeGenerator.jsx';
 import useDebounce from '../hooks/useDebounce.js';
 import {
   ShoppingBag,
@@ -255,20 +255,20 @@ const PurchasesModule = () => {
     setPrintingBarcodes(true);
     try {
       const isThermal = barcodeLayout === 'thermal';
+      const widthMm = isThermal ? 50 : 210;
+      const heightMm = isThermal ? 30 : 297;
 
       const labelsHtml = selectedItems
         .flatMap((item) => {
           const count = item.printCount || 0;
+          const svgCode = generateBarcodeSvgString(item.barcode, 150, 45, true);
           return Array.from({ length: count }).map(
             () => `
-            <div class="barcode-card">
-              <div class="shop-name">الدفة للعطور الملكية</div>
-              <div class="product-name">${item.name}</div>
-              <div class="barcode-svg-container">
-                <svg id="barcode-${item.barcode || 'AL-PERFUME'}" class="barcode-svg"></svg>
-              </div>
-              <div class="barcode-num">${item.barcode || ''}</div>
-              <div class="price-tag">${formatCurrency(item.sell_price || item.cost_per_unit * 1.35)}</div>
+            <div class="label-box">
+              <div class="store-title">الدفة للعطور الملكية</div>
+              <div class="product-title">${item.name}</div>
+              <div class="barcode-area">${svgCode}</div>
+              <div class="price-badge">${formatCurrency(item.sell_price || item.cost_per_unit * 1.35)}</div>
             </div>
           `
           );
@@ -277,22 +277,26 @@ const PurchasesModule = () => {
 
       const fullHtml = `
 <!DOCTYPE html>
-<html dir="rtl">
+<html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
-  <title>طباعة ملصقات باركود</title>
-  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+  <title>طباعة ملصقات الباركود - الدفة للعطور</title>
   <style>
     @page {
       size: ${isThermal ? '50mm 30mm' : 'A4'};
       margin: ${isThermal ? '0' : '8mm'};
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #fff;
-      color: #000;
+      background: #FFFFFF;
+      color: #000000;
       -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     ${
       isThermal
@@ -301,15 +305,16 @@ const PurchasesModule = () => {
         width: 50mm;
         height: 30mm;
         page-break-after: always;
+        page-break-inside: avoid;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
         align-items: center;
         text-align: center;
-        padding: 2mm 2.5mm;
+        padding: 1.5mm 2mm;
         overflow: hidden;
       }
-      .barcode-card {
+      .label-box {
         width: 100%;
         height: 100%;
         display: flex;
@@ -318,23 +323,51 @@ const PurchasesModule = () => {
         align-items: center;
         text-align: center;
       }
-      .shop-name { font-size: 8px; font-weight: bold; color: #444; }
-      .product-name { font-size: 10px; font-weight: 900; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45mm; }
-      .barcode-svg-container { width: 100%; height: 11mm; display: flex; justify-content: center; align-items: center; }
-      .barcode-svg { width: 42mm; height: 11mm; }
-      .barcode-num { font-size: 8px; font-family: monospace; font-weight: bold; letter-spacing: 1px; }
-      .price-tag { font-size: 10px; font-weight: 900; color: #000; }
+      .store-title {
+        font-size: 8px;
+        font-weight: 700;
+        color: #333333;
+        line-height: 1.1;
+      }
+      .product-title {
+        font-size: 10px;
+        font-weight: 900;
+        color: #000000;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 44mm;
+        line-height: 1.2;
+        margin: 0.5mm 0;
+      }
+      .barcode-area {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      .barcode-area svg {
+        width: 42mm !important;
+        height: auto !important;
+        max-height: 12mm;
+      }
+      .price-badge {
+        font-size: 10px;
+        font-weight: 900;
+        color: #000000;
+        line-height: 1.1;
+      }
     `
         : `
       .grid-container {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 4mm;
+        gap: 3mm;
       }
-      .barcode-card {
-        border: 1px dashed #bbb;
+      .label-box {
+        border: 1px dashed #CCCCCC;
         border-radius: 4px;
-        padding: 3mm;
+        padding: 2.5mm;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -343,11 +376,11 @@ const PurchasesModule = () => {
         text-align: center;
         page-break-inside: avoid;
       }
-      .shop-name { font-size: 8px; font-weight: bold; color: #555; }
-      .product-name { font-size: 10px; font-weight: bold; }
-      .barcode-svg-container { width: 100%; height: 12mm; display: flex; justify-content: center; }
-      .barcode-num { font-size: 9px; font-family: monospace; }
-      .price-tag { font-size: 11px; font-weight: bold; }
+      .store-title { font-size: 8px; font-weight: bold; color: #555555; }
+      .product-title { font-size: 10px; font-weight: 800; }
+      .barcode-area { width: 100%; display: flex; justify-content: center; margin: 1mm 0; }
+      .barcode-area svg { width: 42mm !important; height: auto !important; max-height: 12mm; }
+      .price-badge { font-size: 10px; font-weight: 900; }
     `
     }
   </style>
@@ -358,7 +391,7 @@ const PurchasesModule = () => {
       ? labelsHtml
           .split('</div>')
           .filter(Boolean)
-          .map((card) => `<div class="label-wrapper">${card}</div></div>`)
+          .map((box) => `<div class="label-wrapper">${box}</div></div>`)
           .join('')
       : `
     <div class="grid-container">
@@ -366,45 +399,32 @@ const PurchasesModule = () => {
     </div>
   `
   }
-  <script>
-    window.onload = function() {
-      ${selectedItems
-        .map(
-          (item) => `
-        try {
-          JsBarcode("#barcode-${item.barcode || 'AL-PERFUME'}", "${item.barcode || 'AL-PERFUME'}", {
-            format: "CODE128",
-            width: 1.5,
-            height: 35,
-            displayValue: false,
-            margin: 0
-          });
-        } catch(e) {}
-      `
-        )
-        .join('')}
-      setTimeout(function() {
-        window.print();
-      }, 250);
-    };
-  <\/script>
 </body>
 </html>
       `;
 
       if (typeof window !== 'undefined' && window.require) {
         const { ipcRenderer } = window.require('electron');
-        await ipcRenderer.invoke('print:barcodes-direct', {
+        const res = await ipcRenderer.invoke('print:barcodes-direct', {
           html: fullHtml,
           printerName: selectedPrinter || undefined,
-          silent: false,
-          widthMm: isThermal ? 50 : 210,
-          heightMm: isThermal ? 30 : 297
+          silent: true,
+          widthMm,
+          heightMm
         });
-        showSuccess('✅ تم إرسال ملصقات الباركود إلى أمر الطباعة بنجاح');
+
+        if (res && res.success) {
+          showSuccess(`✅ تم إرسال ${selectedItems.reduce((a, b) => a + (b.printCount || 0), 0)} ملصق إلى الطابعة بنجاح`);
+        } else {
+          showError(`فشل أمر الطباعة: ${res?.error || 'خطأ غير معروف'}`);
+        }
       } else {
-        window.print();
-        showSuccess('✅ تم إرسال ملصقات الباركود إلى أمر الطباعة');
+        const printWin = window.open('', '_blank');
+        printWin.document.write(fullHtml);
+        printWin.document.close();
+        printWin.focus();
+        printWin.print();
+        showSuccess('✅ تم فتح حوار الطباعة');
       }
     } catch (err) {
       showError(`فشل الطباعة: ${err.message}`);

@@ -1973,40 +1973,72 @@ ipcMain.handle('hardware:get-devices', async () => {
   return { success: true, ...result };
 });
 
-// Dedicated Direct Barcode Printing Handler
+// Dedicated Direct Barcode Printing Handler (100% Robust, Offline & Safe)
 ipcMain.handle('print:barcodes-direct', async (event, printData) => {
-  try {
-    const { html, printerName, silent = false, widthMm = 50, heightMm = 30 } = printData;
+  return new Promise(async (resolve) => {
+    let printWindow = null;
+    try {
+      const { html, printerName, silent = false } = printData || {};
 
-    const printWindow = new BrowserWindow({
-      show: false,
-      webPreferences: { nodeIntegration: false }
-    });
+      printWindow = new BrowserWindow({
+        show: false,
+        width: 400,
+        height: 600,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true
+        }
+      });
 
-    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+      const cleanup = () => {
+        if (printWindow && !printWindow.isDestroyed()) {
+          try {
+            printWindow.destroy();
+          } catch (e) {}
+          printWindow = null;
+        }
+      };
 
-    const printOptions = {
-      silent: !!silent,
-      printBackground: true,
-      margins: { marginType: 'none' }
-    };
+      printWindow.webContents.on('did-finish-load', () => {
+        const printOptions = {
+          silent: !!silent,
+          printBackground: true,
+          margins: { marginType: 'none' }
+        };
 
-    if (printerName && typeof printerName === 'string' && printerName.trim()) {
-      printOptions.deviceName = printerName.trim();
-    }
+        if (printerName && typeof printerName === 'string' && printerName.trim()) {
+          printOptions.deviceName = printerName.trim();
+        }
 
-    printWindow.webContents.print(printOptions, (success, errorType) => {
-      if (!success) {
-        console.error('Barcode print error:', errorType);
+        printWindow.webContents.print(printOptions, (success, errorType) => {
+          if (!success) {
+            console.error('Barcode print error:', errorType);
+            cleanup();
+            resolve({ success: false, error: errorType || 'فشل أمر الطباعة' });
+          } else {
+            cleanup();
+            resolve({ success: true });
+          }
+        });
+      });
+
+      printWindow.webContents.on('did-fail-load', (e, code, desc) => {
+        cleanup();
+        resolve({ success: false, error: `فشل تحميل محتوى الطباعة: ${desc}` });
+      });
+
+      await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html || ''));
+    } catch (error) {
+      console.error('Direct barcode print error:', error);
+      if (printWindow && !printWindow.isDestroyed()) {
+        try {
+          printWindow.destroy();
+        } catch (e) {}
       }
-      printWindow.close();
-    });
-
-    return { success: true };
-  } catch (error) {
-    console.error('Direct barcode print error:', error);
-    return { success: false, error: error.message };
-  }
+      resolve({ success: false, error: error.message });
+    }
+  });
 });
 
 

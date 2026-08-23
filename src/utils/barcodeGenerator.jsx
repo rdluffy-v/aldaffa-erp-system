@@ -2,14 +2,13 @@
  * ============================================================================
  * STANDARD CODE-128 BARCODE GENERATOR (100% OFFLINE & SCANNABLE)
  * ============================================================================
- * Generates true, scanner-compatible Code-128 vector barcodes (SVG).
+ * Generates true, scanner-compatible Code-128 vector barcodes (SVG & React).
  * Works reliably with all laser, CCD, and 2D camera barcode scanners.
  */
 
 import React from 'react';
 
 // Code 128 Patterns (Table B)
-// Each number string represents bar and space widths (total 11 modules per char, 13 for stop)
 const CODE128_PATTERNS = [
   '212222', '222122', '222221', '121223', '121322', '131222', '122213', '122312', '132212', '221213',
   '221312', '231212', '112232', '122132', '122231', '113222', '123122', '123221', '223211', '221132',
@@ -71,12 +70,46 @@ export const encodeCode128 = (text) => {
 };
 
 /**
- * Scannable Barcode SVG Component
+ * Generate 100% Offline Standalone SVG String for Printing
+ */
+export const generateBarcodeSvgString = (code, width = 160, height = 45, showText = true) => {
+  const cleanCode = String(code || '').trim() || 'AL-000000';
+  const modules = encodeCode128(cleanCode);
+
+  if (modules.length === 0) return '';
+
+  const quietZone = 8;
+  const totalModules = modules.length + quietZone * 2;
+  const moduleWidth = width / totalModules;
+  const barHeight = showText ? height - 14 : height;
+
+  let rectsHtml = '';
+  for (let idx = 0; idx < modules.length; idx++) {
+    if (modules[idx]) {
+      const x = ((idx + quietZone) * moduleWidth).toFixed(2);
+      const w = Math.max(1, moduleWidth).toFixed(2);
+      rectsHtml += `<rect x="${x}" y="2" width="${w}" height="${barHeight}" fill="#000000" shape-rendering="crispEdges"/>`;
+    }
+  }
+
+  const textSvg = showText
+    ? `<text x="${(width / 2).toFixed(2)}" y="${height - 2}" text-anchor="middle" fill="#000000" font-size="9" font-weight="bold" font-family="monospace" letter-spacing="1.5">${cleanCode}</text>`
+    : '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="display:block; margin:0 auto; background:#FFFFFF;">
+    <rect x="0" y="0" width="${width}" height="${height}" fill="#FFFFFF"/>
+    ${rectsHtml}
+    ${textSvg}
+  </svg>`;
+};
+
+/**
+ * Scannable Barcode SVG React Component
  */
 export const BarcodeSVG = ({
   value,
   width = 160,
-  height = 55,
+  height = 50,
   showText = true,
   className = '',
   barColor = '#000000',
@@ -89,10 +122,10 @@ export const BarcodeSVG = ({
     return <div className="text-red-500 text-xs">باركود غير صالح</div>;
   }
 
-  const quietZone = 10;
+  const quietZone = 8;
   const totalModules = modules.length + quietZone * 2;
   const moduleWidth = width / totalModules;
-  const barHeight = showText ? height - 16 : height;
+  const barHeight = showText ? height - 14 : height;
 
   return (
     <svg
@@ -128,10 +161,10 @@ export const BarcodeSVG = ({
           y={height - 2}
           textAnchor="middle"
           fill={textColor}
-          fontSize="11"
+          fontSize="10"
           fontWeight="bold"
           fontFamily="monospace"
-          letterSpacing="2"
+          letterSpacing="1.5"
         >
           {code}
         </text>

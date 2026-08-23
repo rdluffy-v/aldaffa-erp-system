@@ -90,6 +90,7 @@ export const MODULE_FLACON_MAP = {
   debtors: FlaconOudJar,
   inventory: FlaconCrystal,
   purchases: FlaconClassic,
+  barcodes: FlaconCrystal,
   withdrawals: FlaconDropper,
   capital: FlaconSphere,
   gifts: FlaconAtomizer,
