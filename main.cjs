@@ -1974,21 +1974,86 @@ ipcMain.handle('hardware:get-devices', async () => {
   return { success: true, ...result };
 });
 
-// Dedicated Direct Barcode Printing Handler (Crash-Proof, Verified Linux CUPS & GTK Safe)
+/**
+ * Convert Rendered HTML Label directly into a 1-bit Monochrome TSPL command Buffer (203 DPI)
+ */
+async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30) {
+  const dotsW = Math.max(80, Math.round(widthMm * 8));
+  const dotsH = Math.max(80, Math.round(heightMm * 8));
+  const widthBytes = Math.ceil(dotsW / 8);
+
+  const win = new BrowserWindow({
+    show: false,
+    width: dotsW,
+    height: dotsH,
+    useContentSize: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true
+    }
+  });
+
+  try {
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlString));
+    await new Promise((r) => setTimeout(r, 70));
+
+    const image = await win.webContents.capturePage({ x: 0, y: 0, width: dotsW, height: dotsH });
+    const imgSize = image.getSize();
+    const w = imgSize.width;
+    const h = imgSize.height;
+    const bytesPerRow = Math.ceil(w / 8);
+    const bitmap = image.toBitmap();
+
+    const tsplData = Buffer.alloc(bytesPerRow * h, 0xff);
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const offset = (y * w + x) * 4;
+        const r = bitmap[offset];
+        const g = bitmap[offset + 1];
+        const b = bitmap[offset + 2];
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+        if (lum < 165) {
+          const bIdx = y * bytesPerRow + Math.floor(x / 8);
+          const bitIdx = 7 - (x % 8);
+          tsplData[bIdx] &= ~(1 << bitIdx);
+        }
+      }
+    }
+
+    const header = Buffer.from(
+      `SIZE ${widthMm} mm, ${heightMm} mm\r\n` +
+      `GAP 2 mm, 0 mm\r\n` +
+      `DIRECTION 1\r\n` +
+      `CLS\r\n` +
+      `BITMAP 0,0,${bytesPerRow},${h},0,`
+    );
+    const footer = Buffer.from(`\r\nPRINT 1,1\r\n`);
+
+    return Buffer.concat([header, tsplData, footer]);
+  } finally {
+    if (win && !win.isDestroyed()) {
+      try { win.destroy(); } catch (e) {}
+    }
+  }
+}
+
+// Dedicated Direct Barcode Printing Handler (Crash-Proof & Native Hardware TSPL)
 ipcMain.handle('print:barcodes-direct', async (event, printData) => {
   return new Promise(async (resolve) => {
-    let printWindow = null;
     try {
       const { html, printerName, silent = false, widthMm = 50, heightMm = 30 } = printData || {};
 
-      // If user wants interactive system dialog (silent: false), create a visible modal preview window to prevent GTK Segfault!
+      // Mode 1: Interactive System Dialog (silent: false)
       if (!silent) {
         const previewWin = new BrowserWindow({
           parent: mainWindow || undefined,
           modal: true,
           show: true,
-          width: 760,
-          height: 840,
+          width: 780,
+          height: 850,
           title: 'معاينة ملصقات الباركود وحوار الطباعة',
           webPreferences: {
             nodeIntegration: false,
@@ -2046,6 +2111,10 @@ ipcMain.handle('print:barcodes-direct', async (event, printData) => {
       }
     }
     @media print {
+      @page {
+        size: ${widthMm}mm ${heightMm}mm;
+        margin: 0;
+      }
       #ald-print-bar { display: none !important; }
       #print-content { padding: 0 !important; margin: 0 !important; background: #fff !important; }
     }
@@ -2053,7 +2122,7 @@ ipcMain.handle('print:barcodes-direct', async (event, printData) => {
 </head>
 <body>
   <div id="ald-print-bar">
-    <div style="font-weight: bold; font-size: 14px;">🖨️ معاينة ملصقات الباركود - جاهز للطباعة عبر النظام</div>
+    <div style="font-weight: bold; font-size: 14px;">🖨️ معاينة ملصقات الباركود (${widthMm}×${heightMm} mm)</div>
     <div>
       <button class="ald-btn ald-btn-primary" onclick="window.print()">🖨️ بدء الطباعة الآن</button>
       <button class="ald-btn ald-btn-sec" onclick="window.close()">إغلاق</button>
@@ -2069,104 +2138,110 @@ ipcMain.handle('print:barcodes-direct', async (event, printData) => {
         return resolve({ success: true, message: 'تم فتح نافذة المعاينة والطباعة بأمان' });
       }
 
-      // For Silent / Direct Printing (silent: true):
-      printWindow = new BrowserWindow({
-        show: false,
-        width: 600,
-        height: 800,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          sandbox: true
-        }
-      });
+      // Mode 2: Instant Hardware TSPL Direct Printing (silent: true)
+      // Extract individual label elements from html
+      const labelBoxes = html.split('<div class="label-wrapper">').filter((s) => s.includes('label-box'));
+      const boxesToPrint = labelBoxes.length > 0
+        ? labelBoxes.map((b) => `<div class="label-box">${b.split('</div></div>')[0]}</div>`)
+        : [html];
 
-      const cleanup = () => {
-        if (printWindow && !printWindow.isDestroyed()) {
-          try { printWindow.destroy(); } catch (e) {}
-          printWindow = null;
-        }
-      };
+      let combinedTsplBuffer = Buffer.alloc(0);
 
-      printWindow.webContents.on('did-finish-load', async () => {
-        try {
-          // On Linux, use printToPDF + CUPS lp CLI pipe for 100% reliable execution & verified feedback!
-          if (process.platform === 'linux' && printerName) {
-            const pdfBuffer = await printWindow.webContents.printToPDF({
-              pageSize: {
-                width: Math.round((widthMm || 50) * 1000),
-                height: Math.round((heightMm || 30) * 1000)
-              },
-              margins: { marginType: 'none' },
-              printBackground: true
-            });
+      for (const singleBox of boxesToPrint) {
+        const singleHtml = `
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: ${widthMm}mm;
+      height: ${heightMm}mm;
+      background: #FFFFFF;
+      color: #000000;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .label-box {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      text-align: center;
+      padding: 1.5mm 2mm;
+    }
+    .store-title { font-size: 9px; font-weight: 700; color: #222; }
+    .product-title { font-size: 11px; font-weight: 900; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: ${widthMm - 6}mm; margin: 0.5mm 0; }
+    .barcode-area { width: 100%; display: flex; justify-content: center; align-items: center; }
+    .barcode-area svg { width: ${widthMm - 8}mm !important; height: auto !important; max-height: 12mm; }
+    .price-badge { font-size: 11px; font-weight: 900; color: #000; }
+  </style>
+</head>
+<body>
+  ${singleBox}
+</body>
+</html>`;
 
-            const tempPdfPath = path.join(os.tmpdir(), `aldaffa_barcode_${Date.now()}.pdf`);
-            fs.writeFileSync(tempPdfPath, pdfBuffer);
-
-            // Execute CUPS lp with exact custom dimensions and capture status
-            const lpCmd = `lp -d "${printerName}" -o PageSize=Custom.${widthMm}x${heightMm}mm -o fit-to-page "${tempPdfPath}"`;
-
-            exec(lpCmd, (error, stdout, stderr) => {
-              // Delete temp pdf file
-              try { fs.unlinkSync(tempPdfPath); } catch (e) {}
-              cleanup();
-
-              if (error) {
-                console.error('CUPS lp error:', stderr || error.message);
-                return resolve({
-                  success: false,
-                  error: `خطأ في طابعة لينكس (${printerName}): ${stderr || error.message}`
-                });
-              }
-
-              console.log('CUPS lp success:', stdout);
-              return resolve({
-                success: true,
-                message: `تم إرسال أمر الطباعة إلى ${printerName}`,
-                details: stdout.trim()
-              });
-            });
-            return;
-          }
-
-          // Fallback for Windows / macOS or standard Electron driver
-          const printOptions = {
-            silent: true,
-            printBackground: true,
-            margins: { marginType: 'none' }
-          };
-
-          if (printerName && typeof printerName === 'string' && printerName.trim()) {
-            printOptions.deviceName = printerName.trim();
-          }
-
-          printWindow.webContents.print(printOptions, (success, errorType) => {
-            cleanup();
-            if (!success) {
-              resolve({ success: false, error: errorType || 'فشل إرسال أمر الطباعة' });
-            } else {
-              resolve({ success: true, message: 'تم إرسال الملصق للطباعة بنجاح' });
-            }
-          });
-        } catch (printErr) {
-          cleanup();
-          resolve({ success: false, error: printErr.message });
-        }
-      });
-
-      printWindow.webContents.on('did-fail-load', (e, code, desc) => {
-        cleanup();
-        resolve({ success: false, error: `فشل تحميل محتوى الملصق: ${desc}` });
-      });
-
-      await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html || ''));
-    } catch (error) {
-      console.error('Direct barcode print error:', error);
-      if (printWindow && !printWindow.isDestroyed()) {
-        try { printWindow.destroy(); } catch (e) {}
+        const tsplChunk = await renderHtmlToTsplCommand(singleHtml, widthMm, heightMm);
+        combinedTsplBuffer = Buffer.concat([combinedTsplBuffer, tsplChunk]);
       }
-      resolve({ success: false, error: error.message });
+
+      // Try Direct /dev/usb/lp0 Stream First
+      const usbDevices = ['/dev/usb/lp0', '/dev/usb/lp1', '/dev/usb/lp2'];
+      let writtenToDevice = false;
+
+      for (const devPath of usbDevices) {
+        if (fs.existsSync(devPath)) {
+          try {
+            fs.writeFileSync(devPath, combinedTsplBuffer);
+            writtenToDevice = true;
+            console.log(`Successfully streamed ${boxesToPrint.length} labels directly to ${devPath}`);
+            return resolve({
+              success: true,
+              message: `✅ تم إرسال ${boxesToPrint.length} ملصق مباشرة إلى منفذ الطابعة (${devPath})`
+            });
+          } catch (e) {
+            console.warn(`Direct write to ${devPath} failed:`, e.message);
+          }
+        }
+      }
+
+      // Fallback: Pipe Raw TSPL to CUPS via `lp -o raw`
+      if (printerName && process.platform === 'linux') {
+        const tempTsplPath = path.join(os.tmpdir(), `aldaffa_tspl_${Date.now()}.bin`);
+        fs.writeFileSync(tempTsplPath, combinedTsplBuffer);
+
+        const lpCmd = `lp -d "${printerName}" -o raw "${tempTsplPath}"`;
+        exec(lpCmd, (error, stdout, stderr) => {
+          try { fs.unlinkSync(tempTsplPath); } catch (e) {}
+          if (error) {
+            console.error('CUPS raw print error:', stderr || error.message);
+            return resolve({
+              success: false,
+              error: `خطأ في إرسال أمر الطباعة لطابعة (${printerName}): ${stderr || error.message}`
+            });
+          }
+          return resolve({
+            success: true,
+            message: `✅ تم إرسال ${boxesToPrint.length} ملصق إلى ${printerName} بنجاح`
+          });
+        });
+        return;
+      }
+
+      resolve({
+        success: false,
+        error: 'لم يتم العثور على منفذ طابعة حرارية نشط (/dev/usb/lp0) أو طابعة CUPS محددة'
+      });
+    } catch (err) {
+      console.error('Direct barcode print error:', err);
+      resolve({ success: false, error: err.message });
     }
   });
 });
