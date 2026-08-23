@@ -5,6 +5,7 @@ const fs = require('fs');
 const Database = require('better-sqlite3');
 const { autoUpdater } = require('electron-updater');
 const { promisify } = require('util');
+const { exec } = require('child_process');
 const rm = promisify(fs.rm);
 
 let mainWindow;
@@ -1973,17 +1974,106 @@ ipcMain.handle('hardware:get-devices', async () => {
   return { success: true, ...result };
 });
 
-// Dedicated Direct Barcode Printing Handler (100% Robust, Offline & Safe)
+// Dedicated Direct Barcode Printing Handler (Crash-Proof, Verified Linux CUPS & GTK Safe)
 ipcMain.handle('print:barcodes-direct', async (event, printData) => {
   return new Promise(async (resolve) => {
     let printWindow = null;
     try {
-      const { html, printerName, silent = false } = printData || {};
+      const { html, printerName, silent = false, widthMm = 50, heightMm = 30 } = printData || {};
 
+      // If user wants interactive system dialog (silent: false), create a visible modal preview window to prevent GTK Segfault!
+      if (!silent) {
+        const previewWin = new BrowserWindow({
+          parent: mainWindow || undefined,
+          modal: true,
+          show: true,
+          width: 760,
+          height: 840,
+          title: 'معاينة ملصقات الباركود وحوار الطباعة',
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true
+          }
+        });
+
+        const interactiveHtml = `
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>معاينة ملصقات الباركود</title>
+  <style>
+    @media screen {
+      body {
+        margin: 0;
+        padding: 0;
+        background: #0d1117;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      }
+      #ald-print-bar {
+        position: sticky;
+        top: 0;
+        z-index: 99999;
+        background: #161b22;
+        color: #e6edf3;
+        padding: 12px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid #fbbf24;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      }
+      .ald-btn {
+        padding: 8px 18px;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 13px;
+        cursor: pointer;
+        border: none;
+        transition: all 0.2s;
+      }
+      .ald-btn-primary { background: #fbbf24; color: #0d1117; }
+      .ald-btn-primary:hover { background: #f59e0b; }
+      .ald-btn-sec { background: #30363d; color: #e6edf3; margin-inline-start: 8px; }
+      .ald-btn-sec:hover { background: #484f58; }
+      #print-content {
+        padding: 24px;
+        display: flex;
+        justify-content: center;
+        background: #0d1117;
+        min-height: 100vh;
+      }
+    }
+    @media print {
+      #ald-print-bar { display: none !important; }
+      #print-content { padding: 0 !important; margin: 0 !important; background: #fff !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="ald-print-bar">
+    <div style="font-weight: bold; font-size: 14px;">🖨️ معاينة ملصقات الباركود - جاهز للطباعة عبر النظام</div>
+    <div>
+      <button class="ald-btn ald-btn-primary" onclick="window.print()">🖨️ بدء الطباعة الآن</button>
+      <button class="ald-btn ald-btn-sec" onclick="window.close()">إغلاق</button>
+    </div>
+  </div>
+  <div id="print-content">
+    ${html}
+  </div>
+</body>
+</html>`;
+
+        await previewWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(interactiveHtml));
+        return resolve({ success: true, message: 'تم فتح نافذة المعاينة والطباعة بأمان' });
+      }
+
+      // For Silent / Direct Printing (silent: true):
       printWindow = new BrowserWindow({
         show: false,
-        width: 400,
-        height: 600,
+        width: 600,
+        height: 800,
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
@@ -1993,48 +2083,88 @@ ipcMain.handle('print:barcodes-direct', async (event, printData) => {
 
       const cleanup = () => {
         if (printWindow && !printWindow.isDestroyed()) {
-          try {
-            printWindow.destroy();
-          } catch (e) {}
+          try { printWindow.destroy(); } catch (e) {}
           printWindow = null;
         }
       };
 
-      printWindow.webContents.on('did-finish-load', () => {
-        const printOptions = {
-          silent: !!silent,
-          printBackground: true,
-          margins: { marginType: 'none' }
-        };
+      printWindow.webContents.on('did-finish-load', async () => {
+        try {
+          // On Linux, use printToPDF + CUPS lp CLI pipe for 100% reliable execution & verified feedback!
+          if (process.platform === 'linux' && printerName) {
+            const pdfBuffer = await printWindow.webContents.printToPDF({
+              pageSize: {
+                width: Math.round((widthMm || 50) * 1000),
+                height: Math.round((heightMm || 30) * 1000)
+              },
+              margins: { marginType: 'none' },
+              printBackground: true
+            });
 
-        if (printerName && typeof printerName === 'string' && printerName.trim()) {
-          printOptions.deviceName = printerName.trim();
-        }
+            const tempPdfPath = path.join(os.tmpdir(), `aldaffa_barcode_${Date.now()}.pdf`);
+            fs.writeFileSync(tempPdfPath, pdfBuffer);
 
-        printWindow.webContents.print(printOptions, (success, errorType) => {
-          if (!success) {
-            console.error('Barcode print error:', errorType);
-            cleanup();
-            resolve({ success: false, error: errorType || 'فشل أمر الطباعة' });
-          } else {
-            cleanup();
-            resolve({ success: true });
+            // Execute CUPS lp with exact custom dimensions and capture status
+            const lpCmd = `lp -d "${printerName}" -o PageSize=Custom.${widthMm}x${heightMm}mm -o fit-to-page "${tempPdfPath}"`;
+
+            exec(lpCmd, (error, stdout, stderr) => {
+              // Delete temp pdf file
+              try { fs.unlinkSync(tempPdfPath); } catch (e) {}
+              cleanup();
+
+              if (error) {
+                console.error('CUPS lp error:', stderr || error.message);
+                return resolve({
+                  success: false,
+                  error: `خطأ في طابعة لينكس (${printerName}): ${stderr || error.message}`
+                });
+              }
+
+              console.log('CUPS lp success:', stdout);
+              return resolve({
+                success: true,
+                message: `تم إرسال أمر الطباعة إلى ${printerName}`,
+                details: stdout.trim()
+              });
+            });
+            return;
           }
-        });
+
+          // Fallback for Windows / macOS or standard Electron driver
+          const printOptions = {
+            silent: true,
+            printBackground: true,
+            margins: { marginType: 'none' }
+          };
+
+          if (printerName && typeof printerName === 'string' && printerName.trim()) {
+            printOptions.deviceName = printerName.trim();
+          }
+
+          printWindow.webContents.print(printOptions, (success, errorType) => {
+            cleanup();
+            if (!success) {
+              resolve({ success: false, error: errorType || 'فشل إرسال أمر الطباعة' });
+            } else {
+              resolve({ success: true, message: 'تم إرسال الملصق للطباعة بنجاح' });
+            }
+          });
+        } catch (printErr) {
+          cleanup();
+          resolve({ success: false, error: printErr.message });
+        }
       });
 
       printWindow.webContents.on('did-fail-load', (e, code, desc) => {
         cleanup();
-        resolve({ success: false, error: `فشل تحميل محتوى الطباعة: ${desc}` });
+        resolve({ success: false, error: `فشل تحميل محتوى الملصق: ${desc}` });
       });
 
       await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html || ''));
     } catch (error) {
       console.error('Direct barcode print error:', error);
       if (printWindow && !printWindow.isDestroyed()) {
-        try {
-          printWindow.destroy();
-        } catch (e) {}
+        try { printWindow.destroy(); } catch (e) {}
       }
       resolve({ success: false, error: error.message });
     }

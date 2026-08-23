@@ -330,4 +330,40 @@ This causes immediate operation failure and blocks critical transactions.
 4. **Global Reactive Store & UI Synchronization**:
    Broadcast a refresh event (`window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'))`) and invoke store reloaders (`useInventoryStore.getState().loadProducts()`) to immediately refresh all screens without requiring app restart.
 
+---
+
+## 16. Linux GTK Print Segfault & Verified CUPS Thermal CLI Pipeline
+
+### Root Cause
+1. **GTK Print Dialog Segfault on Hidden Windows**:
+   Calling `webContents.print({ silent: false })` on a hidden Electron `BrowserWindow` (`show: false`) triggers a fatal GTK assertion failure:
+   `gtk_window_set_transient_for: assertion 'parent == NULL || gtk_widget_get_visible (GTK_WIDGET (parent))' failed`
+   leading to an uncatchable SIGSEGV that crashes the entire Electron process.
+2. **False-Positive Silent Print Failures**:
+   Calling `webContents.print({ silent: true, deviceName })` on Linux often fails silently within Chromium's GTK spooler bridge while returning `success: true` to JavaScript, leaving the physical thermal printer (e.g. Xprinter XP-365B) unresponsive.
+
+### Prevention & Guardrail
+1. **Crash-Proof Visible Modal for System Dialogs**:
+   Never invoke `silent: false` on a hidden window. Always spawn a visible modal preview window (`show: true, modal: true, parent: mainWindow`) allowing native `window.print()` to attach to a mapped, visible GTK surface.
+2. **Direct CUPS PDF-CLI Pipeline for Instant Thermal Printing**:
+   On Linux, convert label HTML to PDF via `webContents.printToPDF` and dispatch directly using the Linux `lp` command with exact custom dimensions:
+   ```javascript
+   const pdfBuffer = await printWindow.webContents.printToPDF({
+     pageSize: { width: widthMm * 1000, height: heightMm * 1000 },
+     margins: { marginType: 'none' },
+     printBackground: true
+   });
+   const tempPdf = path.join(os.tmpdir(), `label_${Date.now()}.pdf`);
+   fs.writeFileSync(tempPdf, pdfBuffer);
+   const lpCmd = `lp -d "${printerName}" -o PageSize=Custom.${widthMm}x${heightMm}mm -o fit-to-page "${tempPdf}"`;
+   exec(lpCmd, (error, stdout, stderr) => {
+     try { fs.unlinkSync(tempPdf); } catch (e) {}
+     if (error) return resolve({ success: false, error: stderr || error.message });
+     return resolve({ success: true, details: stdout.trim() });
+   });
+   ```
+3. **Linux `udev` Rules for Thermal USB Printers**:
+   Install `/etc/udev/rules.d/99-xprinter.rules` granting `0666` mode to `/dev/usb/lp*` and adding the user to the `lp` group.
+
+
 
