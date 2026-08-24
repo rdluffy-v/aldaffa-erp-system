@@ -365,5 +365,28 @@ This causes immediate operation failure and blocks critical transactions.
 3. **Linux `udev` Rules for Thermal USB Printers**:
    Install `/etc/udev/rules.d/99-xprinter.rules` granting `0666` mode to `/dev/usb/lp*` and adding the user to the `lp` group.
 
+---
 
+## 17. SQLite Transaction Parameterization, Live Schema Alignment & Top-Center Floating HUD Architecture
 
+### Root Cause
+1. **Raw SQL Identifier Misinterpretation**:
+   Passing string literals inside raw SQL queries without explicit parameter binding (e.g. `VALUES (?, ?, 'store')`) can lead SQLite to misinterpret strings as column identifiers in complex transaction wrappers, throwing `SqliteError: no such column: "store"`.
+2. **Multi-Table Seeding Column Mismatches**:
+   Writing seeder scripts with assumed column names (e.g. `source` in `capital_injections`, `product_name` in `gifts`/`losses`, `notes` instead of `reason`) instead of matching live database schemas causes immediate transaction abortion.
+3. **Corner Notification UI Clutter**:
+   Placing toast notifications in the top-right corner obscures key action buttons (search bars, modal close buttons, filter dropdowns) across various ERP modules.
+
+### Prevention & Guardrail
+1. **100% Parameterized SQLite Transactions**:
+   Never concatenate or hardcode literal values inside multi-row batch queries. Always bind every variable through positional parameters (`?`):
+   ```javascript
+   queries.push({
+     sql: `INSERT INTO sales (date, subtotal, discount, total, profit, payment_method, customer_name, type, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     params: [date, total, 0, total, profit, method, customerName, 'store', 1]
+   });
+   ```
+2. **Schema-Matched Model Verification**:
+   Verify every column against `PRAGMA table_info(<table>)` before constructing database seeder payloads.
+3. **Top-Center Floating Island Notification HUD**:
+   Position all transient alerts in the horizontal top-center (`fixed top-3 left-1/2 -translate-x-1/2 z-[9999]`) using glassmorphism and spring drop animations to ensure zero interference with right/left UI controls.

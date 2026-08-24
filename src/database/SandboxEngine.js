@@ -139,8 +139,8 @@ export class SandboxEngine {
       const method = methods[dayOffset % methods.length];
 
       queries.push({
-        sql: `INSERT INTO sales (date, subtotal, discount, total, profit, payment_method, customer_name, type, is_demo) VALUES (?, ?, 0, ?, ?, ?, ?, 'store', 1)`,
-        params: [saleDate.toISOString(), total, total, profit, method, `عميل تجريبي #${dayOffset + 1}`]
+        sql: `INSERT INTO sales (date, subtotal, discount, total, profit, payment_method, customer_name, type, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        params: [saleDate.toISOString(), total, 0, total, profit, method, `عميل تجريبي #${dayOffset + 1}`, 'store', 1]
       });
     }
 
@@ -152,14 +152,14 @@ export class SandboxEngine {
       const profit = total * 0.4;
 
       queries.push({
-        sql: `INSERT INTO sales (date, subtotal, discount, total, profit, payment_method, customer_name, type, is_demo) VALUES (?, ?, 0, ?, ?, 'cash', ?, 'online', 1)`,
-        params: [onlineDate.toISOString(), total, total, profit, `طلب أونلاين تجريبي - طرابلس #${i}`]
+        sql: `INSERT INTO sales (date, subtotal, discount, total, profit, payment_method, customer_name, type, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        params: [onlineDate.toISOString(), total, 0, total, profit, 'cash', `طلب أونلاين تجريبي - طرابلس #${i}`, 'online', 1]
       });
     }
 
     // 6. Demo Purchases
     queries.push({
-      sql: `INSERT INTO purchases (id, date, supplier_name, total, items_json, payment_type, is_demo) VALUES (?, ?, ?, ?, ?, 'cash', 1)`,
+      sql: `INSERT INTO purchases (id, date, supplier_name, total, items_json, payment_type, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       params: [
         generateId(),
         now.toISOString(),
@@ -168,38 +168,40 @@ export class SandboxEngine {
         JSON.stringify([
           { name: 'زيت صندل خام 1L', quantity: 2, cost_per_unit: 450, total_cost: 900, barcode: 'DEMO-PUR-01' },
           { name: 'زجاجات كريستال فاخرة 100ml', quantity: 100, cost_per_unit: 5.5, total_cost: 550, barcode: 'DEMO-PUR-02' }
-        ])
+        ]),
+        'cash',
+        1
       ]
     });
 
     // 7. Demo Expenses / Withdrawals
     queries.push({
-      sql: `INSERT INTO withdrawals (id, amount, reason, date, recipient, is_demo) VALUES (?, ?, ?, ?, ?, 1)`,
-      params: [generateId(), 75, 'مصروفات نظافة وضيافة (تجريبي)', now.toISOString(), 'كاشير الوردية']
+      sql: `INSERT INTO withdrawals (id, date, amount, recipient, reason, is_demo) VALUES (?, ?, ?, ?, ?, 1)`,
+      params: [generateId(), now.toISOString(), 75, 'كاشير الوردية', 'مصروفات نظافة وضيافة (تجريبي)']
     });
 
     // 8. Demo Capital Injections
     queries.push({
-      sql: `INSERT INTO capital_injections (id, amount, source, date, notes, is_demo) VALUES (?, ?, ?, ?, ?, 1)`,
-      params: [generateId(), 1500, 'عهدة نقدية أول المدة (تجريبي)', now.toISOString(), 'تغذية صندوق الكاشير']
+      sql: `INSERT INTO capital_injections (id, date, donor_name, donor_phone, amount, notes, is_demo) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      params: [generateId(), now.toISOString(), 'الإدارة المالية', '0910000000', 1500, 'عهدة نقدية أول المدة (تجريبي)']
     });
 
     // 9. Demo Gifts
     queries.push({
-      sql: `INSERT INTO gifts (id, product_name, qty, recipient, date, notes, is_demo) VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      params: [generateId(), 'عينة عطر مسك الدفة 10ml', 3, 'عميل VIP متميز', now.toISOString(), 'هدية ترويجية تجريبية']
+      sql: `INSERT INTO gifts (id, date, recipient_name, recipient_phone, reason, author, product_id, item_name, qty, unit, cost_value, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      params: [generateId(), now.toISOString(), 'عميل VIP متميز', '0920000000', 'هدية ترويجية تجريبية', 'المدير', '', 'عينة عطر مسك الدفة 10ml', 3, 'قطعة', 45]
     });
 
     // 10. Demo Losses / Damages
     queries.push({
-      sql: `INSERT INTO losses (id, product_name, qty, cost, reason, date, is_demo) VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      params: [generateId(), 'زجاجة عطر عنبر 50ml', 1, 60, 'كسر أثناء الترتيب على الرف (تجريبي)', now.toISOString()]
+      sql: `INSERT INTO losses (id, date, item_name, qty, unit, cost_value, reason, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+      params: [generateId(), now.toISOString(), 'زجاجة عطر عنبر 50ml', 1, 'قطعة', 60, 'كسر أثناء الترتيب على الرف (تجريبي)']
     });
 
     // 11. Demo Notes
     queries.push({
-      sql: `INSERT INTO notes (id, title, content, date, is_demo) VALUES (?, ?, ?, ?, 1)`,
-      params: [generateId(), 'تذكير طلبيات العيد (تجريبي)', 'متابعة شحنة الزيوت الفرنسية وتجهيز الزجاجات الملكية الخاصة', now.toISOString()]
+      sql: `INSERT INTO notes (id, date, author, title, content, priority, is_demo) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      params: [generateId(), now.toISOString(), 'المدير', 'تذكير طلبيات العيد (تجريبي)', 'متابعة شحنة الزيوت الفرنسية وتجهيز الزجاجات الملكية الخاصة', 'high']
     });
 
     await db.transaction(queries);
