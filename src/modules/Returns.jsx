@@ -44,6 +44,12 @@ const ReturnsModule = () => {
 
   useEffect(() => {
     loadRecentSales();
+
+    const handleRefresh = () => {
+      loadRecentSales();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, []);
 
   // ---------------------------------------------------------------

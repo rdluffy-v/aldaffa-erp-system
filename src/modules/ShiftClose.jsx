@@ -16,6 +16,7 @@ import { BaseRepository } from '../database/repositories/BaseRepository.js';
 import { db } from '../database/connection.js';
 import { useUIStore } from '../stores/useUIStore.js';
 import { formatCurrency, formatDate, generateId, safeParseFloat } from '../utils/helpers.js';
+import ConfirmModal from '../components/shared/ConfirmModal.jsx';
 import {
   Lock,
   Printer,
@@ -39,7 +40,8 @@ import {
   Scale,
   RefreshCw,
   Building2,
-  Calendar
+  Calendar,
+  Trash2
 } from 'lucide-react';
 
 const salesRepo = new SalesRepository();
@@ -64,6 +66,10 @@ const ShiftCloseModule = () => {
   const [pastReports, setPastReports] = useState([]);
   const [activeTab, setActiveTab] = useState('current'); // 'current' | 'history'
   const [activeDetailTab, setActiveDetailTab] = useState('summary'); // 'summary' | 'sales' | 'purchases' | 'losses' | 'withdrawals' | 'capital' | 'gifts' | 'notes'
+
+  // Delete past report state
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Ensure table exists on mount
   useEffect(() => {
@@ -90,6 +96,12 @@ const ShiftCloseModule = () => {
     };
     initTable();
     loadPastReports();
+
+    const handleRefresh = () => {
+      loadPastReports();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, []);
 
   const loadPastReports = async () => {
@@ -98,6 +110,21 @@ const ShiftCloseModule = () => {
       setPastReports(rows || []);
     } catch (e) {
       console.warn('loadPastReports error:', e);
+    }
+  };
+
+  const handleDeleteReport = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await shiftReportsRepo.delete(deleteTarget.id);
+      showSuccess('✅ تم حذف تقرير الوردية بنجاح');
+      await loadPastReports();
+    } catch (err) {
+      showError(`فشل حذف تقرير الوردية: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
+      setDeleteTarget(null);
     }
   };
 
@@ -871,6 +898,15 @@ const ShiftCloseModule = () => {
                       <Printer className="w-3.5 h-3.5 text-amber-500" />
                       <span>طباعة التقرير</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(item)}
+                      className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white transition-colors cursor-pointer"
+                      title="حذف تقرير الوردية"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               );
@@ -878,6 +914,19 @@ const ShiftCloseModule = () => {
           )}
         </div>
       )}
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        title="تأكيد حذف تقرير الوردية"
+        message={`هل أنت متأكد من حذف تقرير الوردية للكاشير "${deleteTarget?.cashier_name}" للفترة من (${deleteTarget?.start_date}) إلى (${deleteTarget?.end_date})؟`}
+        confirmText="نعم، حذف نهائياً"
+        cancelText="إلغاء"
+        type="danger"
+        isLoading={isDeleting}
+        onConfirm={handleDeleteReport}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 };

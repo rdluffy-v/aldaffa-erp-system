@@ -402,9 +402,15 @@ const Dashboard = () => {
     setError(null);
   }, [range]);
 
-  // Initial load + reload whenever the range changes.
+  // Initial load + reload whenever the range changes + listener for data refresh
   useEffect(() => {
     loadDashboard(false);
+
+    const handleRefresh = () => {
+      loadDashboard(false);
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, [loadDashboard]);
 
   // Silent auto-refresh every 30 seconds.

@@ -94,6 +94,13 @@ const LossesModule = () => {
   useEffect(() => {
     loadLosses();
     loadProducts();
+
+    const handleRefresh = () => {
+      loadLosses();
+      loadProducts();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, [loadLosses, loadProducts]);
 
   const performAddLoss = async (product, actualQty, costValue) => {

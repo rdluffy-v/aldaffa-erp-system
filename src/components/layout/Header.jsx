@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useUIStore } from '../../stores/useUIStore.js';
+import { SandboxEngine } from '../../database/SandboxEngine.js';
 import { FlaconEmblem } from '../ui/FlaconIcons.jsx';
-import { Sun, Moon, Keyboard } from 'lucide-react';
+import { Sun, Moon, Keyboard, Sparkles } from 'lucide-react';
 
 /**
  * Organic Atelier Canopy Header
  * Features:
  * - Live Arabic Libyan Date/Time clock
+ * - Sandbox/Demo Mode Indicator & 1-Click Purge
  * - Organic luxury flacon brand emblem
  * - In-app Keyboard Language Mode Switcher (عربي / EN)
  * - Theme Switcher (Daylight Atelier ☀️ / Nocturne Obsidian 🌙)
@@ -14,15 +16,40 @@ import { Sun, Moon, Keyboard } from 'lucide-react';
  */
 const Header = ({ children }) => {
   const [now, setNow] = useState(() => new Date());
+  const [isSandbox, setIsSandbox] = useState(false);
   const theme = useUIStore((state) => state.theme);
   const toggleTheme = useUIStore((state) => state.toggleTheme);
   const keyboardLanguage = useUIStore((state) => state.keyboardLanguage);
   const toggleKeyboardLanguage = useUIStore((state) => state.toggleKeyboardLanguage);
+  const showSuccess = useUIStore((state) => state.showSuccess);
+  const showError = useUIStore((state) => state.showError);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const active = await SandboxEngine.isSandboxActive();
+        setIsSandbox(active);
+      } catch (e) {}
+    };
+    check();
+    window.addEventListener('aldaffa:data-refresh', check);
+    return () => window.removeEventListener('aldaffa:data-refresh', check);
+  }, []);
+
+  const handleExitSandbox = async () => {
+    try {
+      await SandboxEngine.purgeDemoData();
+      setIsSandbox(false);
+      showSuccess('✅ تم إيقاف وضع التجربة وتطهير كافة البيانات الوهمية بنجاح.');
+    } catch (e) {
+      showError('خطأ أثناء إيقاف وضع التجربة: ' + e.message);
+    }
+  };
 
   // Global hotkey to toggle keyboard language (Alt+K or Alt+Shift)
   useEffect(() => {
@@ -53,13 +80,27 @@ const Header = ({ children }) => {
 
   return (
     <div className="w-full flex items-center justify-between px-6 pt-3 pb-2 select-none">
-      {/* Date & Time Clock (Left in RTL) */}
+      {/* Date & Time Clock & Sandbox Badge (Left in RTL) */}
       <div className="flex items-center gap-3">
         <div className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-amber-900/10 dark:border-amber-500/20 shadow-sm flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="text-xs font-semibold text-[#2D2424] dark:text-amber-300">{dateText}</span>
           <span className="text-[11px] text-[#5C524F] dark:text-slate-400 font-mono">({timeText})</span>
         </div>
+
+        {isSandbox && (
+          <div className="flex items-center gap-2 bg-amber-500/20 border border-amber-500/50 px-3 py-1 rounded-full text-xs font-bold text-amber-800 dark:text-amber-300 shadow-sm">
+            <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-spin" />
+            <span>وضع التجربة (بيانات وهمية)</span>
+            <button
+              onClick={handleExitSandbox}
+              className="bg-red-600 hover:bg-red-700 text-white text-[10px] px-2.5 py-0.5 rounded-full transition-all cursor-pointer font-bold shadow"
+              title="إيقاف وضع التجربة وحذف كافة البيانات الوهمية"
+            >
+              تطهير وإيقاف
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Brand Identity, Keyboard Language & Theme Toggle (Right in RTL) */}

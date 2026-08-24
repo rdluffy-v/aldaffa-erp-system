@@ -72,6 +72,13 @@ const CapitalInjectionsModule = () => {
 
   useEffect(() => {
     loadInjections();
+
+    const handleRefresh = () => {
+      loadInjections();
+      loadDonors();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, [startDate, endDate]);
 
   useEffect(() => {

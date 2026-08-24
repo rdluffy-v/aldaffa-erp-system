@@ -15,14 +15,23 @@ export class PurchasesRepository extends BaseRepository {
    * Create purchase with inventory update
    */
   async createPurchaseWithInventoryUpdate(purchaseData, items, inventoryRepo) {
+    let isDemo = purchaseData.is_demo !== undefined ? purchaseData.is_demo : 0;
+    if (!isDemo) {
+      try {
+        const setting = await db.get("SELECT value FROM settings WHERE key = 'sandbox_mode'");
+        if (setting && setting.value === '1') isDemo = 1;
+      } catch (e) {}
+    }
+
+    const payload = { ...purchaseData, is_demo: isDemo };
     const queries = [];
 
     // Insert purchase
-    const keys = Object.keys(purchaseData);
+    const keys = Object.keys(payload);
     const placeholders = keys.map(() => '?').join(', ');
     queries.push({
       sql: `INSERT INTO ${this.tableName} (${keys.join(', ')}) VALUES (${placeholders})`,
-      params: Object.values(purchaseData)
+      params: Object.values(payload)
     });
 
     // Update inventory with WAC for each item
@@ -46,6 +55,46 @@ export class PurchasesRepository extends BaseRepository {
     }
 
     await db.transaction(queries);
+    db.invalidateCache();
+  }
+
+  /**
+   * Delete purchase order and safely deduct stock from inventory
+   */
+  async deletePurchaseWithStockAdjustment(purchaseId) {
+    const purchase = await this.findById(purchaseId);
+    if (!purchase) {
+      throw new Error(`فاتورة الشراء #${purchaseId} غير موجودة`);
+    }
+
+    let items = [];
+    try {
+      items = JSON.parse(purchase.items_json || '[]');
+    } catch (e) {
+      items = [];
+    }
+
+    const queries = [];
+
+    // Safely deduct the purchased stock from inventory
+    for (const item of items) {
+      if (item.product_id && item.quantity) {
+        queries.push({
+          sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ?',
+          params: [Number(item.quantity) || 0, item.product_id]
+        });
+      }
+    }
+
+    // Delete purchase record
+    queries.push({
+      sql: `DELETE FROM ${this.tableName} WHERE id = ?`,
+      params: [purchaseId]
+    });
+
+    await db.transaction(queries);
+    db.invalidateCache();
+    return { success: true };
   }
 
   /**

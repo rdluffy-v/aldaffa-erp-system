@@ -3,8 +3,22 @@ import { SalesRepository } from '../database/repositories/SalesRepository.js';
 import { PurchasesRepository } from '../database/repositories/PurchasesRepository.js';
 import { BaseRepository } from '../database/repositories/BaseRepository.js';
 import { useUIStore } from '../stores/useUIStore.js';
+import { useInventoryStore } from '../stores/useInventoryStore.js';
 import { formatCurrency, formatDate } from '../utils/helpers.js';
-import { FileText, Printer, Search, Download, Eye, RefreshCw, ShoppingCart, Smartphone, ShoppingBag } from 'lucide-react';
+import ConfirmModal from '../components/shared/ConfirmModal.jsx';
+import {
+  FileText,
+  Printer,
+  Search,
+  Download,
+  Eye,
+  RefreshCw,
+  ShoppingCart,
+  Smartphone,
+  ShoppingBag,
+  Trash2,
+  AlertTriangle
+} from 'lucide-react';
 
 const salesRepo = new SalesRepository();
 const purchasesRepo = new PurchasesRepository();
@@ -12,6 +26,7 @@ const saleItemsRepo = new BaseRepository('sale_items');
 
 const InvoicesModule = () => {
   const { showSuccess, showError } = useUIStore();
+  const { loadProducts } = useInventoryStore();
 
   const [activeTab, setActiveTab] = useState('pos'); // 'pos' | 'online' | 'purchases'
   const [sales, setSales] = useState([]);
@@ -21,6 +36,10 @@ const InvoicesModule = () => {
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [invoiceItems, setInvoiceItems] = useState([]);
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  // Deletion modal state
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -40,6 +59,12 @@ const InvoicesModule = () => {
 
   useEffect(() => {
     loadData();
+
+    const handleRefresh = () => {
+      loadData();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, [loadData]);
 
   // Filter lists based on active tab & search
@@ -77,7 +102,8 @@ const InvoicesModule = () => {
       if (!term) return true;
       return (
         String(p.id).toLowerCase().includes(term) ||
-        (p.supplier_name && p.supplier_name.toLowerCase().includes(term))
+        (p.supplier_name && p.supplier_name.toLowerCase().includes(term)) ||
+        (p.invoice_ref && p.invoice_ref.toLowerCase().includes(term))
       );
     });
   }, [sales, purchases, activeTab, searchTerm]);
@@ -101,6 +127,43 @@ const InvoicesModule = () => {
       }
     }
     setPreviewOpen(true);
+  };
+
+  // Trigger Delete Confirmation
+  const confirmDeleteInvoice = (invoice, tabType = activeTab) => {
+    setDeleteTarget({ invoice, tabType });
+  };
+
+  // Perform Deletion
+  const handleDeleteInvoice = async () => {
+    if (!deleteTarget) return;
+    const { invoice, tabType } = deleteTarget;
+    setIsDeleting(true);
+
+    try {
+      if (tabType === 'purchases') {
+        await purchasesRepo.deletePurchaseWithStockAdjustment(invoice.id);
+        showSuccess(`✅ تم حذف فاتورة المشتريات وتعديل المخزون بنجاح`);
+      } else {
+        await salesRepo.deleteSaleWithStockRestore(invoice.id);
+        showSuccess(`✅ تم حذف الفاتورة رقم #${invoice.id} واسترجاع الكميات للمخزون`);
+      }
+
+      // Reload global stock and invoice data
+      await loadData();
+      await loadProducts();
+
+      // If this invoice is currently open in preview, close it
+      if (selectedInvoice && selectedInvoice.id === invoice.id) {
+        setPreviewOpen(false);
+        setSelectedInvoice(null);
+      }
+    } catch (err) {
+      showError(`فشل حذف الفاتورة: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
+      setDeleteTarget(null);
+    }
   };
 
   // Thermal Reprint
@@ -151,7 +214,7 @@ const InvoicesModule = () => {
           </div>
           <div>
             <h1 className="text-lg font-bold text-[#2D2424] dark:text-white">مركز تدقيق وأرشيف الفواتير</h1>
-            <p className="text-xs text-[#5C524F] dark:text-slate-400">استعراض، إعادة طباعة، وتصدير فواتير نقاط البيع، الأونلاين، والمشتريات</p>
+            <p className="text-xs text-[#5C524F] dark:text-slate-400">استعراض، إعادة طباعة، تصدير، وحذف فواتير نقاط البيع، الأونلاين، والمشتريات</p>
           </div>
         </div>
 
@@ -209,7 +272,7 @@ const InvoicesModule = () => {
           </div>
           <button
             onClick={loadData}
-            className="btn-atelier-secondary p-2 text-xs"
+            className="btn-atelier-secondary p-2 text-xs cursor-pointer"
             title="تحديث القائمة"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -258,7 +321,7 @@ const InvoicesModule = () => {
                     </td>
                     <td className="py-2.5 px-3">
                       <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[10px] font-bold">
-                        {row.payment_method === 'cash' ? 'نقدي' : row.payment_method === 'card' ? 'بطاقة' : row.payment_method === 'debt' ? 'آجل (دين)' : row.payment_method || 'نقدي'}
+                        {row.payment_method === 'cash' ? 'نقدي' : row.payment_method === 'card' ? 'بطاقة' : row.payment_method === 'debt' ? 'آجل (دين)' : row.payment_method || (row.payment_type === 'cash' ? 'نقدي' : 'آجل')}
                       </span>
                     </td>
                     <td className="py-2.5 px-3 font-bold text-left text-emerald-600 dark:text-emerald-400">
@@ -268,7 +331,7 @@ const InvoicesModule = () => {
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={() => handleViewInvoice(row)}
-                          className="btn-atelier-secondary py-1 px-2.5 text-[11px]"
+                          className="btn-atelier-secondary py-1 px-2.5 text-[11px] cursor-pointer"
                           title="معاينة الفاتورة"
                         >
                           <Eye className="w-3.5 h-3.5 ml-1" />
@@ -276,11 +339,18 @@ const InvoicesModule = () => {
                         </button>
                         <button
                           onClick={() => handleThermalPrint(row)}
-                          className="btn-atelier-primary py-1 px-2.5 text-[11px]"
+                          className="btn-atelier-primary py-1 px-2.5 text-[11px] cursor-pointer"
                           title="إعادة طباعة حرارية"
                         >
                           <Printer className="w-3.5 h-3.5 ml-1" />
                           <span>طباعة</span>
+                        </button>
+                        <button
+                          onClick={() => confirmDeleteInvoice(row)}
+                          className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white transition-colors cursor-pointer"
+                          title="حذف الفاتورة نهائياً"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
@@ -303,7 +373,7 @@ const InvoicesModule = () => {
               </div>
               <button
                 onClick={() => setPreviewOpen(false)}
-                className="w-7 h-7 rounded-full bg-gray-200 dark:bg-slate-800 text-gray-600 dark:text-gray-300 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors"
+                className="w-7 h-7 rounded-full bg-gray-200 dark:bg-slate-800 text-gray-600 dark:text-gray-300 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors cursor-pointer"
               >
                 ✕
               </button>
@@ -317,7 +387,7 @@ const InvoicesModule = () => {
               </div>
               <div>
                 <span className="text-gray-500">طريقة الدفع:</span>{' '}
-                <span className="font-bold text-[#2D2424] dark:text-white">{selectedInvoice.payment_method || 'نقدي'}</span>
+                <span className="font-bold text-[#2D2424] dark:text-white">{selectedInvoice.payment_method || selectedInvoice.payment_type || 'نقدي'}</span>
               </div>
               {selectedInvoice.notes && (
                 <div className="col-span-2">
@@ -359,17 +429,26 @@ const InvoicesModule = () => {
             </div>
 
             {/* Footer buttons */}
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => handleThermalPrint(selectedInvoice)}
-                className="flex-1 btn-atelier-primary py-2.5 text-xs flex items-center justify-center gap-1.5"
+                className="flex-1 btn-atelier-primary py-2.5 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 <span>إعادة طباعة حرارية (80mm)</span>
               </button>
+
+              <button
+                onClick={() => confirmDeleteInvoice(selectedInvoice)}
+                className="btn-atelier-secondary py-2.5 px-4 text-xs text-rose-600 hover:bg-rose-500 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>حذف الفاتورة</span>
+              </button>
+
               <button
                 onClick={() => setPreviewOpen(false)}
-                className="btn-atelier-secondary py-2.5 px-5 text-xs"
+                className="btn-atelier-secondary py-2.5 px-5 text-xs cursor-pointer"
               >
                 إغلاق
               </button>
@@ -377,8 +456,26 @@ const InvoicesModule = () => {
           </div>
         </div>
       )}
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        title="تأكيد حذف الفاتورة"
+        message={
+          deleteTarget?.tabType === 'purchases'
+            ? `هل أنت متأكد من حذف فاتورة المشتريات للمورد "${deleteTarget?.invoice?.supplier_name || 'غير محدد'}" بقيمة ${formatCurrency(deleteTarget?.invoice?.total)}؟ سيتم خصم الكميات المشتراة من المخزون تلقائياً.`
+            : `هل أنت متأكد من حذف الفاتورة رقم #${deleteTarget?.invoice?.id} بقيمة ${formatCurrency(deleteTarget?.invoice?.total)}؟ سيتم استرجاع الكميات المباعة إلى رصيد المخزون وتسوية أي ديون مرتبطة بها.`
+        }
+        confirmText="نعم، حذف نهائياً"
+        cancelText="إلغاء"
+        type="danger"
+        isLoading={isDeleting}
+        onConfirm={handleDeleteInvoice}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 };
 
 export default InvoicesModule;
+

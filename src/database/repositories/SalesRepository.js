@@ -16,8 +16,19 @@ export class SalesRepository extends BaseRepository {
    * Create sale with items in transaction
    */
   async createSaleWithItems(saleData, items) {
+    // Check if sandbox mode is active to tag trial sales with is_demo = 1
+    let isDemo = saleData.is_demo !== undefined ? saleData.is_demo : 0;
+    if (!isDemo) {
+      try {
+        const setting = await db.get("SELECT value FROM settings WHERE key = 'sandbox_mode'");
+        if (setting && setting.value === '1') isDemo = 1;
+      } catch (e) {}
+    }
+
+    const masterPayload = { ...saleData, is_demo: isDemo };
+
     // 1. Insert sale master record first to get auto-incremented saleId
-    const saleResult = await this.create(saleData);
+    const saleResult = await this.create(masterPayload);
     const saleId = saleResult?.lastInsertRowid;
 
     if (!saleId) {
@@ -36,7 +47,8 @@ export class SalesRepository extends BaseRepository {
         unit: item.unit || 'قطعة',
         final_price: safeParseFloat(item.final_price, 0),
         unit_cost: safeParseFloat(item.unit_cost, 0),
-        portion_ml: item.portion_ml || null
+        portion_ml: item.portion_ml || null,
+        is_demo: isDemo
       };
 
       const itemKeys = Object.keys(itemToInsert);
@@ -63,6 +75,66 @@ export class SalesRepository extends BaseRepository {
 
     // Return array matching existing caller contract
     return [{ lastInsertRowid: saleId }, saleResult];
+  }
+
+  /**
+   * Delete sale with automatic stock restoration, debtor balance recalculation, and related records cleanup
+   */
+  async deleteSaleWithStockRestore(saleId) {
+    const sale = await this.findById(saleId);
+    if (!sale) {
+      throw new Error(`الفاتورة رقم #${saleId} غير موجودة`);
+    }
+
+    // 1. Fetch sale items to restore stock
+    const items = await db.query('SELECT * FROM sale_items WHERE sale_id = ?', [saleId]);
+    const queries = [];
+
+    // 2. Restore stock for each item
+    for (const item of (items || [])) {
+      const qtyToRestore = item.portion_ml
+        ? (item.cart_qty * item.portion_ml / (item.capacity || 1))
+        : item.cart_qty;
+
+      queries.push({
+        sql: 'UPDATE inventory SET qty = qty + ? WHERE id = ?',
+        params: [qtyToRestore, item.product_id]
+      });
+    }
+
+    // 3. Delete sale items
+    queries.push({
+      sql: 'DELETE FROM sale_items WHERE sale_id = ?',
+      params: [saleId]
+    });
+
+    // 4. Delete linked returns if any
+    queries.push({
+      sql: 'DELETE FROM returns WHERE sale_id = ?',
+      params: [saleId]
+    });
+
+    // 5. If it was a debt sale or linked to debtor, adjust debtor balance and delete debt history
+    if (sale.debtor_id) {
+      queries.push({
+        sql: 'UPDATE debtors SET total_debt = MAX(0, total_debt - ?) WHERE id = ?',
+        params: [sale.total || 0, sale.debtor_id]
+      });
+      queries.push({
+        sql: 'DELETE FROM debt_history WHERE invoice_id = ?',
+        params: [saleId]
+      });
+    }
+
+    // 6. Delete sale master record
+    queries.push({
+      sql: 'DELETE FROM sales WHERE id = ?',
+      params: [saleId]
+    });
+
+    await db.transaction(queries);
+    db.invalidateCache();
+    return { success: true };
   }
 
   /**

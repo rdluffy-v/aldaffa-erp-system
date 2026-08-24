@@ -65,6 +65,18 @@ export class BaseRepository {
    * Create new record with self-healing column fallback
    */
   async create(data) {
+    let payload = { ...data };
+
+    // Auto-tag with is_demo = 1 if sandbox mode is active and not explicitly set
+    if (this.tableName !== 'settings' && payload.is_demo === undefined) {
+      try {
+        const setting = await db.get("SELECT value FROM settings WHERE key = 'sandbox_mode'");
+        if (setting && setting.value === '1') {
+          payload.is_demo = 1;
+        }
+      } catch (e) {}
+    }
+
     const sanitizeAndInsert = async (currentData) => {
       const keys = Object.keys(currentData);
       if (keys.length === 0) return { lastInsertRowid: null };
@@ -85,7 +97,7 @@ export class BaseRepository {
       }
     };
 
-    return await sanitizeAndInsert(data);
+    return await sanitizeAndInsert(payload);
   }
 
   /**

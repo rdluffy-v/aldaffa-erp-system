@@ -43,6 +43,12 @@ const CategoriesModule = () => {
 
   useEffect(() => {
     loadCategories();
+
+    const handleRefresh = () => {
+      loadCategories();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, [loadCategories]);
 
   const saveCategory = async () => {

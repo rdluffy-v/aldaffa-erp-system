@@ -40,6 +40,12 @@ const NotesModule = () => {
 
   useEffect(() => {
     loadNotes();
+
+    const handleRefresh = () => {
+      loadNotes();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, [loadNotes]);
 
   const saveNote = async () => {

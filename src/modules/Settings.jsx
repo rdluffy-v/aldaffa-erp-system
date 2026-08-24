@@ -765,6 +765,20 @@ const SettingsModule = () => {
     }
   };
 
+  const handleForcePurgeDemo = async () => {
+    setTogglingSandbox(true);
+    try {
+      await SandboxEngine.purgeDemoData();
+      setSandboxActive(false);
+      await loadAllSettings();
+      showSuccess('✅ تم تنظيف وتطهير كافة البيانات الوهمية والتجريبية من جميع الجداول بنجاح.');
+    } catch (err) {
+      showError(`خطأ أثناء تطهير البيانات: ${err.message}`);
+    } finally {
+      setTogglingSandbox(false);
+    }
+  };
+
   const handlePurgeCache = async () => {
     setPurgingCache(true);
     try {
@@ -1885,23 +1899,36 @@ const SettingsModule = () => {
                     زراعة منتجات، فواتير، وديون وهمية لتجربة كافة وظائف النظام بأمان، مع إمكانية حذفها بنقرة زر دون التأثير على البيانات الحقيقية.
                   </p>
 
-                  <button
-                    type="button"
-                    onClick={handleToggleSandbox}
-                    disabled={togglingSandbox}
-                    className={`text-xs py-2 px-4 rounded-full font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                      sandboxActive
-                        ? 'bg-red-600 hover:bg-red-700 text-white'
-                        : 'btn-atelier-primary'
-                    }`}
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    {togglingSandbox
-                      ? 'جاري المعالجة...'
-                      : sandboxActive
-                      ? '🛑 إيقاف وضع التجربة وحذف البيانات الوهمية'
-                      : '✨ تفعيل وضع التجربة وزراعة بيانات وهمية'}
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleToggleSandbox}
+                      disabled={togglingSandbox}
+                      className={`text-xs py-2 px-4 rounded-full font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                        sandboxActive
+                          ? 'bg-red-600 hover:bg-red-700 text-white shadow-md'
+                          : 'btn-atelier-primary'
+                      }`}
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      {togglingSandbox
+                        ? 'جاري المعالجة...'
+                        : sandboxActive
+                        ? '🛑 إيقاف وضع التجربة وحذف البيانات الوهمية'
+                        : '✨ تفعيل وضع التجربة وزراعة بيانات وهمية'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleForcePurgeDemo}
+                      disabled={togglingSandbox}
+                      className="text-xs py-2 px-3 rounded-full font-bold bg-gray-800 hover:bg-gray-700 text-gray-300 border border-white/10 transition-all flex items-center gap-1.5 cursor-pointer"
+                      title="تنظيف وتطهير إجباري لكافة السجلات الوهمية من جميع الجداول"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>تطهير البيانات الوهمية فوراً</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 

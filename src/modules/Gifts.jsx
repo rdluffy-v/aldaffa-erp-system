@@ -80,6 +80,12 @@ const GiftsModule = () => {
 
   useEffect(() => {
     loadGifts();
+
+    const handleRefresh = () => {
+      loadGifts();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, [startDate, endDate]);
 
   useEffect(() => {

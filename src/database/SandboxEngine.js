@@ -4,9 +4,10 @@
  * ============================================================================
  * Guarantees 100% preservation of all real user-created data.
  * - Automatic pre-seed backup snapshots
- * - Strict is_demo = 1 tagging for all generated records
- * - Complete multi-table purge across all 15 ERP modules
- * - Global UI & Zustand stores synchronization on toggle
+ * - Strict is_demo = 1 tagging for all generated & trial records
+ * - Complete relational seeding (sales + sale_items + debt_history + shifts)
+ * - Multi-table zero-leak purge across all ERP tables
+ * - Global UI & Zustand stores synchronization
  */
 
 import { db } from './connection.js';
@@ -32,7 +33,7 @@ const ALL_SANDBOX_TABLES = [
 
 export class SandboxEngine {
   /**
-   * Ensure all non-destructive schema columns exist across tables using PRAGMA check
+   * Ensure all non-destructive schema columns exist across tables
    */
   static async ensureSchema() {
     for (const table of ALL_SANDBOX_TABLES) {
@@ -65,14 +66,28 @@ export class SandboxEngine {
         )
       `);
     } catch (e) {}
+
+    try {
+      await db.run(`
+        CREATE TABLE IF NOT EXISTS settings (
+          key TEXT PRIMARY KEY,
+          value TEXT
+        )
+      `);
+    } catch (e) {}
   }
 
   /**
-   * Check if sandbox demo data is currently active in any table
+   * Check if sandbox demo data is currently active in any table or marked active in settings
    */
   static async isSandboxActive() {
     try {
       await this.ensureSchema();
+      // 1. Check setting flag
+      const settingRow = await db.get("SELECT value FROM settings WHERE key = 'sandbox_mode'");
+      if (settingRow && settingRow.value === '1') return true;
+
+      // 2. Check table records for is_demo = 1
       const res = await db.get('SELECT COUNT(*) as count FROM inventory WHERE is_demo = 1');
       if ((res?.count || 0) > 0) return true;
 
@@ -86,125 +101,200 @@ export class SandboxEngine {
   }
 
   /**
-   * Seed realistic mock data tagged with is_demo = 1 across all modules
+   * Tag data payload with is_demo = 1 if sandbox is currently active
+   */
+  static async tagIfSandbox(data) {
+    try {
+      const active = await this.isSandboxActive();
+      if (active) {
+        return { ...data, is_demo: 1 };
+      }
+    } catch (e) {}
+    return data;
+  }
+
+  /**
+   * Seed realistic, relational mock data tagged with is_demo = 1 across all modules
    */
   static async seedDemoData() {
-    // 1. Ensure columns exist
     await this.ensureSchema();
-
-    const queries = [];
     const now = new Date();
 
-    // 2. Demo Products in Inventory
+    // 1. Demo Products in Inventory
     const demoProducts = [
-      { name: 'عطر مسك الدفة الملكي 100ml', category: 'عطور شرقية', cost: 45, price: 95, qty: 35, unit: 'قطعة', barcode: 'DEMO-MSK-01' },
-      { name: 'عطر صندل وعنبر إشبيليا 50ml', category: 'عطور غربية', cost: 60, price: 130, qty: 24, unit: 'قطعة', barcode: 'DEMO-SND-02' },
-      { name: 'زيت ورد طائفي نقي تولة', category: 'زيوت خام', cost: 120, price: 250, qty: 15, unit: 'تولة', barcode: 'DEMO-WRD-03' },
-      { name: 'عطر فانيلا وباتشولي باريس 80ml', category: 'عطور فرنسية', cost: 38, price: 85, qty: 40, unit: 'قطعة', barcode: 'DEMO-VNL-04' },
-      { name: 'بخور عود كمبودي فاخر 50g', category: 'بخور ومباخر', cost: 75, price: 160, qty: 18, unit: 'جرام', barcode: 'DEMO-OUD-05' },
-      { name: 'زجاجة كرستال ديزاين إيطالي 50ml', category: 'زجاجات ومستلزمات', cost: 4.5, price: 12, qty: 85, unit: 'زجاجة', barcode: 'DEMO-BTL-06' },
-      { name: 'كحول إيثيلي نقي 96% طبي', category: 'كحول ومذيبات', cost: 18, price: 35, qty: 20, unit: 'لتر', barcode: 'DEMO-ALC-07' }
+      { id: generateId(), name: 'عطر مسك الدفة الملكي 100ml', category: 'عطور شرقية', cost: 45, price: 95, qty: 35, unit: 'قطعة', barcode: 'DEMO-MSK-01' },
+      { id: generateId(), name: 'عطر صندل وعنبر إشبيليا 50ml', category: 'عطور غربية', cost: 60, price: 130, qty: 24, unit: 'قطعة', barcode: 'DEMO-SND-02' },
+      { id: generateId(), name: 'زيت ورد طائفي نقي تولة', category: 'زيوت خام', cost: 120, price: 250, qty: 15, unit: 'تولة', barcode: 'DEMO-WRD-03' },
+      { id: generateId(), name: 'عطر فانيلا وباتشولي باريس 80ml', category: 'عطور فرنسية', cost: 38, price: 85, qty: 40, unit: 'قطعة', barcode: 'DEMO-VNL-04' },
+      { id: generateId(), name: 'بخور عود كمبودي فاخر 50g', category: 'بخور ومباخر', cost: 75, price: 160, qty: 18, unit: 'جرام', barcode: 'DEMO-OUD-05' },
+      { id: generateId(), name: 'زجاجة كرستال ديزاين إيطالي 50ml', category: 'زجاجات ومستلزمات', cost: 4.5, price: 12, qty: 85, unit: 'زجاجة', barcode: 'DEMO-BTL-06' },
+      { id: generateId(), name: 'كحول إيثيلي نقي 96% طبي', category: 'كحول ومذيبات', cost: 18, price: 35, qty: 20, unit: 'لتر', barcode: 'DEMO-ALC-07' }
     ];
 
     for (const prod of demoProducts) {
-      queries.push({
-        sql: `INSERT INTO inventory (id, name, category, cost, price, qty, unit, barcode, min_qty, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 5, 1)`,
-        params: [generateId(), prod.name, prod.category, prod.cost, prod.price, prod.qty, prod.unit, prod.barcode]
-      });
+      await db.run(
+        `INSERT INTO inventory (id, name, category, cost, price, qty, unit, barcode, min_qty, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 5, 1)`,
+        [prod.id, prod.name, prod.category, prod.cost, prod.price, prod.qty, prod.unit, prod.barcode]
+      );
     }
 
-    // 3. Demo Debtors
+    // 2. Demo Debtors
     const demoDebtors = [
-      { name: 'أحمد الترهوني (تجريبي)', phone: '0912345678', total_debt: 340 },
-      { name: 'سالم المصراتي (تجريبي)', phone: '0923456789', total_debt: 190 },
-      { name: 'محمد السويحلي (تجريبي)', phone: '0945678901', total_debt: 520 }
+      { id: generateId(), name: 'أحمد الترهوني (تجريبي)', phone: '0912345678', total_debt: 340 },
+      { id: generateId(), name: 'سالم المصراتي (تجريبي)', phone: '0923456789', total_debt: 190 },
+      { id: generateId(), name: 'محمد السويحلي (تجريبي)', phone: '0945678901', total_debt: 520 }
     ];
 
     for (const d of demoDebtors) {
-      queries.push({
-        sql: `INSERT INTO debtors (id, name, phone, total_debt, is_demo) VALUES (?, ?, ?, ?, 1)`,
-        params: [generateId(), d.name, d.phone, d.total_debt]
-      });
+      await db.run(
+        `INSERT INTO debtors (id, name, phone, total_debt, is_demo) VALUES (?, ?, ?, ?, 1)`,
+        [d.id, d.name, d.phone, d.total_debt]
+      );
+
+      // Add debt history for each debtor
+      await db.run(
+        `INSERT INTO debt_history (id, debtor_id, date, type, amount, is_demo) VALUES (?, ?, ?, ?, ?, 1)`,
+        [generateId(), d.id, now.toISOString(), 'initial_balance', d.total_debt]
+      );
     }
 
-    // 4. Demo POS Sales
+    // 3. Demo POS Sales + Relational Sale Items
     for (let dayOffset = 4; dayOffset >= 0; dayOffset--) {
       const saleDate = new Date(now);
       saleDate.setDate(saleDate.getDate() - dayOffset);
       saleDate.setHours(11 + dayOffset, 30, 0, 0);
 
-      const total = 180 + dayOffset * 45;
-      const profit = total * 0.42;
-      const methods = ['cash', 'card', 'bank_transfer', 'debt'];
+      const prod1 = demoProducts[dayOffset % demoProducts.length];
+      const prod2 = demoProducts[(dayOffset + 1) % demoProducts.length];
+      const qty1 = 1;
+      const qty2 = 1;
+      const subtotal = prod1.price * qty1 + prod2.price * qty2;
+      const profit = (prod1.price - prod1.cost) * qty1 + (prod2.price - prod2.cost) * qty2;
+      const methods = ['cash', 'card', 'bank_transfer', 'cash', 'cash'];
       const method = methods[dayOffset % methods.length];
 
-      queries.push({
-        sql: `INSERT INTO sales (date, subtotal, discount, total, profit, payment_method, customer_name, type, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        params: [saleDate.toISOString(), total, 0, total, profit, method, `عميل تجريبي #${dayOffset + 1}`, 'store', 1]
-      });
+      const saleResult = await db.run(
+        `INSERT INTO sales (date, subtotal, discount, total, profit, payment_method, customer_name, type, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [saleDate.toISOString(), subtotal, 0, subtotal, profit, method, `عميل تجريبي #${dayOffset + 1}`, 'store']
+      );
+
+      const saleId = saleResult?.lastInsertRowid;
+      if (saleId) {
+        await db.run(
+          `INSERT INTO sale_items (sale_id, product_id, name, cart_qty, unit, final_price, unit_cost, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [saleId, prod1.id, prod1.name, qty1, prod1.unit, prod1.price, prod1.cost]
+        );
+        await db.run(
+          `INSERT INTO sale_items (sale_id, product_id, name, cart_qty, unit, final_price, unit_cost, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [saleId, prod2.id, prod2.name, qty2, prod2.unit, prod2.price, prod2.cost]
+        );
+      }
     }
 
-    // 5. Demo Online Sales
+    // 4. Demo Online Sales + Items
     for (let i = 1; i <= 3; i++) {
       const onlineDate = new Date(now);
       onlineDate.setHours(onlineDate.getHours() - i * 6);
-      const total = 220 * i;
-      const profit = total * 0.4;
+      const prod = demoProducts[i % demoProducts.length];
+      const qty = 2;
+      const total = prod.price * qty;
+      const profit = (prod.price - prod.cost) * qty;
 
-      queries.push({
-        sql: `INSERT INTO sales (date, subtotal, discount, total, profit, payment_method, customer_name, type, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        params: [onlineDate.toISOString(), total, 0, total, profit, 'cash', `طلب أونلاين تجريبي - طرابلس #${i}`, 'online', 1]
-      });
+      const onlineSaleRes = await db.run(
+        `INSERT INTO sales (date, subtotal, discount, total, profit, payment_method, customer_name, type, phone, notes, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [onlineDate.toISOString(), total, 0, total, profit, 'cash', `طلب أونلاين تجريبي - طرابلس #${i}`, 'online', '0919998877', 'توصيل لباب البيت - تجريبي']
+      );
+
+      const saleId = onlineSaleRes?.lastInsertRowid;
+      if (saleId) {
+        await db.run(
+          `INSERT INTO sale_items (sale_id, product_id, name, cart_qty, unit, final_price, unit_cost, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [saleId, prod.id, prod.name, qty, prod.unit, prod.price, prod.cost]
+        );
+      }
     }
 
-    // 6. Demo Purchases
-    queries.push({
-      sql: `INSERT INTO purchases (id, date, supplier_name, total, items_json, payment_type, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      params: [
+    // 5. Demo Purchases
+    await db.run(
+      `INSERT INTO purchases (id, date, supplier_name, total, items_json, payment_type, invoice_ref, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
         generateId(),
         now.toISOString(),
         'مورد الزيوت السويسرية (تجريبي)',
         1450,
         JSON.stringify([
-          { name: 'زيت صندل خام 1L', quantity: 2, cost_per_unit: 450, total_cost: 900, barcode: 'DEMO-PUR-01' },
-          { name: 'زجاجات كريستال فاخرة 100ml', quantity: 100, cost_per_unit: 5.5, total_cost: 550, barcode: 'DEMO-PUR-02' }
+          { name: 'زيت صندل خام 1L', quantity: 2, unit: 'لتر', cost_per_unit: 450, total_cost: 900, barcode: 'DEMO-PUR-01' },
+          { name: 'زجاجات كريستال فاخرة 100ml', quantity: 100, unit: 'قطعة', cost_per_unit: 5.5, total_cost: 550, barcode: 'DEMO-PUR-02' }
         ]),
         'cash',
-        1
+        'PUR-DEMO-2026'
       ]
-    });
+    );
 
-    // 7. Demo Expenses / Withdrawals
-    queries.push({
-      sql: `INSERT INTO withdrawals (id, date, amount, recipient, reason, is_demo) VALUES (?, ?, ?, ?, ?, 1)`,
-      params: [generateId(), now.toISOString(), 75, 'كاشير الوردية', 'مصروفات نظافة وضيافة (تجريبي)']
-    });
+    // 6. Demo Expenses / Withdrawals
+    await db.run(
+      `INSERT INTO withdrawals (id, date, amount, recipient, reason, is_demo) VALUES (?, ?, ?, ?, ?, 1)`,
+      [generateId(), now.toISOString(), 75, 'كاشير الوردية', 'مصروفات نظافة وضيافة (تجريبي)']
+    );
 
-    // 8. Demo Capital Injections
-    queries.push({
-      sql: `INSERT INTO capital_injections (id, date, donor_name, donor_phone, amount, notes, is_demo) VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      params: [generateId(), now.toISOString(), 'الإدارة المالية', '0910000000', 1500, 'عهدة نقدية أول المدة (تجريبي)']
-    });
+    // 7. Demo Capital Injections
+    await db.run(
+      `INSERT INTO capital_injections (id, date, donor_name, donor_phone, amount, notes, is_demo) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [generateId(), now.toISOString(), 'الإدارة المالية', '0910000000', 1500, 'عهدة نقدية أول المدة (تجريبي)']
+    );
 
-    // 9. Demo Gifts
-    queries.push({
-      sql: `INSERT INTO gifts (id, date, recipient_name, recipient_phone, reason, author, product_id, item_name, qty, unit, cost_value, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-      params: [generateId(), now.toISOString(), 'عميل VIP متميز', '0920000000', 'هدية ترويجية تجريبية', 'المدير', '', 'عينة عطر مسك الدفة 10ml', 3, 'قطعة', 45]
-    });
+    // 8. Demo Gifts
+    await db.run(
+      `INSERT INTO gifts (id, date, recipient_name, recipient_phone, reason, author, product_id, item_name, qty, unit, cost_value, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [generateId(), now.toISOString(), 'عميل VIP متميز', '0920000000', 'هدية ترويجية تجريبية', 'المدير', demoProducts[0].id, 'عينة عطر مسك الدفة 10ml', 3, 'قطعة', 45]
+    );
 
-    // 10. Demo Losses / Damages
-    queries.push({
-      sql: `INSERT INTO losses (id, date, item_name, qty, unit, cost_value, reason, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-      params: [generateId(), now.toISOString(), 'زجاجة عطر عنبر 50ml', 1, 'قطعة', 60, 'كسر أثناء الترتيب على الرف (تجريبي)']
-    });
+    // 9. Demo Losses / Damages
+    await db.run(
+      `INSERT INTO losses (id, date, item_name, qty, unit, cost_value, reason, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+      [generateId(), now.toISOString(), 'زجاجة عطر عنبر 50ml', 1, 'قطعة', 60, 'كسر أثناء الترتيب على الرف (تجريبي)']
+    );
 
-    // 11. Demo Notes
-    queries.push({
-      sql: `INSERT INTO notes (id, date, author, title, content, priority, is_demo) VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      params: [generateId(), now.toISOString(), 'المدير', 'تذكير طلبيات العيد (تجريبي)', 'متابعة شحنة الزيوت الفرنسية وتجهيز الزجاجات الملكية الخاصة', 'high']
-    });
+    // 10. Demo Notes
+    await db.run(
+      `INSERT INTO notes (id, date, author, title, content, priority, is_demo) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [generateId(), now.toISOString(), 'المدير', 'تذكير طلبيات العيد (تجريبي)', 'متابعة شحنة الزيوت الفرنسية وتجهيز الزجاجات الملكية الخاصة', 'high']
+    );
 
-    await db.transaction(queries);
+    // 11. Demo Shift Report
+    const shiftReportData = {
+      cashier_name: 'الكاشير المناوب (تجريبي)',
+      start_date: now.toISOString().split('T')[0],
+      end_date: now.toISOString().split('T')[0],
+      expected_cash: 850,
+      actual_cash: 850,
+      variance: 0,
+      total_sales: 850,
+      total_profit: 357,
+      created_at: now.toISOString()
+    };
+
+    await db.run(
+      `INSERT INTO shift_reports (id, cashier_name, start_date, end_date, expected_cash, actual_cash, variance, total_sales, total_profit, report_data_json, created_at, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        generateId(),
+        shiftReportData.cashier_name,
+        shiftReportData.start_date,
+        shiftReportData.end_date,
+        shiftReportData.expected_cash,
+        shiftReportData.actual_cash,
+        shiftReportData.variance,
+        shiftReportData.total_sales,
+        shiftReportData.total_profit,
+        JSON.stringify(shiftReportData),
+        shiftReportData.created_at
+      ]
+    );
+
+    // Set sandbox flag in settings table
+    try {
+      await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('sandbox_mode', '1')");
+    } catch (e) {}
 
     // Broadcast refresh to update all in-memory React views
     this.broadcastDataRefresh();
@@ -212,21 +302,41 @@ export class SandboxEngine {
   }
 
   /**
-   * Safely purge only demo records (is_demo = 1) across all tables
+   * Safely purge ALL demo records (is_demo = 1) across all tables
    * WITHOUT touching any real user records (is_demo = 0 or NULL)
    */
   static async purgeDemoData() {
     await this.ensureSchema();
-    const queries = [];
 
+    // 1. Delete is_demo = 1 from each table
     for (const table of ALL_SANDBOX_TABLES) {
-      queries.push({
-        sql: `DELETE FROM ${table} WHERE is_demo = 1`,
-        params: []
-      });
+      try {
+        await db.run(`DELETE FROM ${table} WHERE is_demo = 1`);
+      } catch (e) {
+        console.warn(`Purge table ${table} warning:`, e);
+      }
     }
 
-    await db.transaction(queries);
+    // 2. Clean up any orphaned relations
+    try {
+      await db.run(`DELETE FROM sale_items WHERE sale_id NOT IN (SELECT id FROM sales)`);
+    } catch (e) {}
+
+    try {
+      await db.run(`DELETE FROM debt_history WHERE debtor_id NOT IN (SELECT id FROM debtors)`);
+    } catch (e) {}
+
+    try {
+      await db.run(`DELETE FROM returns WHERE sale_id NOT IN (SELECT id FROM sales)`);
+    } catch (e) {}
+
+    // 3. Reset sandbox flag in settings
+    try {
+      await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('sandbox_mode', '0')");
+    } catch (e) {}
+
+    // Invalidate database query cache
+    db.invalidateCache();
 
     // Broadcast refresh to update all in-memory React views
     this.broadcastDataRefresh();
@@ -234,9 +344,13 @@ export class SandboxEngine {
   }
 
   /**
-   * Broadcast refresh event across the entire React application
+   * Broadcast refresh event across the entire React application and Zustand stores
    */
   static broadcastDataRefresh() {
+    try {
+      db.invalidateCache();
+    } catch (e) {}
+
     try {
       useInventoryStore.getState().loadProducts();
     } catch (e) {}
@@ -246,3 +360,5 @@ export class SandboxEngine {
     }
   }
 }
+
+export default SandboxEngine;

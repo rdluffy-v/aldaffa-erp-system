@@ -52,6 +52,8 @@ import {
   HardDrive
 } from 'lucide-react';
 
+import ConfirmModal from '../components/shared/ConfirmModal.jsx';
+
 const purchasesRepo = new PurchasesRepository();
 const inventoryRepo = new InventoryRepository();
 const categoriesRepo = new CategoriesRepository();
@@ -109,6 +111,10 @@ const PurchasesModule = () => {
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Deletion modal state
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Filters
   const [filterDays, setFilterDays] = useState(30);
@@ -188,7 +194,29 @@ const PurchasesModule = () => {
   useEffect(() => {
     loadPurchases();
     loadCategories();
+
+    const handleRefresh = () => {
+      loadPurchases();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, [loadPurchases, loadCategories]);
+
+  const handleDeletePurchase = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await purchasesRepo.deletePurchaseWithStockAdjustment(deleteTarget.id);
+      showSuccess(`✅ تم حذف فاتورة المشتريات وتعديل المخزون بنجاح`);
+      await loadPurchases();
+      await loadProducts();
+    } catch (err) {
+      showError(`فشل حذف فاتورة المشتريات: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
+      setDeleteTarget(null);
+    }
+  };
 
   useEffect(() => {
     loadProducts();
@@ -1014,6 +1042,14 @@ No additional text, only JSON.`
                     >
                       <QrCode className="w-3 h-3 text-amber-600" />
                       <span>استوديو الباركود</span>
+                    </button>
+
+                    <button
+                      onClick={() => setDeleteTarget(purchase)}
+                      className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white transition-colors cursor-pointer"
+                      title="حذف فاتورة المشتريات"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -2065,6 +2101,19 @@ No additional text, only JSON.`
           </div>
         </div>
       )}
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        title="تأكيد حذف فاتورة الشراء"
+        message={`هل أنت متأكد من حذف فاتورة الشراء للمورد "${deleteTarget?.supplier_name || 'غير محدد'}" بقيمة ${formatCurrency(deleteTarget?.total)}؟ سيتم خصم الكميات المشتراة من المخزون تلقائياً.`}
+        confirmText="نعم، حذف نهائياً"
+        cancelText="إلغاء"
+        type="danger"
+        isLoading={isDeleting}
+        onConfirm={handleDeletePurchase}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 };

@@ -177,19 +177,32 @@ const DebtorsModule = () => {
     }
   };
 
+  useEffect(() => {
+    loadDebtors();
+
+    const handleRefresh = () => {
+      loadDebtors();
+      if (selectedDebtor) {
+        loadDebtHistory(selectedDebtor.id);
+        loadPaymentSummary(selectedDebtor.id);
+      }
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
+  }, []);
+
   // ---------------------------------------------------------------
   // Delete debtor (via custom confirm modal)
   // ---------------------------------------------------------------
   const deleteDebtor = (debtor) => {
-    if (debtor.total_debt !== 0) {
-      showError('لا يمكن حذف عميل لديه رصيد دين');
-      return;
-    }
-
     setConfirmDelete({
-      message: `هل أنت متأكد من حذف العميل "${debtor.name}"؟`,
+      message:
+        debtor.total_debt !== 0
+          ? `العميل "${debtor.name}" لديه رصيد دين (${formatCurrency(debtor.total_debt)}). هل أنت متأكد من حذف العميل وسجل ديونه بالكامل نهائياً؟`
+          : `هل أنت متأكد من حذف العميل "${debtor.name}"؟`,
       onConfirm: async () => {
         try {
+          await db.run('DELETE FROM debt_history WHERE debtor_id = ?', [debtor.id]);
           await debtorsRepo.delete(debtor.id);
           setConfirmDelete(null);
           await loadDebtors();
@@ -198,10 +211,35 @@ const DebtorsModule = () => {
             setDebtHistory([]);
             setPaymentSummary([]);
           }
-          showSuccess('✅ تم حذف العميل');
+          showSuccess('✅ تم حذف العميل وسجلاته بنجاح');
         } catch (error) {
           setConfirmDelete(null);
           showError(`خطأ في حذف العميل: ${error.message}`);
+        }
+      }
+    });
+  };
+
+  // ---------------------------------------------------------------
+  // Delete individual debt history record
+  // ---------------------------------------------------------------
+  const deleteHistoryRecord = (record) => {
+    if (!selectedDebtor) return;
+    setConfirmDelete({
+      message: `هل أنت متأكد من حذف حركة (${record.type === 'debt' ? 'الدين' : 'الدفعة'}) بقيمة ${formatCurrency(record.amount)}؟ سيتم تعديل رصيد العميل تلقائياً.`,
+      onConfirm: async () => {
+        try {
+          const delta = record.type === 'debt' ? -record.amount : record.amount;
+          await db.run('DELETE FROM debt_history WHERE id = ?', [record.id]);
+          await db.run('UPDATE debtors SET total_debt = MAX(0, total_debt + ?) WHERE id = ?', [delta, selectedDebtor.id]);
+          setConfirmDelete(null);
+          await loadDebtors();
+          await loadDebtHistory(selectedDebtor.id);
+          await loadPaymentSummary(selectedDebtor.id);
+          showSuccess('✅ تم حذف الحركة وتحديث رصيد العميل');
+        } catch (err) {
+          setConfirmDelete(null);
+          showError(`فشل حذف الحركة: ${err.message}`);
         }
       }
     });
@@ -566,6 +604,16 @@ const DebtorsModule = () => {
                             فاتورة #{record.invoice_id}
                           </div>
                         )}
+                        <div className="flex justify-end mt-2 pt-1 border-t border-gray-700/50">
+                          <button
+                            type="button"
+                            onClick={() => deleteHistoryRecord(record)}
+                            className="text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2 py-0.5 rounded transition-all cursor-pointer flex items-center gap-1"
+                            title="حذف هذه الحركة"
+                          >
+                            <span>🗑️ حذف الحركة</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}

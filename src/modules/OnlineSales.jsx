@@ -34,6 +34,13 @@ const OnlineSalesModule = () => {
   useEffect(() => {
     loadProducts();
     loadRecentOrders();
+
+    const handleRefresh = () => {
+      loadProducts();
+      loadRecentOrders();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, [loadProducts]);
 
   const loadRecentOrders = async () => {

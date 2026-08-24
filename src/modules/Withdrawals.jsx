@@ -66,6 +66,12 @@ const WithdrawalsModule = () => {
 
   useEffect(() => {
     loadWithdrawals();
+
+    const handleRefresh = () => {
+      loadWithdrawals();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, [startDate, endDate]);
 
   // ---------------------------------------------------------------
