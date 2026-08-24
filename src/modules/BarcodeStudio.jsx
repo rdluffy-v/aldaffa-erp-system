@@ -1,15 +1,16 @@
 /**
  * ============================================================================
- * BARCODE STUDIO MODULE (استوديو الباركود الشامل والطباعة الحرارية)
+ * BARCODE STUDIO MODULE (استوديو الباركود الشامل والطباعة الحرارية المتقدمة)
  * ============================================================================
- * Complete standalone barcode management studio for Aldaffa Perfumes ERP.
- * Supports:
- * - Direct printing from Inventory
- * - Direct import from Purchases Invoices
- * - Custom on-the-fly barcode label creation
+ * Complete standalone barcode management & customizable thermal label studio.
+ * Features:
+ * - Direct printing from Inventory, Purchases Invoices & Custom Generator
  * - Multi-size presets: 50x30mm, 40x20mm, 60x40mm, 80mm continuous, A4 sheet
- * - Real-time USB hardware & CUPS printer auto-discovery (XP-365B, etc.)
- * - Direct Silent Printing & System Dialog printing
+ * - Customizable Visual Designer: Store Title, Product Name, Price, Barcode Digits
+ * - Orientation / Direction control (0° Normal / 180° Inverted)
+ * - Layout Presets (Classic Luxury, Price Top, Barcode Focus)
+ * - 1:1 WYSIWYG Live Thermal Simulator
+ * - Zero-aliasing crisp integer Code-128 barcode generation
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -17,7 +18,7 @@ import { InventoryRepository } from '../database/repositories/InventoryRepositor
 import { PurchasesRepository } from '../database/repositories/PurchasesRepository.js';
 import { useInventoryStore } from '../stores/useInventoryStore.js';
 import { useUIStore } from '../stores/useUIStore.js';
-import { formatCurrency, generateId, generateValidBarcode } from '../utils/helpers.js';
+import { formatCurrency, generateValidBarcode } from '../utils/helpers.js';
 import { BarcodeSVG, generateBarcodeSvgString } from '../utils/barcodeGenerator.jsx';
 import useDebounce from '../hooks/useDebounce.js';
 import {
@@ -26,20 +27,19 @@ import {
   Package,
   ShoppingBag,
   Plus,
-  Minus,
   Search,
   RefreshCw,
   Usb,
   Terminal,
-  Layers,
-  CheckCircle2,
   Trash2,
-  Tag,
   Zap,
   Sliders,
-  FileText,
-  Boxes,
   Sparkles,
+  RotateCw,
+  Eye,
+  Type,
+  DollarSign,
+  Barcode as BarcodeIcon,
   Check
 } from 'lucide-react';
 
@@ -64,6 +64,17 @@ const BarcodeStudioModule = () => {
   // Print Queue Items: [ { id, name, barcode, price, cost, quantity, printCount, selected, source } ]
   const [queueItems, setQueueItems] = useState([]);
   const [selectedSize, setSelectedSize] = useState('50x30');
+
+  // Visual Customizer Controls State
+  const [storeTitle, setStoreTitle] = useState('الدفة للعطور الملكية');
+  const [showStoreTitle, setShowStoreTitle] = useState(true);
+  const [showProductName, setShowProductName] = useState(true);
+  const [showPrice, setShowPrice] = useState(true);
+  const [showBarcodeText, setShowBarcodeText] = useState(true);
+  const [printDirection, setPrintDirection] = useState(0); // 0: Normal top-down, 1: Inverted 180
+  const [barcodeScale, setBarcodeScale] = useState('medium'); // 'compact' | 'medium' | 'large'
+  const [layoutStyle, setLayoutStyle] = useState('classic'); // 'classic' | 'price_top' | 'barcode_focus'
+  const [showCustomizer, setShowCustomizer] = useState(true);
 
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -141,7 +152,9 @@ const BarcodeStudioModule = () => {
   // Add a product from Inventory to Queue
   const handleAddProductToQueue = (prod) => {
     setQueueItems((prev) => {
-      const existing = prev.find((item) => item.product_id === prod.id || (item.barcode && item.barcode === prod.barcode));
+      const existing = prev.find(
+        (item) => item.product_id === prod.id || (item.barcode && item.barcode === prod.barcode)
+      );
       if (existing) {
         return prev.map((item) =>
           item.id === existing.id ? { ...item, printCount: (item.printCount || 0) + 1, selected: true } : item
@@ -150,79 +163,93 @@ const BarcodeStudioModule = () => {
       return [
         ...prev,
         {
-          id: generateId(),
+          id: 'q_' + prod.id,
           product_id: prod.id,
           name: prod.name,
           barcode: prod.barcode || generateValidBarcode('628'),
           price: prod.price || 0,
           cost: prod.cost || 0,
-          unit: prod.unit || 'قطعة',
-          quantity: prod.qty || 1,
-          printCount: Math.max(1, Math.min(prod.qty || 1, 5)),
+          quantity: prod.qty || 0,
+          printCount: 1,
           selected: true,
           source: 'inventory'
         }
       ];
     });
-    showSuccess(`تمت إضافة "${prod.name}" إلى قائمة الطباعة`);
+    showSuccess(`تمت إضافة "${prod.name}" لقائمة الطباعة`);
   };
 
-  // Import all items from a Purchase Invoice
-  const handleImportPurchaseInvoice = (purchase) => {
+  // Import All Items from a Purchase Invoice
+  const handleImportPurchaseInvoice = (invoice) => {
     try {
-      const items = JSON.parse(purchase.items_json || '[]');
-      if (!items || items.length === 0) {
-        showWarning('لا توجد أصناف في هذه الفاتورة');
+      const items = JSON.parse(invoice.items_json || '[]');
+      if (items.length === 0) {
+        showWarning('الفاتورة المحددة لا تحتوي على أي أصناف');
         return;
       }
 
-      const newEntries = items.map((it) => ({
-        id: generateId(),
-        product_id: it.product_id || '',
-        name: it.name,
-        barcode: it.barcode || generateValidBarcode('628'),
-        price: it.sell_price || it.cost_per_unit * 1.35 || 0,
-        cost: it.cost_per_unit || 0,
-        unit: it.unit || 'قطعة',
-        quantity: it.quantity || 1,
-        printCount: Math.max(1, parseInt(it.quantity) || 1),
-        selected: true,
-        source: `فاتورة #${purchase.invoice_ref || purchase.id}`
-      }));
+      let addedCount = 0;
+      setQueueItems((prev) => {
+        const next = [...prev];
+        items.forEach((it, idx) => {
+          const count = Math.max(1, Number(it.quantity) || 1);
+          const barcode = it.barcode || generateValidBarcode('628');
+          const itemId = `pur_${invoice.id}_${idx}`;
+          const existing = next.find((p) => p.name === it.name || p.barcode === barcode);
 
-      setQueueItems((prev) => [...prev, ...newEntries]);
-      showSuccess(`✅ تم استيراد ${items.length} صنف من فاتورة المشتريات`);
+          if (existing) {
+            existing.printCount += count;
+            existing.selected = true;
+          } else {
+            next.push({
+              id: itemId,
+              product_id: it.product_id || '',
+              name: it.name,
+              barcode: barcode,
+              price: it.sell_price || (it.cost_per_unit || 0) * 1.35,
+              cost: it.cost_per_unit || 0,
+              quantity: count,
+              printCount: count,
+              selected: true,
+              source: 'purchase'
+            });
+            addedCount++;
+          }
+        });
+        return next;
+      });
+
+      showSuccess(`تم استيراد ${items.length} أصناف من الفاتورة بنجاح`);
     } catch (e) {
-      showError('خطأ أثناء قراءة الفاتورة: ' + e.message);
+      showError('فشل استيراد أصناف الفاتورة: ' + e.message);
     }
   };
 
-  // Add Custom Item to Queue
+  // Add Custom Label to Queue
   const handleAddCustomItem = (e) => {
-    e?.preventDefault();
+    e.preventDefault();
     if (!customName.trim()) {
-      showWarning('يرجى كتابة اسم المنتج');
+      showWarning('يرجى إدخال اسم الصنف');
       return;
     }
 
-    const finalBarcode = customBarcode.trim() || generateValidBarcode('628');
-    const finalPrice = parseFloat(customPrice) || 0;
-    const finalCount = parseInt(customQty) || 1;
+    const priceNum = parseFloat(customPrice) || 0;
+    const qtyNum = Math.max(1, parseInt(customQty, 10) || 1);
+    const barcodeVal = customBarcode.trim() || generateValidBarcode('628');
 
     setQueueItems((prev) => [
       ...prev,
       {
-        id: generateId(),
+        id: 'cust_' + Date.now(),
         product_id: '',
         name: customName.trim(),
-        barcode: finalBarcode,
-        price: finalPrice,
+        barcode: barcodeVal,
+        price: priceNum,
         cost: 0,
-        unit: 'قطعة',
-        quantity: finalCount,
-        printCount: finalCount,
+        quantity: qtyNum,
+        printCount: qtyNum,
         selected: true,
-        source: 'مخصص'
+        source: 'custom'
       }
     ]);
 
@@ -296,6 +323,13 @@ const BarcodeStudioModule = () => {
     return selectedItems.reduce((acc, it) => acc + (it.printCount || 0), 0);
   }, [selectedItems]);
 
+  // Barcode pixel height based on scale
+  const barcodePixelHeight = useMemo(() => {
+    if (barcodeScale === 'compact') return 36;
+    if (barcodeScale === 'large') return 60;
+    return 48; // medium
+  }, [barcodeScale]);
+
   // Core Print Executor
   const handleExecutePrint = async (silent = false) => {
     if (selectedItems.length === 0) {
@@ -307,27 +341,50 @@ const BarcodeStudioModule = () => {
     setPrinting(true);
 
     try {
-      // Build pure standalone HTML with inline SVGs (zero CDN dependency)
-      const labelsHtml = selectedItems
-        .flatMap((item) => {
-          const count = item.printCount || 1;
-          const svgCode = generateBarcodeSvgString(item.barcode, 160, 45, true);
-          return Array.from({ length: count }).map(
-            () => `
-            <div class="label-box">
-              <div class="store-title">الدفة للعطور الملكية</div>
-              <div class="product-title">${item.name}</div>
-              <div class="barcode-area">${svgCode}</div>
-              <div class="price-badge">${formatCurrency(item.price)}</div>
-            </div>
-          `
-          );
-        })
-        .join('');
-
       const isThermal = currentSizeConfig.isThermal;
       const widthMm = currentSizeConfig.widthMm;
       const heightMm = currentSizeConfig.heightMm;
+
+      // Build pure standalone HTML with inline integer SVGs (zero CDN dependency)
+      const labelsHtml = selectedItems
+        .flatMap((item) => {
+          const count = item.printCount || 1;
+          const svgCode = generateBarcodeSvgString(item.barcode, 180, barcodePixelHeight, showBarcodeText);
+
+          return Array.from({ length: count }).map(() => {
+            if (layoutStyle === 'price_top') {
+              return `
+                <div class="label-box">
+                  ${showPrice ? `<div class="price-badge">${formatCurrency(item.price)}</div>` : ''}
+                  ${showProductName ? `<div class="product-title">${item.name}</div>` : ''}
+                  <div class="barcode-area">${svgCode}</div>
+                  ${showStoreTitle ? `<div class="store-title">${storeTitle}</div>` : ''}
+                </div>
+              `;
+            }
+
+            if (layoutStyle === 'barcode_focus') {
+              return `
+                <div class="label-box">
+                  ${showProductName ? `<div class="product-title">${item.name}</div>` : ''}
+                  <div class="barcode-area">${svgCode}</div>
+                  ${showPrice ? `<div class="price-badge">${formatCurrency(item.price)}</div>` : ''}
+                </div>
+              `;
+            }
+
+            // Classic Default Layout
+            return `
+              <div class="label-box">
+                ${showStoreTitle ? `<div class="store-title">${storeTitle}</div>` : ''}
+                ${showProductName ? `<div class="product-title">${item.name}</div>` : ''}
+                <div class="barcode-area">${svgCode}</div>
+                ${showPrice ? `<div class="price-badge">${formatCurrency(item.price)}</div>` : ''}
+              </div>
+            `;
+          });
+        })
+        .join('');
 
       const printHtmlDocument = `
 <!DOCTYPE html>
@@ -378,19 +435,19 @@ const BarcodeStudioModule = () => {
         text-align: center;
       }
       .store-title {
-        font-size: 8px;
-        font-weight: 700;
-        color: #333333;
+        font-size: 8.5px;
+        font-weight: 800;
+        color: #111111;
         line-height: 1.1;
       }
       .product-title {
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 900;
         color: #000000;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        max-width: ${widthMm - 6}mm;
+        max-width: ${widthMm - 4}mm;
         line-height: 1.2;
         margin: 0.5mm 0;
       }
@@ -401,12 +458,12 @@ const BarcodeStudioModule = () => {
         align-items: center;
       }
       .barcode-area svg {
-        width: ${widthMm - 8}mm !important;
+        width: ${widthMm - 6}mm !important;
         height: auto !important;
-        max-height: 12mm;
+        max-height: 16mm;
       }
       .price-badge {
-        font-size: 10px;
+        font-size: 11.5px;
         font-weight: 900;
         color: #000000;
         line-height: 1.1;
@@ -430,11 +487,11 @@ const BarcodeStudioModule = () => {
         text-align: center;
         page-break-inside: avoid;
       }
-      .store-title { font-size: 8px; font-weight: bold; color: #555555; }
-      .product-title { font-size: 10px; font-weight: 800; }
+      .store-title { font-size: 8.5px; font-weight: bold; color: #333333; }
+      .product-title { font-size: 10.5px; font-weight: 900; }
       .barcode-area { width: 100%; display: flex; justify-content: center; margin: 1mm 0; }
-      .barcode-area svg { width: 42mm !important; height: auto !important; max-height: 12mm; }
-      .price-badge { font-size: 10px; font-weight: 900; }
+      .barcode-area svg { width: 44mm !important; height: auto !important; max-height: 14mm; }
+      .price-badge { font-size: 11px; font-weight: 900; }
     `
     }
   </style>
@@ -464,11 +521,14 @@ const BarcodeStudioModule = () => {
           printerName: selectedPrinter || undefined,
           silent: !!silent,
           widthMm,
-          heightMm
+          heightMm,
+          direction: printDirection
         });
 
         if (res && res.success) {
-          showSuccess(`✅ تم إرسال ${totalLabelsCount} ملصق إلى الطابعة (${selectedPrinter || 'الافتراضية'}) بنجاح`);
+          showSuccess(
+            `✅ تم إرسال ${totalLabelsCount} ملصق إلى الطابعة (${selectedPrinter || 'الافتراضية'}) بنجاح`
+          );
         } else {
           showError(`فشل إرسال أمر الطباعة: ${res?.error || 'خطأ غير معروف'}`);
         }
@@ -488,17 +548,22 @@ const BarcodeStudioModule = () => {
   };
 
   return (
-    <div className="h-full flex flex-col gap-4">
-      {/* Top Header Card */}
-      <div className="atelier-card p-4 flex justify-between items-center flex-wrap gap-3">
+    <div className="h-full flex flex-col gap-4 overflow-hidden animate-in fade-in duration-300">
+      {/* Top Header Bar */}
+      <div className="atelier-card p-4 flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold shadow-sm">
-            <QrCode className="w-6 h-6 text-amber-500" />
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/30 flex items-center justify-center text-amber-500 shadow-inner">
+            <QrCode className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-lg font-black text-[#2D2424] dark:text-white">استوديو طباعة الباركود الشامل (Barcode Studio)</h1>
+            <h1 className="text-base font-black text-[#2D2424] dark:text-white flex items-center gap-2">
+              <span>استوديو الباركود والطباعة الحرارية المتقدم</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                XP-365B Ready
+              </span>
+            </h1>
             <p className="text-xs text-[#5C524F] dark:text-slate-400">
-              توليد وطباعة ملصقات الباركود الاحترافية لمنتجات المخزون وفواتير المشتريات بدقة قياسية
+              تصميم وتخصيص وطباعة ملصقات الباركود بدقة عتادية 203 DPI مع محاكاة بصرية مباشرة
             </p>
           </div>
         </div>
@@ -508,7 +573,7 @@ const BarcodeStudioModule = () => {
           {hardwareInfo.systemPrinters && hardwareInfo.systemPrinters.length > 0 ? (
             <div className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>الطابعة الجاهزة: {selectedPrinter || hardwareInfo.systemPrinters[0]?.name}</span>
+              <span>الطابعة المتصلة: {selectedPrinter || hardwareInfo.systemPrinters[0]?.name}</span>
             </div>
           ) : (
             <div className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5">
@@ -529,10 +594,10 @@ const BarcodeStudioModule = () => {
         </div>
       </div>
 
-      {/* Main Dual Workspace: Left Column (Sources & Selection) | Right Column (Queue & Live Preview) */}
+      {/* Main Dual Workspace: Left Column (Sources) | Right Column (Customizer & Queue) */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-hidden">
         {/* ========================================================================= */}
-        {/* LEFT COLUMN: SOURCES (7 Cols) */}
+        {/* LEFT COLUMN: SOURCES (6 Cols) */}
         {/* ========================================================================= */}
         <div className="lg:col-span-6 flex flex-col gap-3 overflow-hidden">
           {/* Source Tabs Header */}
@@ -580,7 +645,6 @@ const BarcodeStudioModule = () => {
           {/* TAB 1: INVENTORY PRODUCTS LIST */}
           {activeTab === 'inventory' && (
             <div className="atelier-card flex-1 p-3.5 flex flex-col gap-3 overflow-hidden">
-              {/* Search & Category Filter */}
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 text-gray-400 absolute start-3 top-1/2 -translate-y-1/2" />
@@ -598,11 +662,13 @@ const BarcodeStudioModule = () => {
                   className="input-atelier py-1.5 text-xs font-bold w-36"
                 >
                   <option value="all">كل الفئات</option>
-                  {categories.filter((c) => c !== 'all').map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
+                  {categories
+                    .filter((c) => c !== 'all')
+                    .map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                 </select>
               </div>
 
@@ -786,22 +852,17 @@ const BarcodeStudioModule = () => {
                   <span>إضافة إلى قائمة الطباعة</span>
                 </button>
               </form>
-
-              {/* Quick Preset Tips */}
-              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-gray-500 dark:text-slate-400 mt-4">
-                💡 <span className="font-bold text-amber-700 dark:text-amber-300">ملاحظة:</span> يمكنك إدخال أي باركود تجاري أو تركه ليقوم النظام بتوليد باركود قياسي بدقة Code-128 يعمل مع كافة أجهزة قراءة الباركود.
-              </div>
             </div>
           )}
         </div>
 
         {/* ========================================================================= */}
-        {/* RIGHT COLUMN: PRINT QUEUE, HARDWARE & LIVE PREVIEW (6 Cols) */}
+        {/* RIGHT COLUMN: CUSTOMIZER, QUEUE & LIVE SIMULATOR (6 Cols) */}
         {/* ========================================================================= */}
         <div className="lg:col-span-6 flex flex-col gap-3 overflow-hidden">
-          {/* Label Configuration & Printer Control Bar */}
+          {/* Label Hardware, Size & Visual Controls Accordion */}
           <div className="atelier-card p-3.5 space-y-3">
-            {/* Top Row: Target Printer & Size Selector */}
+            {/* Row 1: Target Printer & Size Selector */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
                 <label className="block font-bold text-gray-500 mb-1">طابعة الملصقات المستهدفة:</label>
@@ -842,41 +903,129 @@ const BarcodeStudioModule = () => {
               </div>
             </div>
 
-            {/* Linux CUPS installation helper toggle */}
-            {!hardwareInfo.cupsRunning && (
-              <div className="text-[11px] flex justify-between items-center text-amber-600 dark:text-amber-400">
-                <span>💡 لم يتم رصد خادم CUPS على لينكس</span>
-                <button
-                  type="button"
-                  onClick={() => setShowCupsGuide(!showCupsGuide)}
-                  className="underline font-bold cursor-pointer"
-                >
-                  {showCupsGuide ? 'إخفاء أمر التثبيت' : 'أمر تفعيل خادم الطباعة'}
-                </button>
+            {/* Visual Customizer Options Toggle Header */}
+            <div className="pt-2 border-t border-white/5 flex justify-between items-center">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-500">
+                <Sliders className="w-3.5 h-3.5" />
+                <span>خيارات وتخصيص شكل الملصق الحراري:</span>
               </div>
-            )}
+              <button
+                type="button"
+                onClick={() => setShowCustomizer(!showCustomizer)}
+                className="text-[11px] text-gray-400 hover:text-white underline cursor-pointer"
+              >
+                {showCustomizer ? 'إخفاء الخيارات' : 'إظهار الخيارات'}
+              </button>
+            </div>
 
-            {showCupsGuide && (
-              <div className="p-2.5 bg-black/40 border border-amber-500/30 rounded-xl space-y-1 text-[11px] animate-in fade-in">
-                <div className="font-bold text-amber-400 flex items-center gap-1">
-                  <Terminal className="w-3.5 h-3.5" />
-                  <span>لتفعيل ربط الطابعة بنظام لينكس لمرة واحدة:</span>
+            {/* Visual Customizer Panel */}
+            {showCustomizer && (
+              <div className="p-3 bg-black/20 dark:bg-slate-900/60 rounded-xl border border-white/5 space-y-3 text-xs">
+                {/* Store Title Input */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="showStoreCheck"
+                    checked={showStoreTitle}
+                    onChange={(e) => setShowStoreTitle(e.target.checked)}
+                    className="rounded text-amber-500 focus:ring-0 cursor-pointer"
+                  />
+                  <label htmlFor="showStoreCheck" className="font-bold text-gray-400 whitespace-nowrap">
+                    عنوان المتجر:
+                  </label>
+                  <input
+                    type="text"
+                    value={storeTitle}
+                    onChange={(e) => setStoreTitle(e.target.value)}
+                    disabled={!showStoreTitle}
+                    className="input-atelier flex-1 py-1 text-xs font-bold disabled:opacity-30"
+                  />
                 </div>
-                <div className="p-1.5 bg-black/70 rounded font-mono text-[10px] text-emerald-400 select-all" dir="ltr">
-                  sudo apt-get install -y cups cups-daemon printer-driver-all && sudo usermod -aG lp $USER && sudo systemctl enable --now cups
+
+                {/* Element Visibility Toggles */}
+                <div className="grid grid-cols-3 gap-2 text-[11px]">
+                  <label className="flex items-center gap-1.5 font-bold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showProductName}
+                      onChange={(e) => setShowProductName(e.target.checked)}
+                      className="rounded text-amber-500"
+                    />
+                    <span>اسم الصنف</span>
+                  </label>
+
+                  <label className="flex items-center gap-1.5 font-bold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showPrice}
+                      onChange={(e) => setShowPrice(e.target.checked)}
+                      className="rounded text-amber-500"
+                    />
+                    <span>سعر البيع</span>
+                  </label>
+
+                  <label className="flex items-center gap-1.5 font-bold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showBarcodeText}
+                      onChange={(e) => setShowBarcodeText(e.target.checked)}
+                      className="rounded text-amber-500"
+                    />
+                    <span>أرقام الباركود</span>
+                  </label>
+                </div>
+
+                {/* Layout & Direction Selectors */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 mb-1">ترتيب العناصر:</label>
+                    <select
+                      value={layoutStyle}
+                      onChange={(e) => setLayoutStyle(e.target.value)}
+                      className="input-atelier w-full py-1 text-[11px] font-bold"
+                    >
+                      <option value="classic">كلاسيكي (متجر ➔ منتج ➔ باركود ➔ سعر)</option>
+                      <option value="price_top">سعر بارز (سعر ➔ منتج ➔ باركود)</option>
+                      <option value="barcode_focus">تركيز باركود (منتج ➔ باركود عريض)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 mb-1">ارتفاع الباركود:</label>
+                    <select
+                      value={barcodeScale}
+                      onChange={(e) => setBarcodeScale(e.target.value)}
+                      className="input-atelier w-full py-1 text-[11px] font-bold"
+                    >
+                      <option value="compact">مضغوط (Compact)</option>
+                      <option value="medium">متوسط (Standard)</option>
+                      <option value="large">كبير (Large)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 mb-1">اتجاه خروج الورق:</label>
+                    <select
+                      value={printDirection}
+                      onChange={(e) => setPrintDirection(Number(e.target.value))}
+                      className="input-atelier w-full py-1 text-[11px] font-bold"
+                    >
+                      <option value={0}>طبيعي (0° Top-Down)</option>
+                      <option value={1}>معكوس (180° Inverted)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Print Queue Items Adjuster */}
+          {/* Print Queue Items Adjuster & Live Simulator */}
           <div className="atelier-card flex-1 p-3.5 flex flex-col justify-between overflow-hidden">
+            {/* Queue Header */}
             <div className="flex justify-between items-center border-b border-white/10 pb-2 mb-2">
-              <div className="flex items-center gap-2">
-                <h3 className="text-xs font-bold text-[#2D2424] dark:text-white">
-                  أصناف أمر الطباعة ({selectedItems.length} صنف مختار • {totalLabelsCount} ملصق إجمالي)
-                </h3>
-              </div>
+              <h3 className="text-xs font-bold text-[#2D2424] dark:text-white">
+                أصناف الطباعة ({selectedItems.length} صنف • {totalLabelsCount} ملصق)
+              </h3>
 
               <div className="flex items-center gap-1.5 text-[11px]">
                 <button
@@ -913,11 +1062,11 @@ const BarcodeStudioModule = () => {
             </div>
 
             {/* Queue Table */}
-            <div className="flex-1 overflow-y-auto space-y-1.5 scrollbar-thin max-h-48 pr-1">
+            <div className="flex-1 overflow-y-auto space-y-1.5 scrollbar-thin max-h-36 pr-1">
               {queueItems.length === 0 ? (
-                <div className="p-8 text-center text-xs text-gray-400 flex flex-col items-center justify-center gap-2">
-                  <QrCode className="w-8 h-8 text-gray-300 dark:text-slate-600" />
-                  <span>قائمة الطباعة فارغة. اختر أصنافاً من المخزون أو فواتير المشتريات لإضافتها.</span>
+                <div className="p-4 text-center text-xs text-gray-400 flex flex-col items-center justify-center gap-1">
+                  <QrCode className="w-6 h-6 text-gray-500" />
+                  <span>قائمة الطباعة فارغة. اختر أصنافاً من المخزون لإضافتها.</span>
                 </div>
               ) : (
                 queueItems.map((item) => (
@@ -937,20 +1086,20 @@ const BarcodeStudioModule = () => {
                         className="rounded text-amber-500 focus:ring-0 cursor-pointer"
                       />
                       <div>
-                        <div className="font-bold text-[#2D2424] dark:text-white truncate max-w-[160px]">
+                        <div className="font-bold text-[#2D2424] dark:text-white truncate max-w-[150px]">
                           {item.name}
                         </div>
                         <div className="font-mono text-[10px] text-gray-400">{item.barcode}</div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                       <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
                         {formatCurrency(item.price)}
                       </span>
 
                       {/* Stepper */}
-                      <div className="inline-flex items-center gap-1 bg-black/10 dark:bg-slate-700/80 p-0.5 rounded-lg border border-white/5">
+                      <div className="inline-flex items-center gap-1 bg-black/10 dark:bg-slate-700/80 p-0.5 rounded-lg">
                         <button
                           type="button"
                           onClick={() => updatePrintCount(item.id, -1)}
@@ -959,7 +1108,7 @@ const BarcodeStudioModule = () => {
                         >
                           -
                         </button>
-                        <span className="w-8 text-center font-bold text-amber-500 tabular-nums">
+                        <span className="w-6 text-center font-bold text-amber-500 tabular-nums">
                           {item.selected ? item.printCount : 0}
                         </span>
                         <button
@@ -985,48 +1134,111 @@ const BarcodeStudioModule = () => {
               )}
             </div>
 
-            {/* Live Scannable Preview Box */}
-            <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-2">
-              <div className="text-[11px] font-bold text-gray-500 flex justify-between items-center">
-                <span>معاينة الملصق المباشرة (Live Label Preview):</span>
-                <span className="text-amber-600 dark:text-amber-400 font-mono">
+            {/* 1:1 Live Thermal Simulator Box */}
+            <div className="mt-2 pt-2 border-t border-white/10 flex flex-col gap-1.5">
+              <div className="text-[11px] font-bold text-gray-400 flex justify-between items-center">
+                <span className="flex items-center gap-1">
+                  <Eye className="w-3.5 h-3.5 text-amber-400" />
+                  <span>محاكاة الملصق الحراري الحقيقي (1:1 Output Simulator):</span>
+                </span>
+                <span className="text-amber-500 font-mono text-[10px]">
                   {LABEL_SIZES.find((s) => s.id === selectedSize)?.label}
                 </span>
               </div>
 
-              {/* Responsive Container for Single Card Sample */}
-              <div className="p-3 bg-gray-200 dark:bg-slate-950/80 rounded-2xl flex items-center justify-center">
+              {/* Physical Thermal Sticker Simulator Surface */}
+              <div className="p-3 bg-gray-300 dark:bg-slate-950 rounded-2xl flex items-center justify-center">
                 {selectedItems.length > 0 ? (
                   <div
-                    className="bg-white text-black p-2.5 rounded-xl border border-gray-300 shadow-md flex flex-col items-center justify-between text-center font-sans"
-                    style={{ width: '180px', minHeight: '120px' }}
+                    className="bg-white text-black p-2.5 rounded-xl border border-gray-400 shadow-xl flex flex-col items-center justify-between text-center font-sans transition-all"
+                    style={{
+                      width: '200px',
+                      minHeight: selectedSize === '40x20' ? '90px' : '125px'
+                    }}
                   >
-                    <div className="text-[9px] font-bold text-gray-600 leading-tight">الدفة للعطور الملكية</div>
-                    <div className="text-[11px] font-black text-gray-900 truncate max-w-full my-0.5 leading-tight">
-                      {selectedItems[0].name}
-                    </div>
-
-                    <div className="w-full my-1 flex justify-center">
-                      <BarcodeSVG
-                        value={selectedItems[0].barcode || 'AL-PERFUME'}
-                        width={150}
-                        height={45}
-                        showText={true}
-                      />
-                    </div>
-
-                    <div className="text-xs font-black text-emerald-800 tabular-nums leading-tight">
-                      {formatCurrency(selectedItems[0].price)}
-                    </div>
+                    {layoutStyle === 'price_top' ? (
+                      <>
+                        {showPrice && (
+                          <div className="text-xs font-black text-emerald-800 tabular-nums leading-tight">
+                            {formatCurrency(selectedItems[0].price)}
+                          </div>
+                        )}
+                        {showProductName && (
+                          <div className="text-[10.5px] font-black text-gray-900 truncate max-w-full leading-tight">
+                            {selectedItems[0].name}
+                          </div>
+                        )}
+                        <div className="w-full my-1 flex justify-center">
+                          <BarcodeSVG
+                            value={selectedItems[0].barcode || '6282010836068'}
+                            width={170}
+                            height={barcodePixelHeight}
+                            showText={showBarcodeText}
+                          />
+                        </div>
+                        {showStoreTitle && (
+                          <div className="text-[8.5px] font-bold text-gray-700 leading-tight">
+                            {storeTitle}
+                          </div>
+                        )}
+                      </>
+                    ) : layoutStyle === 'barcode_focus' ? (
+                      <>
+                        {showProductName && (
+                          <div className="text-[11px] font-black text-gray-900 truncate max-w-full leading-tight">
+                            {selectedItems[0].name}
+                          </div>
+                        )}
+                        <div className="w-full my-1 flex justify-center">
+                          <BarcodeSVG
+                            value={selectedItems[0].barcode || '6282010836068'}
+                            width={175}
+                            height={barcodePixelHeight + 6}
+                            showText={showBarcodeText}
+                          />
+                        </div>
+                        {showPrice && (
+                          <div className="text-xs font-black text-emerald-800 tabular-nums leading-tight">
+                            {formatCurrency(selectedItems[0].price)}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {showStoreTitle && (
+                          <div className="text-[9px] font-extrabold text-gray-700 leading-tight">
+                            {storeTitle}
+                          </div>
+                        )}
+                        {showProductName && (
+                          <div className="text-[11px] font-black text-gray-900 truncate max-w-full my-0.5 leading-tight">
+                            {selectedItems[0].name}
+                          </div>
+                        )}
+                        <div className="w-full my-1 flex justify-center">
+                          <BarcodeSVG
+                            value={selectedItems[0].barcode || '6282010836068'}
+                            width={170}
+                            height={barcodePixelHeight}
+                            showText={showBarcodeText}
+                          />
+                        </div>
+                        {showPrice && (
+                          <div className="text-xs font-black text-emerald-800 tabular-nums leading-tight">
+                            {formatCurrency(selectedItems[0].price)}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 ) : (
-                  <div className="text-xs text-gray-400 py-4">أضف أصنافاً لمعاينة الملصق</div>
+                  <div className="text-xs text-gray-500 py-4">أضف أصنافاً لمعاينة الملصق المباشر</div>
                 )}
               </div>
             </div>
 
             {/* Action Print Buttons */}
-            <div className="flex gap-2 pt-3 mt-2 border-t border-white/10">
+            <div className="flex gap-2 pt-2.5 mt-1 border-t border-white/10">
               <button
                 type="button"
                 onClick={() => handleExecutePrint(true)}
@@ -1036,7 +1248,7 @@ const BarcodeStudioModule = () => {
                 <Zap className={`w-4 h-4 text-slate-950 ${printing ? 'animate-spin' : ''}`} />
                 <span>
                   {printing
-                    ? 'جاري الطباعة...'
+                    ? 'جاري إرسال الملصقات...'
                     : `⚡ طباعة فورية ومباشرة (${totalLabelsCount} ملصق)`}
                 </span>
               </button>

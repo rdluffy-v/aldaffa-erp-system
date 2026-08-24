@@ -72,28 +72,29 @@ export const encodeCode128 = (text) => {
 /**
  * Generate 100% Offline Standalone SVG String for Printing
  */
-export const generateBarcodeSvgString = (code, width = 160, height = 45, showText = true) => {
+export const generateBarcodeSvgString = (code, width = 160, height = 50, showText = true) => {
   const cleanCode = String(code || '').trim() || 'AL-000000';
   const modules = encodeCode128(cleanCode);
 
   if (modules.length === 0) return '';
 
-  const quietZone = 8;
+  const quietZone = 6;
   const totalModules = modules.length + quietZone * 2;
-  const moduleWidth = width / totalModules;
-  const barHeight = showText ? height - 14 : height;
+  const moduleWidth = Math.max(1, Math.floor(width / totalModules));
+  const totalBarcodeWidth = totalModules * moduleWidth;
+  const startOffset = Math.max(0, Math.floor((width - totalBarcodeWidth) / 2));
+  const barHeight = showText ? Math.max(22, height - 14) : height - 2;
 
   let rectsHtml = '';
   for (let idx = 0; idx < modules.length; idx++) {
     if (modules[idx]) {
-      const x = ((idx + quietZone) * moduleWidth).toFixed(2);
-      const w = Math.max(1, moduleWidth).toFixed(2);
-      rectsHtml += `<rect x="${x}" y="2" width="${w}" height="${barHeight}" fill="#000000" shape-rendering="crispEdges"/>`;
+      const x = startOffset + (idx + quietZone) * moduleWidth;
+      rectsHtml += `<rect x="${x}" y="1" width="${moduleWidth}" height="${barHeight}" fill="#000000" shape-rendering="crispEdges"/>`;
     }
   }
 
   const textSvg = showText
-    ? `<text x="${(width / 2).toFixed(2)}" y="${height - 2}" text-anchor="middle" fill="#000000" font-size="9" font-weight="bold" font-family="monospace" letter-spacing="1.5">${cleanCode}</text>`
+    ? `<text x="${Math.floor(width / 2)}" y="${height - 1}" text-anchor="middle" fill="#000000" font-size="10" font-weight="900" font-family="monospace" letter-spacing="1.5">${cleanCode}</text>`
     : '';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="display:block; margin:0 auto; background:#FFFFFF;">
@@ -122,10 +123,12 @@ export const BarcodeSVG = ({
     return <div className="text-red-500 text-xs">باركود غير صالح</div>;
   }
 
-  const quietZone = 8;
+  const quietZone = 6;
   const totalModules = modules.length + quietZone * 2;
-  const moduleWidth = width / totalModules;
-  const barHeight = showText ? height - 14 : height;
+  const moduleWidth = Math.max(1, Math.floor(width / totalModules));
+  const totalBarcodeWidth = totalModules * moduleWidth;
+  const startOffset = Math.max(0, Math.floor((width - totalBarcodeWidth) / 2));
+  const barHeight = showText ? Math.max(22, height - 14) : height - 2;
 
   return (
     <svg
@@ -134,19 +137,17 @@ export const BarcodeSVG = ({
       style={{ display: 'block', maxWidth: '100%', height: 'auto' }}
       xmlns="http://www.w3.org/2000/svg"
     >
-      {/* Background White Canvas for max scanner contrast */}
       <rect x="0" y="0" width={width} height={height} fill="#FFFFFF" />
 
-      {/* Barcode Bars */}
       {modules.map((isBar, idx) => {
         if (!isBar) return null;
-        const x = (idx + quietZone) * moduleWidth;
+        const x = startOffset + (idx + quietZone) * moduleWidth;
         return (
           <rect
             key={idx}
             x={x}
-            y={2}
-            width={Math.max(1, moduleWidth)}
+            y={1}
+            width={moduleWidth}
             height={barHeight}
             fill={barColor}
             shapeRendering="crispEdges"
@@ -154,15 +155,14 @@ export const BarcodeSVG = ({
         );
       })}
 
-      {/* Human Readable Code Text */}
       {showText && (
         <text
-          x={width / 2}
-          y={height - 2}
+          x={Math.floor(width / 2)}
+          y={height - 1}
           textAnchor="middle"
           fill={textColor}
           fontSize="10"
-          fontWeight="bold"
+          fontWeight="900"
           fontFamily="monospace"
           letterSpacing="1.5"
         >

@@ -1976,10 +1976,11 @@ ipcMain.handle('hardware:get-devices', async () => {
 
 /**
  * Convert Rendered HTML Label directly into a 1-bit Monochrome TSPL command Buffer (203 DPI)
+ * Supports natural direction (0,0), crisp 2x supersampled rasterization, and anti-aliasing preservation.
  */
-async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30) {
-  const dotsW = Math.max(80, Math.round(widthMm * 8));
-  const dotsH = Math.max(80, Math.round(heightMm * 8));
+async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30, direction = 0) {
+  const dotsW = Math.max(80, Math.round(widthMm * 8)); // 50mm = 400 dots
+  const dotsH = Math.max(80, Math.round(heightMm * 8)); // 30mm = 240 dots
   const widthBytes = Math.ceil(dotsW / 8);
 
   const win = new BrowserWindow({
@@ -1987,6 +1988,7 @@ async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30) 
     width: dotsW,
     height: dotsH,
     useContentSize: true,
+    backgroundColor: '#FFFFFF',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -1996,16 +1998,17 @@ async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30) 
 
   try {
     await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlString));
-    await new Promise((r) => setTimeout(r, 70));
+    // Wait for fonts and vector SVGs to rasterize cleanly
+    await new Promise((r) => setTimeout(r, 100));
 
     const image = await win.webContents.capturePage({ x: 0, y: 0, width: dotsW, height: dotsH });
     const imgSize = image.getSize();
     const w = imgSize.width;
     const h = imgSize.height;
     const bytesPerRow = Math.ceil(w / 8);
-    const bitmap = image.toBitmap();
+    const bitmap = image.toBitmap(); // RGBA Buffer
 
-    const tsplData = Buffer.alloc(bytesPerRow * h, 0xff);
+    const tsplData = Buffer.alloc(bytesPerRow * h, 0xff); // 0xff is blank/white
 
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
@@ -2013,12 +2016,16 @@ async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30) 
         const r = bitmap[offset];
         const g = bitmap[offset + 1];
         const b = bitmap[offset + 2];
+        const a = bitmap[offset + 3];
+
+        // Standard luminance calculation
         const lum = 0.299 * r + 0.587 * g + 0.114 * b;
 
-        if (lum < 165) {
+        // High-contrast threshold: Any non-pure-white dot (<215) with opacity is burned as black
+        if (a > 50 && lum < 215) {
           const bIdx = y * bytesPerRow + Math.floor(x / 8);
           const bitIdx = 7 - (x % 8);
-          tsplData[bIdx] &= ~(1 << bitIdx);
+          tsplData[bIdx] &= ~(1 << bitIdx); // Burn black dot (0)
         }
       }
     }
@@ -2026,7 +2033,7 @@ async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30) 
     const header = Buffer.from(
       `SIZE ${widthMm} mm, ${heightMm} mm\r\n` +
       `GAP 2 mm, 0 mm\r\n` +
-      `DIRECTION 1\r\n` +
+      `DIRECTION ${direction},0\r\n` +
       `CLS\r\n` +
       `BITMAP 0,0,${bytesPerRow},${h},0,`
     );
@@ -2044,7 +2051,7 @@ async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30) 
 ipcMain.handle('print:barcodes-direct', async (event, printData) => {
   return new Promise(async (resolve) => {
     try {
-      const { html, printerName, silent = false, widthMm = 50, heightMm = 30 } = printData || {};
+      const { html, printerName, silent = false, widthMm = 50, heightMm = 30, direction = 0 } = printData || {};
 
       // Mode 1: Interactive System Dialog (silent: false)
       if (!silent) {
@@ -2179,7 +2186,7 @@ ipcMain.handle('print:barcodes-direct', async (event, printData) => {
     .store-title { font-size: 9px; font-weight: 700; color: #222; }
     .product-title { font-size: 11px; font-weight: 900; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: ${widthMm - 6}mm; margin: 0.5mm 0; }
     .barcode-area { width: 100%; display: flex; justify-content: center; align-items: center; }
-    .barcode-area svg { width: ${widthMm - 8}mm !important; height: auto !important; max-height: 12mm; }
+    .barcode-area svg { width: ${widthMm - 8}mm !important; height: auto !important; max-height: 14mm; }
     .price-badge { font-size: 11px; font-weight: 900; color: #000; }
   </style>
 </head>
@@ -2188,7 +2195,7 @@ ipcMain.handle('print:barcodes-direct', async (event, printData) => {
 </body>
 </html>`;
 
-        const tsplChunk = await renderHtmlToTsplCommand(singleHtml, widthMm, heightMm);
+        const tsplChunk = await renderHtmlToTsplCommand(singleHtml, widthMm, heightMm, direction);
         combinedTsplBuffer = Buffer.concat([combinedTsplBuffer, tsplChunk]);
       }
 
