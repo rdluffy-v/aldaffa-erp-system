@@ -290,16 +290,18 @@ const PurchasesModule = () => {
         .flatMap((item) => {
           const count = item.printCount || 0;
           const svgCode = generateBarcodeSvgString(item.barcode, 150, 45, true);
-          return Array.from({ length: count }).map(
-            () => `
-            <div class="label-box">
+          return Array.from({ length: count }).map(() => {
+            const inner = `
               <div class="store-title">الدفة للعطور الملكية</div>
               <div class="product-title">${item.name}</div>
               <div class="barcode-area">${svgCode}</div>
-              <div class="price-badge">${formatCurrency(item.sell_price || item.cost_per_unit * 1.35)}</div>
-            </div>
-          `
-          );
+              <div class="price-badge">${formatCurrency(item.sell_price || (item.cost_per_unit || 0) * 1.35)}</div>
+            `;
+            if (isThermal) {
+              return `<div class="label-wrapper"><div class="label-box">${inner}</div></div>`;
+            }
+            return `<div class="label-box">${inner}</div>`;
+          });
         })
         .join('');
 
@@ -414,19 +416,7 @@ const PurchasesModule = () => {
   </style>
 </head>
 <body>
-  ${
-    isThermal
-      ? labelsHtml
-          .split('</div>')
-          .filter(Boolean)
-          .map((box) => `<div class="label-wrapper">${box}</div></div>`)
-          .join('')
-      : `
-    <div class="grid-container">
-      ${labelsHtml}
-    </div>
-  `
-  }
+  ${isThermal ? labelsHtml : `<div class="grid-container">${labelsHtml}</div>`}
 </body>
 </html>
       `;
