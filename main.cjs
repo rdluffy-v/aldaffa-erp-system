@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -1085,34 +1085,32 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
   }
 });
 
-// Shift Report Printing (A4 & Detailed Tables)
-ipcMain.handle('print:shift-report', async (event, reportData) => {
-  try {
-    const { period, sales, profit, purchases, withdrawals, capital, losses, gifts, notes, cash, cashier } = reportData;
-    const settings = getPrintSettings();
+// Shift Report HTML Template Generator
+function generateShiftReportHtml(reportData, settings = {}) {
+  const { period, sales, profit, purchases, withdrawals, capital, losses, gifts, notes, cash, cashier } = reportData;
 
-    const formatCurrency = (amount) => {
-      const val = Number(amount) || 0;
-      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
-    };
+  const formatCurrency = (amount) => {
+    const val = Number(amount) || 0;
+    return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
+  };
 
-    const formatDateStr = (d) => {
-      if (!d) return '—';
-      try {
-        const dateObj = new Date(d);
-        return dateObj.toLocaleTimeString('ar-LY', { hour: '2-digit', minute: '2-digit' });
-      } catch (e) {
-        return d;
-      }
-    };
+  const formatDateStr = (d) => {
+    if (!d) return '—';
+    try {
+      const dateObj = new Date(d);
+      return dateObj.toLocaleTimeString('ar-LY', { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return d;
+    }
+  };
 
-    const reportHtml = `
+  return `
 <!DOCTYPE html>
 <html dir="rtl">
 <head>
   <meta charset="UTF-8">
   <style>
-    @page { size: A4; margin: 12mm; }
+    @page { size: A4; margin: 10mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -1126,13 +1124,13 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
       justify-content: space-between;
       align-items: center;
       border-bottom: 3px solid #d97706;
-      padding-bottom: 6mm;
+      padding-bottom: 5mm;
       margin-bottom: 4mm;
     }
     .logo-area { display: flex; align-items: center; gap: 10px; }
-    .logo-img { max-height: 40px; object-fit: contain; }
+    .logo-img { max-height: 44px; object-fit: contain; }
     .logo-text { font-size: 20px; font-weight: bold; color: #78350f; }
-    .title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 2mm; color: #1f2937; }
+    .title { font-size: 17px; font-weight: bold; text-align: center; margin-bottom: 2mm; color: #1f2937; }
     table { width: 100%; border-collapse: collapse; margin: 2.5mm 0; font-size: 10.5px; }
     th, td { padding: 4.5px 6px; text-align: right; border: 1px solid #e5e7eb; }
     th { background: #f3f4f6; font-weight: bold; color: #374151; }
@@ -1346,28 +1344,102 @@ ipcMain.handle('print:shift-report', async (event, reportData) => {
   </div>
 </body>
 </html>`;
+}
 
-    const printWindow = new BrowserWindow({
+// Export Shift Report as PDF File (Direct Save)
+ipcMain.handle('export:shift-pdf', async (event, reportData) => {
+  let pdfWindow = null;
+  try {
+    const settings = getPrintSettings();
+    const html = generateShiftReportHtml(reportData, settings);
+
+    const cashier = (reportData.cashier || 'الكاشير').replace(/[/\\?%*:|"<>]/g, '-');
+    const dateStr = (reportData.period?.start || new Date().toISOString().split('T')[0]).split('T')[0];
+    const defaultFileName = `تقرير_وردية_${cashier}_${dateStr}.pdf`;
+
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: 'حفظ وتصدير تقرير إغلاق الوردية كملف (PDF)',
+      defaultPath: defaultFileName,
+      filters: [{ name: 'مستند PDF', extensions: ['pdf'] }]
+    });
+
+    if (canceled || !filePath) {
+      return { success: true, saved: false };
+    }
+
+    pdfWindow = new BrowserWindow({
       show: false,
+      webPreferences: { nodeIntegration: false }
+    });
+
+    await pdfWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+
+    const pdfBuffer = await pdfWindow.webContents.printToPDF({
+      printBackground: true,
+      pageSize: 'A4',
+      margins: {
+        top: 0.3,
+        bottom: 0.3,
+        left: 0.3,
+        right: 0.3
+      }
+    });
+
+    fs.writeFileSync(filePath, pdfBuffer);
+
+    if (pdfWindow && !pdfWindow.isDestroyed()) {
+      pdfWindow.destroy();
+      pdfWindow = null;
+    }
+
+    return { success: true, saved: true, filePath };
+  } catch (error) {
+    if (pdfWindow && !pdfWindow.isDestroyed()) {
+      try { pdfWindow.destroy(); } catch (e) {}
+    }
+    console.error('Export shift PDF error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Shift Report Printing (Crash-Safe)
+ipcMain.handle('print:shift-report', async (event, reportData) => {
+  let printWindow = null;
+  try {
+    const settings = getPrintSettings();
+    const html = generateShiftReportHtml(reportData, settings);
+
+    printWindow = new BrowserWindow({
+      show: false,
+      parent: mainWindow || undefined,
       webPreferences: {
         nodeIntegration: false
       }
     });
 
-    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(reportHtml));
+    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
 
     printWindow.webContents.print({
       silent: false,
       printBackground: true
     }, (success, errorType) => {
       if (!success) {
-        console.error('Print shift report failed:', errorType);
+        console.warn('Print shift report status:', errorType);
       }
-      printWindow.close();
+      setTimeout(() => {
+        try {
+          if (printWindow && !printWindow.isDestroyed()) {
+            printWindow.destroy();
+          }
+        } catch (e) {}
+      }, 1000);
     });
 
     return { success: true };
   } catch (error) {
+    if (printWindow && !printWindow.isDestroyed()) {
+      try { printWindow.destroy(); } catch (e) {}
+    }
     console.error('Print shift report error:', error);
     return { success: false, error: error.message };
   }

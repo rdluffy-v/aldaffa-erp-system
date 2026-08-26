@@ -41,7 +41,9 @@ import {
   RefreshCw,
   Building2,
   Calendar,
-  Trash2
+  Trash2,
+  FileDown,
+  Download
 } from 'lucide-react';
 
 const salesRepo = new SalesRepository();
@@ -251,17 +253,52 @@ const ShiftCloseModule = () => {
     }
   };
 
-  const handlePrint = async (reportData) => {
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  const handleExportPDF = async (reportData) => {
+    if (!reportData) return;
+    setIsExportingPDF(true);
     try {
       const electron = window.require ? window.require('electron') : null;
       if (electron) {
-        await electron.ipcRenderer.invoke('print:shift-report', reportData);
-        showSuccess('✅ تم إرسال تقرير الوردية الشامل للطباعة');
+        const res = await electron.ipcRenderer.invoke('export:shift-pdf', reportData);
+        if (res && res.success) {
+          if (res.saved) {
+            showSuccess(`✅ تم تصدير تقرير الوردية بنجاح إلى:\n${res.filePath}`);
+          }
+        } else if (res && res.error) {
+          showError(`فشل تصدير PDF: ${res.error}`);
+        }
+      } else {
+        window.print();
+      }
+    } catch (err) {
+      showError(`خطأ أثناء تصدير PDF: ${err.message}`);
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
+
+  const handlePrint = async (reportData) => {
+    if (!reportData) return;
+    setIsPrinting(true);
+    try {
+      const electron = window.require ? window.require('electron') : null;
+      if (electron) {
+        const res = await electron.ipcRenderer.invoke('print:shift-report', reportData);
+        if (res && res.success) {
+          showSuccess('✅ تم إرسال تقرير الوردية للطباعة');
+        } else if (res && res.error) {
+          showError(`فشل الطباعة: ${res.error}`);
+        }
       } else {
         window.print();
       }
     } catch (printError) {
-      console.warn('Print shift report failed:', printError);
+      showError(`خطأ في الطباعة: ${printError.message}`);
+    } finally {
+      setIsPrinting(false);
     }
   };
 
@@ -290,8 +327,7 @@ const ShiftCloseModule = () => {
 
       await shiftReportsRepo.create(record);
       await loadPastReports();
-      await handlePrint(report);
-      showSuccess('✅ تم حفظ وإغلاق الوردية نهائياً وطباعة الإيصال الشامل');
+      showSuccess('✅ تم حفظ وإغلاق الوردية وأرشفتها بنجاح في المنظومة.\nيمكنك الآن تصديرها كملف PDF أو طباعتها.');
     } catch (err) {
       showError(`فشل حفظ إغلاق الوردية: ${err.message}`);
     } finally {
@@ -823,25 +859,38 @@ const ShiftCloseModule = () => {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-2.5 pt-2">
+              <div className="flex gap-2.5 pt-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleExportPDF(report)}
+                  disabled={isExportingPDF}
+                  className="btn-atelier-secondary py-2.5 px-5 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+                  title="تصدير تقرير الوردية وحفظه مباشرة كملف PDF على الجهاز"
+                >
+                  <FileDown className="w-4 h-4 text-amber-500" />
+                  <span>{isExportingPDF ? 'جاري تصدير PDF...' : '📄 تصدير كملف PDF'}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => handlePrint(report)}
-                  className="btn-atelier-secondary py-2.5 px-6 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  disabled={isPrinting}
+                  className="btn-atelier-secondary py-2.5 px-5 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+                  title="طباعة التقرير الشامل"
                 >
                   <Printer className="w-4 h-4" />
-                  <span>طباعة تقرير الوردية</span>
+                  <span>{isPrinting ? 'جاري الإرسال...' : '🖨️ طباعة التقرير'}</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={handleSaveAndCloseShift}
                   disabled={savingShift}
-                  className="flex-1 btn-atelier-primary py-2.5 text-xs font-extrabold flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer shadow-lg"
+                  className="flex-1 min-w-[200px] btn-atelier-primary py-2.5 text-xs font-extrabold flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer shadow-lg"
                 >
                   <CheckCircle className="w-4 h-4" />
                   <span>
-                    {savingShift ? 'جاري حفظ وإغلاق الوردية...' : 'حفظ وإغلاق الوردية نهائياً وطباعة الإيصال'}
+                    {savingShift ? 'جاري حفظ وإغلاق الوردية...' : '💾 حفظ وإغلاق الوردية نهائياً'}
                   </span>
                 </button>
               </div>
@@ -855,7 +904,7 @@ const ShiftCloseModule = () => {
             <div className="atelier-card p-12 text-center flex flex-col items-center justify-center gap-3">
               <History className="w-12 h-12 text-gray-300 dark:text-slate-600" />
               <div className="text-sm font-bold text-gray-600 dark:text-gray-300">لا توجد تقارير ورديات مغلقة سابقة</div>
-              <p className="text-xs text-gray-400">عند إغلاق أي وردية سيتم أرشفة كامل تقريرها هنا للرجوع إليها وطباعتها</p>
+              <p className="text-xs text-gray-400">عند إغلاق أي وردية سيتم أرشفة كامل تقريرها هنا للرجوع إليها وتصديرها PDF أو طباعتها</p>
             </div>
           ) : (
             pastReports.map((item) => {
@@ -895,12 +944,22 @@ const ShiftCloseModule = () => {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      onClick={() => handleExportPDF(parsed || item)}
+                      className="btn-atelier-secondary py-1.5 px-3 text-xs flex items-center gap-1.5 font-bold cursor-pointer"
+                      title="تصدير كملف PDF على الجهاز"
+                    >
+                      <FileDown className="w-3.5 h-3.5 text-amber-500" />
+                      <span>تصدير PDF</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => handlePrint(parsed || item)}
                       className="btn-atelier-secondary py-1.5 px-3 text-xs flex items-center gap-1.5 font-bold cursor-pointer"
                       title="إعادة طباعة تقرير الوردية"
                     >
                       <Printer className="w-3.5 h-3.5 text-amber-500" />
-                      <span>طباعة التقرير</span>
+                      <span>طباعة</span>
                     </button>
 
                     <button
