@@ -2094,12 +2094,14 @@ No additional text, only JSON.`
 
       {/* Confirm Delete Modal */}
       <ConfirmModal
+        open={Boolean(deleteTarget)}
         isOpen={Boolean(deleteTarget)}
         title="تأكيد حذف فاتورة الشراء"
         message={`هل أنت متأكد من حذف فاتورة الشراء للمورد "${deleteTarget?.supplier_name || 'غير محدد'}" بقيمة ${formatCurrency(deleteTarget?.total)}؟ سيتم خصم الكميات المشتراة من المخزون تلقائياً.`}
         confirmText="نعم، حذف نهائياً"
         cancelText="إلغاء"
         type="danger"
+        danger={true}
         isLoading={isDeleting}
         onConfirm={handleDeletePurchase}
         onCancel={() => setDeleteTarget(null)}

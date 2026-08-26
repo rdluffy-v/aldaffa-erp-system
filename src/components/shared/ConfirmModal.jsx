@@ -3,10 +3,17 @@ import ReactDOM from 'react-dom';
 
 /**
  * ConfirmModal.jsx
- * Safe, portaled confirmation dialog with support for both onClose/onCancel and confirmText/confirmLabel.
+ * Safe, portaled confirmation dialog with universal support for:
+ * - open, isOpen (boolean)
+ * - danger, type ('danger' | 'warning' | 'info')
+ * - isLoading (boolean)
+ * - confirmText, confirmLabel
+ * - cancelText, cancelLabel
+ * - onConfirm, onCancel, onClose
  */
 const ConfirmModal = ({
-  open = false,
+  open,
+  isOpen,
   title = 'تأكيد العملية',
   message = '',
   confirmLabel,
@@ -15,24 +22,36 @@ const ConfirmModal = ({
   cancelText,
   icon = '⚠️',
   danger = false,
+  type,
+  isLoading = false,
   onConfirm,
   onCancel,
   onClose
 }) => {
-  if (!open) return null;
+  // Support both open and isOpen seamlessly
+  const isVisible = open !== undefined ? Boolean(open) : (isOpen !== undefined ? Boolean(isOpen) : true);
+  if (!isVisible) return null;
+
+  const isDanger = danger || type === 'danger';
 
   const handleConfirm = (e) => {
     e.stopPropagation();
-    onConfirm?.();
+    if (!isLoading) {
+      onConfirm?.();
+    }
   };
 
   const handleCancel = (e) => {
     e.stopPropagation();
-    if (onCancel) onCancel();
-    else if (onClose) onClose();
+    if (!isLoading) {
+      if (onCancel) onCancel();
+      else if (onClose) onClose();
+    }
   };
 
-  const finalConfirmText = confirmText || confirmLabel || '✅ تأكيد';
+  const finalConfirmText = isLoading
+    ? 'جاري التنفيذ...'
+    : confirmText || confirmLabel || '✅ تأكيد';
   const finalCancelText = cancelText || cancelLabel || 'إلغاء';
 
   const modalContent = (
@@ -61,9 +80,10 @@ const ConfirmModal = ({
         <div className="flex gap-3">
           <button
             type="button"
+            disabled={isLoading}
             onClick={handleConfirm}
-            className={`flex-1 py-2.5 px-4 rounded-full text-xs font-bold text-white transition-all shadow-md active:scale-95 cursor-pointer ${
-              danger
+            className={`flex-1 py-2.5 px-4 rounded-full text-xs font-bold text-white transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50 ${
+              isDanger
                 ? 'bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600'
                 : 'btn-atelier-primary'
             }`}
@@ -73,8 +93,9 @@ const ConfirmModal = ({
           </button>
           <button
             type="button"
+            disabled={isLoading}
             onClick={handleCancel}
-            className="flex-1 py-2.5 px-4 rounded-full text-xs font-bold bg-gray-200 dark:bg-slate-800 text-[#2D2424] dark:text-slate-200 hover:bg-gray-300 dark:hover:bg-slate-700 transition-all active:scale-95 cursor-pointer"
+            className="flex-1 py-2.5 px-4 rounded-full text-xs font-bold bg-gray-200 dark:bg-slate-800 text-[#2D2424] dark:text-slate-200 hover:bg-gray-300 dark:hover:bg-slate-700 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
           >
             {finalCancelText}
           </button>

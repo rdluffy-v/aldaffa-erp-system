@@ -456,17 +456,18 @@ const DebtorsModule = () => {
                     >
                       {formatCurrency(debtor.total_debt)}
                     </div>
-                    {debtor.total_debt === 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteDebtor(debtor);
-                        }}
-                        className="text-xs text-red-500 hover:text-red-400 mt-1"
-                      >
-                        🗑️ حذف
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteDebtor(debtor);
+                      }}
+                      className="text-xs text-red-500 hover:text-red-400 mt-1 flex items-center gap-1 cursor-pointer transition-colors"
+                      title="حذف العميل وسجلاته"
+                    >
+                      <span>🗑️</span>
+                      <span>حذف</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -477,7 +478,20 @@ const DebtorsModule = () => {
 
       {/* Debtor Details */}
       <div className="w-[520px] flex flex-col glass-card p-6">
-        <h2 className="text-2xl font-bold text-gold mb-4">تفاصيل العميل</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-bold text-gold">تفاصيل العميل</h2>
+          {selectedDebtor && (
+            <button
+              type="button"
+              onClick={() => deleteDebtor(selectedDebtor)}
+              className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer"
+              title="حذف هذا العميل"
+            >
+              <span>🗑️</span>
+              <span>حذف العميل</span>
+            </button>
+          )}
+        </div>
 
         {!selectedDebtor ? (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-500 gap-2">

@@ -87,9 +87,13 @@ const ShiftCloseModule = () => {
             total_sales REAL,
             total_profit REAL,
             report_data_json TEXT,
-            created_at TEXT
+            created_at TEXT,
+            is_demo INTEGER DEFAULT 0
           )
         `);
+        try {
+          await db.run('ALTER TABLE shift_reports ADD COLUMN is_demo INTEGER DEFAULT 0');
+        } catch (e) {}
       } catch (e) {
         console.warn('shift_reports table init error:', e);
       }
@@ -917,12 +921,14 @@ const ShiftCloseModule = () => {
 
       {/* Confirm Delete Modal */}
       <ConfirmModal
+        open={Boolean(deleteTarget)}
         isOpen={Boolean(deleteTarget)}
         title="تأكيد حذف تقرير الوردية"
         message={`هل أنت متأكد من حذف تقرير الوردية للكاشير "${deleteTarget?.cashier_name}" للفترة من (${deleteTarget?.start_date}) إلى (${deleteTarget?.end_date})؟`}
         confirmText="نعم، حذف نهائياً"
         cancelText="إلغاء"
         type="danger"
+        danger={true}
         isLoading={isDeleting}
         onConfirm={handleDeleteReport}
         onCancel={() => setDeleteTarget(null)}

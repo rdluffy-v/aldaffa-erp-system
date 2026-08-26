@@ -28,7 +28,8 @@ const ALL_SANDBOX_TABLES = [
   'losses',
   'notes',
   'returns',
-  'categories'
+  'categories',
+  'archives'
 ];
 
 export class SandboxEngine {
@@ -65,6 +66,9 @@ export class SandboxEngine {
           is_demo INTEGER DEFAULT 0
         )
       `);
+      try {
+        await db.run('ALTER TABLE shift_reports ADD COLUMN is_demo INTEGER DEFAULT 0');
+      } catch (e) {}
     } catch (e) {}
 
     try {
@@ -303,7 +307,7 @@ export class SandboxEngine {
 
   /**
    * Safely purge ALL demo records (is_demo = 1) across all tables
-   * WITHOUT touching any real user records (is_demo = 0 or NULL)
+   * and clean up any mock artifacts WITHOUT touching real user records
    */
   static async purgeDemoData() {
     await this.ensureSchema();
@@ -317,9 +321,50 @@ export class SandboxEngine {
       }
     }
 
-    // 2. Clean up any orphaned relations
+    // 2. Secondary fail-safe pattern cleanups for any mock remnants
     try {
-      await db.run(`DELETE FROM sale_items WHERE sale_id NOT IN (SELECT id FROM sales)`);
+      await db.run(`DELETE FROM inventory WHERE barcode LIKE 'DEMO-%' OR name LIKE '%(تجريبي)%'`);
+    } catch (e) {}
+
+    try {
+      await db.run(`DELETE FROM sales WHERE customer_name LIKE '%تجريبي%' OR notes LIKE '%تجريبي%' OR phone = '0919998877'`);
+    } catch (e) {}
+
+    try {
+      await db.run(`DELETE FROM purchases WHERE supplier_name LIKE '%(تجريبي)%' OR invoice_ref LIKE 'PUR-DEMO-%' OR invoice_ref LIKE 'DEMO-%'`);
+    } catch (e) {}
+
+    try {
+      await db.run(`DELETE FROM debtors WHERE name LIKE '%(تجريبي)%'`);
+    } catch (e) {}
+
+    try {
+      await db.run(`DELETE FROM shift_reports WHERE cashier_name LIKE '%(تجريبي)%' OR id LIKE 'DEMO-%'`);
+    } catch (e) {}
+
+    try {
+      await db.run(`DELETE FROM withdrawals WHERE recipient LIKE '%(تجريبي)%' OR reason LIKE '%(تجريبي)%'`);
+    } catch (e) {}
+
+    try {
+      await db.run(`DELETE FROM capital_injections WHERE donor_name LIKE '%(تجريبي)%' OR notes LIKE '%(تجريبي)%'`);
+    } catch (e) {}
+
+    try {
+      await db.run(`DELETE FROM gifts WHERE recipient_name LIKE '%(تجريبي)%' OR reason LIKE '%(تجريبي)%' OR item_name LIKE '%(تجريبي)%'`);
+    } catch (e) {}
+
+    try {
+      await db.run(`DELETE FROM losses WHERE reason LIKE '%(تجريبي)%' OR item_name LIKE '%(تجريبي)%'`);
+    } catch (e) {}
+
+    try {
+      await db.run(`DELETE FROM notes WHERE title LIKE '%(تجريبي)%' OR content LIKE '%(تجريبي)%'`);
+    } catch (e) {}
+
+    // 3. Clean up any orphaned relations
+    try {
+      await db.run(`DELETE FROM sale_items WHERE sale_id NOT IN (SELECT id FROM sales) OR product_id LIKE 'DEMO-%' OR name LIKE '%(تجريبي)%'`);
     } catch (e) {}
 
     try {
@@ -330,7 +375,19 @@ export class SandboxEngine {
       await db.run(`DELETE FROM returns WHERE sale_id NOT IN (SELECT id FROM sales)`);
     } catch (e) {}
 
-    // 3. Reset sandbox flag in settings
+    // 4. Reconcile debtors total_debt with real history
+    try {
+      await db.run(`
+        UPDATE debtors
+        SET total_debt = COALESCE((
+          SELECT SUM(CASE WHEN type = 'debt' THEN amount ELSE -amount END)
+          FROM debt_history
+          WHERE debt_history.debtor_id = debtors.id
+        ), 0)
+      `);
+    } catch (e) {}
+
+    // 5. Reset sandbox flag in settings
     try {
       await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('sandbox_mode', '0')");
     } catch (e) {}
@@ -338,7 +395,7 @@ export class SandboxEngine {
     // Invalidate database query cache
     db.invalidateCache();
 
-    // Broadcast refresh to update all in-memory React views
+    // Broadcast refresh to update all in-memory React views & Zustand store
     this.broadcastDataRefresh();
     return { success: true };
   }
@@ -352,7 +409,7 @@ export class SandboxEngine {
     } catch (e) {}
 
     try {
-      useInventoryStore.getState().loadProducts();
+      useInventoryStore.getState().loadProducts(true);
     } catch (e) {}
 
     if (typeof window !== 'undefined') {

@@ -459,6 +459,7 @@ const InvoicesModule = () => {
 
       {/* Confirm Delete Modal */}
       <ConfirmModal
+        open={Boolean(deleteTarget)}
         isOpen={Boolean(deleteTarget)}
         title="تأكيد حذف الفاتورة"
         message={
@@ -469,6 +470,7 @@ const InvoicesModule = () => {
         confirmText="نعم، حذف نهائياً"
         cancelText="إلغاء"
         type="danger"
+        danger={true}
         isLoading={isDeleting}
         onConfirm={handleDeleteInvoice}
         onCancel={() => setDeleteTarget(null)}

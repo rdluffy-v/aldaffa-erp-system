@@ -489,12 +489,14 @@ const LossesModule = () => {
       {/* Delete Confirmation Modal */}
       {pendingDelete && (
         <ConfirmModal
+          open={Boolean(pendingDelete)}
           title="تأكيد حذف سجل التالف"
           message={`هل أنت متأكد من رغبتك في حذف سجل التالف الخاص بـ "${pendingDelete.item_name}"؟`}
           onConfirm={deleteLoss}
           onCancel={() => setPendingDelete(null)}
           confirmText="نعم، حذف السجل"
           cancelText="إلغاء"
+          danger={true}
         />
       )}
     </div>

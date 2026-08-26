@@ -29,6 +29,7 @@ import { NotesRepository } from '../database/repositories/NotesRepository.js';
 import { useUIStore } from '../stores/useUIStore.js';
 import { formatCurrency, generateId, safeParseFloat, generateValidBarcode } from '../utils/helpers.js';
 import Modal from '../components/ui/Modal.jsx';
+import ConfirmModal from '../components/shared/ConfirmModal.jsx';
 
 const inventoryRepo = new InventoryRepository();
 const notesRepo = new NotesRepository();
@@ -78,6 +79,7 @@ const PerfumeMixLabModule = () => {
   const [currentStep, setCurrentStep] = useState(1); // 1 to 5
   const [wizardData, setWizardData] = useState(DEFAULT_WIZARD_DATA);
   const [activeFormulaPreview, setActiveFormulaPreview] = useState(null);
+  const [pendingDeleteFormula, setPendingDeleteFormula] = useState(null);
 
   // Load Inventory Products & Saved Formulas
   const loadData = useCallback(async () => {
@@ -568,13 +570,7 @@ const PerfumeMixLabModule = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={async () => {
-                          if (window.confirm(`هل أنت متأكد من حذف خلطة "${titleClean}"؟`)) {
-                            await notesRepo.delete(formula.id);
-                            await loadData();
-                            showSuccess('تم حذف التركيبة من الأرشيف');
-                          }
-                        }}
+                        onClick={() => setPendingDeleteFormula({ formula, title: titleClean })}
                         className="text-red-400 hover:text-red-300 p-1 transition-colors cursor-pointer"
                         title="حذف الخلطة"
                       >
@@ -1363,6 +1359,30 @@ const PerfumeMixLabModule = () => {
           </div>
         )}
       </Modal>
+
+      {/* Delete Formula Confirmation Modal */}
+      <ConfirmModal
+        open={Boolean(pendingDeleteFormula)}
+        title="تأكيد حذف تركيبة العطر"
+        message={`هل أنت متأكد من حذف خلطة "${pendingDeleteFormula?.title}" نهائياً من الأرشيف؟`}
+        confirmText="نعم، حذف التركيبة"
+        cancelText="إلغاء"
+        danger={true}
+        onConfirm={async () => {
+          if (pendingDeleteFormula?.formula) {
+            try {
+              await notesRepo.delete(pendingDeleteFormula.formula.id);
+              await loadData();
+              showSuccess('تم حذف التركيبة من الأرشيف بنجاح');
+            } catch (err) {
+              showError(`فشل حذف التركيبة: ${err.message}`);
+            } finally {
+              setPendingDeleteFormula(null);
+            }
+          }
+        }}
+        onCancel={() => setPendingDeleteFormula(null)}
+      />
     </div>
   );
 };
