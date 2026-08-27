@@ -24,6 +24,7 @@ import {
   Compass,
   ShieldCheck
 } from 'lucide-react';
+import { db } from '../database/connection.js';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
 import { NotesRepository } from '../database/repositories/NotesRepository.js';
 import { useUIStore } from '../stores/useUIStore.js';
@@ -346,48 +347,53 @@ const PerfumeMixLabModule = () => {
         `خلطة مخصصة تم إنتاجها في مختبر الدفة - ${wizardData.batchQuantity} زجاجات`
       ].filter(Boolean);
 
+      const batchQty = safeParseFloat(wizardData.batchQuantity, 1);
+      const queries = [];
+
       // 1. Create the new finished perfume product in inventory
-      await inventoryRepo.create({
-        id: newProductId,
-        name: wizardData.perfumeName.trim(),
-        category: wizardData.category || 'عطور مركبة / خلطات الدفة',
-        qty: safeParseFloat(wizardData.batchQuantity, 1),
-        cost: unitTotalCost,
-        price: safeParseFloat(wizardData.retailPrice, 0),
-        wholesale_price: safeParseFloat(wizardData.wholesalePrice, 0),
-        unit: 'قطعة',
-        capacity: safeParseFloat(wizardData.bottleCapacity, 50),
-        barcode: finalBarcode,
-        min_qty: 3,
-        notes: notesArray.join(' | ')
+      queries.push({
+        sql: `INSERT INTO inventory (id, name, category, qty, cost, price, wholesale_price, unit, capacity, barcode, min_qty, notes)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        params: [
+          newProductId,
+          wizardData.perfumeName.trim(),
+          wizardData.category || 'عطور مركبة / خلطات الدفة',
+          batchQty,
+          unitTotalCost,
+          safeParseFloat(wizardData.retailPrice, 0),
+          safeParseFloat(wizardData.wholesalePrice, 0),
+          'قطعة',
+          safeParseFloat(wizardData.bottleCapacity, 50),
+          finalBarcode,
+          3,
+          notesArray.join(' | ')
+        ]
       });
 
-      // 2. Deduct raw materials from inventory if linked to actual inventory records
-      const batchQty = safeParseFloat(wizardData.batchQuantity, 1);
-
-      // Deduct bottles
+      // 2. Deduct raw materials from inventory
       if (wizardData.bottleId) {
-        try {
-          await inventoryRepo.adjustStock(wizardData.bottleId, -batchQty);
-        } catch (e) {}
+        queries.push({
+          sql: 'UPDATE inventory SET qty = qty - ? WHERE id = ?',
+          params: [batchQty, wizardData.bottleId]
+        });
       }
 
-      // Deduct oils
       for (const oil of wizardData.oils) {
         if (oil.oilId) {
           const totalOilMl = safeParseFloat(oil.mlPerBottle, 0) * batchQty;
-          try {
-            await inventoryRepo.adjustStock(oil.oilId, -totalOilMl);
-          } catch (e) {}
+          queries.push({
+            sql: 'UPDATE inventory SET qty = qty - ? WHERE id = ?',
+            params: [totalOilMl, oil.oilId]
+          });
         }
       }
 
-      // Deduct alcohol
       if (wizardData.alcoholId) {
         const totalAlcMl = safeParseFloat(wizardData.alcoholMlPerBottle, 0) * batchQty;
-        try {
-          await inventoryRepo.adjustStock(wizardData.alcoholId, -totalAlcMl);
-        } catch (e) {}
+        queries.push({
+          sql: 'UPDATE inventory SET qty = qty - ? WHERE id = ?',
+          params: [totalAlcMl, wizardData.alcoholId]
+        });
       }
 
       // 3. Save Formula Spec into notes
@@ -415,13 +421,20 @@ const PerfumeMixLabModule = () => {
         notes: wizardData.notes
       };
 
-      await notesRepo.create({
-        id: formulaId,
-        date: new Date().toISOString(),
-        title: `FORMULA: ${wizardData.perfumeName}`,
-        content: JSON.stringify(formulaPayload, null, 2),
-        priority: 'high'
+      queries.push({
+        sql: 'INSERT INTO notes (id, date, title, content, priority) VALUES (?, ?, ?, ?, ?)',
+        params: [
+          formulaId,
+          new Date().toISOString(),
+          `FORMULA: ${wizardData.perfumeName}`,
+          JSON.stringify(formulaPayload, null, 2),
+          'high'
+        ]
       });
+
+      // Execute all operations atomically in a single SQLite transaction
+      await db.transaction(queries);
+      db.invalidateCache();
 
       showSuccess(
         `✅ تم اعتماد الخلطة بنجاح!\n\nتمت إضافة "${wizardData.perfumeName}" إلى المخزون (${wizardData.batchQuantity} زجاجة) وتحديث المواد الخام.`

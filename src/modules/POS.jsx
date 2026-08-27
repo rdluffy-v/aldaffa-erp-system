@@ -17,6 +17,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useCartStore } from '../stores/useCartStore.js';
 import { useInventoryStore } from '../stores/useInventoryStore.js';
 import { useUIStore } from '../stores/useUIStore.js';
+import { useAuthStore } from '../stores/useAuthStore.js';
+import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { SalesRepository } from '../database/repositories/SalesRepository.js';
 import { DebtorsRepository } from '../database/repositories/DebtorsRepository.js';
 import { formatCurrency, generateId } from '../utils/helpers.js';
@@ -28,6 +30,10 @@ const debtorsRepo = new DebtorsRepository();
 
 const POSModule = () => {
   // Zustand stores
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const canChangePrice = hasPermission('change_price');
+  const canApplyDiscount = hasPermission('apply_discount');
+  const currencySymbol = useSettingsStore((s) => s.getSetting('currency_symbol', 'د.ل'));
   const {
     items: cartItems,
     pricingMode,
@@ -247,21 +253,24 @@ const POSModule = () => {
           const cleanName = customerName.trim();
           let debtor = (await debtorsRepo.findAll({ name: cleanName }))[0];
           if (!debtor) {
-            const insertRes = await debtorsRepo.create({
+            const newDebtorId = generateId();
+            await debtorsRepo.create({
+              id: newDebtorId,
               name: cleanName,
               phone: null,
               total_debt: 0,
               created_at: new Date().toISOString()
             });
-            debtor = await debtorsRepo.findById(insertRes.lastInsertRowid);
+            debtor = await debtorsRepo.findById(newDebtorId);
           }
           if (debtor) {
             await debtorsRepo.addDebtTransaction(debtor.id, {
+              id: generateId(),
               debtor_id: debtor.id,
               type: 'debt',
               amount: total,
               date: saleDate || new Date().toISOString(),
-              notes: `فاتورة مبيعات آجل #${saleId}`
+              invoice_id: saleId || null
             });
           }
         } catch (debtErr) {
@@ -502,8 +511,13 @@ const POSModule = () => {
                   <input
                     type="number"
                     value={item.final_price}
-                    onChange={(e) => updatePrice(index, parseFloat(e.target.value) || 0)}
-                    className="flex-1 bg-gray-700 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-gold"
+                    disabled={!canChangePrice}
+                    readOnly={!canChangePrice}
+                    title={!canChangePrice ? 'تعديل السعر اليدوي غير مصرح به لهذا الحساب' : 'تعديل السعر'}
+                    onChange={(e) => canChangePrice && updatePrice(index, parseFloat(e.target.value) || 0)}
+                    className={`flex-1 bg-gray-700 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-gold ${
+                      !canChangePrice ? 'opacity-60 cursor-not-allowed' : ''
+                    }`}
                     step="0.01"
                   />
                   <span className="text-sm font-bold text-gold min-w-[80px] text-left">
@@ -546,8 +560,12 @@ const POSModule = () => {
                 <div className="inline-flex rounded-lg bg-gray-800 p-0.5 border border-amber-500/20">
                   <button
                     type="button"
-                    onClick={() => setDiscountType('percentage')}
+                    disabled={!canApplyDiscount}
+                    onClick={() => canApplyDiscount && setDiscountType('percentage')}
+                    title={!canApplyDiscount ? 'تطبيق الخصم غير مصرح به لهذا الحساب' : 'خصم نسبة مئوية'}
                     className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                      !canApplyDiscount ? 'opacity-50 cursor-not-allowed' : ''
+                    } ${
                       discountType === 'percentage'
                         ? 'bg-amber-500 text-slate-950 shadow-sm'
                         : 'text-gray-400 hover:text-white'
@@ -557,14 +575,18 @@ const POSModule = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setDiscountType('fixed')}
+                    disabled={!canApplyDiscount}
+                    onClick={() => canApplyDiscount && setDiscountType('fixed')}
+                    title={!canApplyDiscount ? 'تطبيق الخصم غير مصرح به لهذا الحساب' : 'خصم قيمة ثابتة'}
                     className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                      !canApplyDiscount ? 'opacity-50 cursor-not-allowed' : ''
+                    } ${
                       discountType === 'fixed'
                         ? 'bg-amber-500 text-slate-950 shadow-sm'
                         : 'text-gray-400 hover:text-white'
                     }`}
                   >
-                    د.ل
+                    {currencySymbol}
                   </button>
                 </div>
               </div>
@@ -573,8 +595,13 @@ const POSModule = () => {
                   type="number"
                   value={discount || ''}
                   placeholder="0"
-                  onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                  className="w-16 bg-gray-700 text-white px-1.5 py-0.5 rounded text-center focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
+                  disabled={!canApplyDiscount}
+                  readOnly={!canApplyDiscount}
+                  title={!canApplyDiscount ? 'تطبيق الخصم غير مصرح به لهذا الحساب' : 'قيمة الخصم'}
+                  onChange={(e) => canApplyDiscount && setDiscount(parseFloat(e.target.value) || 0)}
+                  className={`w-16 bg-gray-700 text-white px-1.5 py-0.5 rounded text-center focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs ${
+                    !canApplyDiscount ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                   min="0"
                   max={discountType === 'percentage' ? 100 : undefined}
                   step={discountType === 'percentage' ? '0.5' : '1'}

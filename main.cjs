@@ -323,7 +323,8 @@ function getPrintSettings() {
     receiptTheme: 'luxury_gold', // 'classic' | 'luxury_gold' | 'modern_minimal' | 'ornate_box'
     receiptBorder: 'dashed', // 'dashed' | 'solid' | 'double' | 'none'
     receiptWatermarkBase64: '',
-    fontSize: 'md' // 'sm' | 'md' | 'lg'
+    fontSize: 'md', // 'sm' | 'md' | 'lg'
+    currencySymbol: 'د.ل'
   };
 
   try {
@@ -332,7 +333,7 @@ function getPrintSettings() {
       'print_mode', 'store_name', 'store_subtitle', 'store_phone', 'store_address',
       'receipt_greeting', 'receipt_policy', 'show_logo', 'show_barcode',
       'show_cashier', 'show_phone', 'logo_base64', 'receipt_theme', 'receipt_border',
-      'receipt_watermark_base64', 'font_size'
+      'receipt_watermark_base64', 'font_size', 'currency_symbol'
     )`).all();
 
     const map = {};
@@ -354,7 +355,8 @@ function getPrintSettings() {
       receiptTheme: map['receipt_theme'] || defaults.receiptTheme,
       receiptBorder: map['receipt_border'] || defaults.receiptBorder,
       receiptWatermarkBase64: map['receipt_watermark_base64'] || '',
-      fontSize: map['font_size'] || defaults.fontSize
+      fontSize: map['font_size'] || defaults.fontSize,
+      currencySymbol: map['currency_symbol'] || defaults.currencySymbol
     };
   } catch (e) {
     return defaults;
@@ -687,6 +689,28 @@ ipcMain.handle('db:get', async (event, { sql, params = [] }) => {
   }
 });
 
+// Atomic Transaction Handler (Synchronous SQLite Transaction)
+ipcMain.handle('db:transaction', async (event, { queries = [] }) => {
+  try {
+    const runAtomicTx = db.transaction((queriesList) => {
+      const results = [];
+      for (const q of queriesList) {
+        if (!q || !q.sql) continue;
+        const stmt = db.prepare(q.sql);
+        const res = stmt.run(...(q.params || []));
+        results.push(res);
+      }
+      return results;
+    });
+
+    const results = runAtomicTx(queries);
+    return { success: true, data: results };
+  } catch (error) {
+    console.error('Database atomic transaction error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Thermal & A4 Receipt Printing
 ipcMain.handle('print:receipt', async (event, receiptData) => {
   try {
@@ -695,7 +719,7 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
 
     const formatCurrency = (amount) => {
       const val = Number(amount) || 0;
-      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
+      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${settings.currencySymbol || 'د.ل'}`;
     };
 
     const formatDate = (dateStr) => {
@@ -954,7 +978,7 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
 
     const formatCurrency = (amount) => {
       const val = Number(amount) || 0;
-      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
+      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${settings.currencySymbol || 'د.ل'}`;
     };
 
     const orderHtml = `
@@ -1121,7 +1145,7 @@ function generateShiftReportHtml(reportData, settings = {}) {
 
   const formatCurrency = (amount) => {
     const val = Number(amount) || 0;
-    return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
+    return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${settings.currencySymbol || 'د.ل'}`;
   };
 
   const formatDateStr = (d) => {
@@ -1483,7 +1507,7 @@ ipcMain.handle('print:inventory-report', async (event, inventoryData) => {
 
     const formatCurrency = (amount) => {
       const val = Number(amount) || 0;
-      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
+      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${settings.currencySymbol || 'د.ل'}`;
     };
 
     const reportHtml = `
@@ -2014,6 +2038,318 @@ ipcMain.handle('print:test-pdf', async (event, templateConfig = {}) => {
   } catch (error) {
     console.error('Test PDF print error:', error);
     return { success: false, error: error.message };
+  }
+});
+
+// Comprehensive Financial Report PDF Export Handler
+ipcMain.handle('export:financial-pdf', async (event, payload = {}) => {
+  try {
+    const { reportData = {}, templateConfig = {} } = payload;
+    const {
+      title = 'الدفة للعطور',
+      subtitle = 'Aldaffa Perfumes - لأرقى العطور والخلطات',
+      phone = '0123456789',
+      address = 'ليبيا - مصراتة',
+      currency = 'د.ل',
+      logoBase64
+    } = templateConfig;
+
+    const {
+      periodLabel = 'الفترة المحددة',
+      startDate = '',
+      endDate = '',
+      metrics = {},
+      paymentMethods = [],
+      topProducts = [],
+      categories = []
+    } = reportData;
+
+    const formatCurr = (num) => {
+      const val = Number(num) || 0;
+      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+    };
+
+    const html = `
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>تقرير تحليلي مالي - ${title}</title>
+  <style>
+    @page { size: A4; margin: 12mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #1f2937;
+      background: #fff;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #f59e0b;
+      padding-bottom: 5mm;
+      margin-bottom: 5mm;
+    }
+    .title-area h1 {
+      font-size: 22px;
+      font-weight: 800;
+      color: #92400e;
+    }
+    .title-area p {
+      font-size: 11px;
+      color: #6b7280;
+    }
+    .company-info {
+      text-align: left;
+      font-size: 10px;
+      color: #4b5563;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      background: #fef3c7;
+      color: #92400e;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 12px;
+      margin-bottom: 4mm;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 3mm;
+      margin-bottom: 5mm;
+    }
+    .kpi-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 3mm;
+      background: #f9fafb;
+    }
+    .kpi-title {
+      font-size: 9px;
+      color: #6b7280;
+      font-weight: 600;
+    }
+    .kpi-value {
+      font-size: 13px;
+      font-weight: 800;
+      color: #111827;
+      margin-top: 2px;
+    }
+    .kpi-sub {
+      font-size: 8px;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #111827;
+      margin: 4mm 0 2mm 0;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 1mm;
+    }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+    th, td { padding: 6px 8px; text-align: right; border: 1px solid #e5e7eb; font-size: 10px; }
+    th { background: #f3f4f6; font-weight: 700; color: #374151; }
+    tr:nth-child(even) { background: #f9fafb; }
+    .tables-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4mm;
+    }
+    .sign-section {
+      margin-top: 6mm;
+      display: flex;
+      justify-content: space-between;
+    }
+    .sign-box {
+      text-align: center;
+      width: 40%;
+      border-top: 1px solid #9ca3af;
+      padding-top: 2mm;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .footer {
+      margin-top: 6mm;
+      padding-top: 3mm;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+      font-size: 9px;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title-area">
+      ${logoBase64 ? `<img src="${logoBase64}" style="max-height: 35px; margin-bottom: 3px;" alt="Logo" />` : ''}
+      <h1>${title}</h1>
+      <p>${subtitle}</p>
+    </div>
+    <div class="company-info">
+      <div>📍 ${address}</div>
+      <div>📱 ${phone}</div>
+      <div>📅 تاريخ الاستخراج: ${new Date().toLocaleDateString('ar-LY')}</div>
+    </div>
+  </div>
+
+  <div class="badge">تقرير الأداء والتحليل المالي الشامل (${periodLabel}: ${startDate} إلى ${endDate})</div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-title">إجمالي المبيعات</div>
+      <div class="kpi-value" style="color: #d97706;">${formatCurr(metrics.totalRevenue)}</div>
+      <div class="kpi-sub">${metrics.invoiceCount || 0} فاتورة صادرة</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">مجمل الربح المحقق</div>
+      <div class="kpi-value" style="color: #059669;">${formatCurr(metrics.totalProfit)}</div>
+      <div class="kpi-sub">هامش الربح: ${metrics.profitMargin || 0}%</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">صافي الأرباح (بعد المصاريف)</div>
+      <div class="kpi-value" style="color: #2563eb;">${formatCurr(metrics.netProfit)}</div>
+      <div class="kpi-sub">صافي العائد الفعلي</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">متوسط الفاتورة</div>
+      <div class="kpi-value">${formatCurr(metrics.avgOrderValue)}</div>
+      <div class="kpi-sub">متوسط سلة المبيعات</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">إجمالي المشتريات</div>
+      <div class="kpi-value">${formatCurr(metrics.totalPurchases)}</div>
+      <div class="kpi-sub">فواتير التوريد</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">السحوبات والمصروفات</div>
+      <div class="kpi-value">${formatCurr(metrics.totalWithdrawals)}</div>
+      <div class="kpi-sub">المصاريف التشغيلية</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">التوالف والضياع</div>
+      <div class="kpi-value" style="color: #dc2626;">${formatCurr(metrics.totalLosses)}</div>
+      <div class="kpi-sub">قيمة الهدر والتالف</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">رأس المال والضخ</div>
+      <div class="kpi-value">${formatCurr(metrics.totalCapital)}</div>
+      <div class="kpi-sub">التمويل الإضافي</div>
+    </div>
+  </div>
+
+  <div class="section-title">الأصناف والمنتجات الأكثر مساهمة في الأرباح</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 5%;">#</th>
+        <th style="width: 45%;">المنتج / الصنف</th>
+        <th style="width: 15%;">الكمية المباعة</th>
+        <th style="width: 15%;">إجمالي المبيعات</th>
+        <th style="width: 20%;">صافي الربح المحقق</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${(topProducts || []).slice(0, 10).map((p, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td style="font-weight: 600;">${p.name || 'صنف'}</td>
+          <td>${p.total_qty || 0} قطعة</td>
+          <td>${formatCurr(p.total_revenue)}</td>
+          <td style="font-weight: bold; color: #059669;">${formatCurr(p.total_profit)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" style="text-align: center;">لا توجد مبيعات مسجلة في هذه الفترة</td></tr>'}
+    </tbody>
+  </table>
+
+  <div class="tables-row">
+    <div>
+      <div class="section-title">توزيع طرق التحصيل والدفع</div>
+      <table>
+        <thead>
+          <tr>
+            <th>طريقة الدفع</th>
+            <th>القيمة</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(paymentMethods || []).map((pm) => `
+            <tr>
+              <td>${pm.name || 'طريقة دفع'}</td>
+              <td style="font-weight: bold;">${formatCurr(pm.value)}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="2" style="text-align: center;">—</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <div class="section-title">المبيعات حسب التصنيف</div>
+      <table>
+        <thead>
+          <tr>
+            <th>التصنيف</th>
+            <th>الإيرادات</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(categories || []).slice(0, 5).map((c) => `
+            <tr>
+              <td>${c.category || 'عام'}</td>
+              <td style="font-weight: bold;">${formatCurr(c.total_revenue)}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="2" style="text-align: center;">—</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="sign-section">
+    <div class="sign-box">توقيع المحاسب القانوني</div>
+    <div class="sign-box">اعتماد المدير العام</div>
+  </div>
+
+  <div class="footer">
+    تقرير مالي تم إنشاؤه آلياً بواسطة منظومة ${title} &copy; ${new Date().getFullYear()} — وثيقة للاستخدام الإداري والمحاسبي
+  </div>
+</body>
+</html>`;
+
+    const printWin = new BrowserWindow({
+      show: false,
+      webPreferences: { nodeIntegration: false }
+    });
+
+    await printWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+
+    const pdfBuffer = await printWin.webContents.printToPDF({
+      printBackground: true,
+      pageSize: 'A4',
+      margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 }
+    });
+
+    printWin.close();
+
+    const { filePath, canceled } = await dialog.showSaveDialog({
+      title: 'حفظ التقرير المالي كملف PDF',
+      defaultPath: path.join(app.getPath('documents'), `تقرير_مالي_الدفة_${new Date().toISOString().split('T')[0]}.pdf`),
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+    });
+
+    if (canceled || !filePath) {
+      return { success: false, canceled: true };
+    }
+
+    fs.writeFileSync(filePath, pdfBuffer);
+    return { success: true, filePath };
+  } catch (err) {
+    console.error('export:financial-pdf error:', err);
+    return { success: false, error: err.message };
   }
 });
 

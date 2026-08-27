@@ -87,6 +87,10 @@ export const useSettingsStore = create((set, get) => ({
         });
       }
 
+      if (typeof window !== 'undefined') {
+        window.__CURRENCY_SYMBOL__ = loadedMap.currency_symbol || DEFAULT_SETTINGS.currency_symbol;
+      }
+
       set({ settings: loadedMap, loading: false, loaded: true });
       return loadedMap;
     } catch (err) {
@@ -112,6 +116,9 @@ export const useSettingsStore = create((set, get) => ({
     try {
       await settingsRepo.setValue(key, strVal);
       if (typeof window !== 'undefined') {
+        if (key === 'currency_symbol') {
+          window.__CURRENCY_SYMBOL__ = strVal;
+        }
         window.dispatchEvent(new CustomEvent('aldaffa:settings-changed', { detail: { key, value: strVal } }));
       }
     } catch (err) {
@@ -125,6 +132,10 @@ export const useSettingsStore = create((set, get) => ({
     Object.keys(settingsDict).forEach((k) => {
       stringified[k] = String(settingsDict[k] ?? '');
     });
+
+    if (typeof window !== 'undefined' && stringified.currency_symbol) {
+      window.__CURRENCY_SYMBOL__ = stringified.currency_symbol;
+    }
 
     set((state) => ({
       settings: { ...state.settings, ...stringified }
@@ -144,6 +155,9 @@ export const useSettingsStore = create((set, get) => ({
 
   // Reset all settings to factory default
   resetToDefaults: async () => {
+    if (typeof window !== 'undefined') {
+      window.__CURRENCY_SYMBOL__ = DEFAULT_SETTINGS.currency_symbol;
+    }
     set({ settings: { ...DEFAULT_SETTINGS } });
     try {
       await settingsRepo.setMultipleValues(DEFAULT_SETTINGS);

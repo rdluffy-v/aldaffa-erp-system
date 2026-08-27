@@ -43,19 +43,67 @@ import {
   Clock,
   Compass,
   Usb,
-  Terminal
+  Terminal,
+  Users,
+  UserPlus,
+  Edit3,
+  Building2,
+  DollarSign,
+  Coins,
+  Percent,
+  Plus
 } from 'lucide-react';
 import { BarcodeSVG } from '../utils/barcodeGenerator.jsx';
 
 import { SandboxEngine } from '../database/SandboxEngine.js';
 import { SettingsRepository } from '../database/repositories/SettingsRepository.js';
+import { UsersRepository, ROLE_PRESETS } from '../database/repositories/UsersRepository.js';
 import { useLabelsStore, DEFAULT_MODULE_LABELS } from '../stores/useLabelsStore.js';
+import { useSettingsStore, DEFAULT_SETTINGS } from '../stores/useSettingsStore.js';
+import { useAuthStore, PERMISSION_KEYS } from '../stores/useAuthStore.js';
 import { useUIStore } from '../stores/useUIStore.js';
 import { formatCurrency, formatDate } from '../utils/helpers.js';
 import Modal from '../components/ui/Modal.jsx';
 import ConfirmModal from '../components/shared/ConfirmModal.jsx';
 
 const settingsRepo = new SettingsRepository();
+const usersRepo = new UsersRepository();
+
+const ALL_MODULES_LIST = [
+  { id: 'dashboard', name: 'لوحة المعلومات والملخص' },
+  { id: 'analytics', name: 'التقارير والتحليلات المالية' },
+  { id: 'pos', name: 'نقطة البيع والكاشير' },
+  { id: 'online', name: 'المبيعات الأونلاين والتوصيل' },
+  { id: 'returns', name: 'المرتجعات والمسترجعات' },
+  { id: 'invoices', name: 'سجل الفواتير والمبيعات' },
+  { id: 'debtors', name: 'الديون والمستحقات' },
+  { id: 'inventory', name: 'المخزون والمنتجات' },
+  { id: 'purchases', name: 'المشتريات والموردين' },
+  { id: 'barcodes', name: 'استوديو طباعة الباركود' },
+  { id: 'withdrawals', name: 'المصروفات والسحوبات' },
+  { id: 'capital', name: 'رأس المال والتمويل' },
+  { id: 'gifts', name: 'الهدايا والعينات' },
+  { id: 'losses', name: 'التوالف والضياع' },
+  { id: 'mixlab', name: 'معمل خلط وتركيب العطور' },
+  { id: 'discounts', name: 'العروض والخصومات' },
+  { id: 'categories', name: 'تصنيفات وأقسام المنتجات' },
+  { id: 'notes', name: 'الملاحظات والمهام' },
+  { id: 'advisor', name: 'المستشار الذكي AI' },
+  { id: 'shift', name: 'إغلاق الوردية والحسابات' },
+  { id: 'settings', name: 'لوحة الإعدادات والتهيئة' }
+];
+
+const getPresetPerms = (role) => ROLE_PRESETS[role]?.permissions || ROLE_PRESETS[role] || {};
+
+const SPECIAL_PERMISSIONS_LIST = [
+  { key: 'view_profit', label: 'عرض الأرباح وهوامش الربحية والتكلفة' },
+  { key: 'delete_invoice', label: 'حذف الفواتير والمستندات الحساسة' },
+  { key: 'manage_users', label: 'إدارة وتعديل حسابات المستخدمين وصلاحياتهم' },
+  { key: 'purge_data', label: 'حذف وتطهير البيانات وتفريغ الجداول' },
+  { key: 'apply_discount', label: 'منح وتطبيق الخصومات عند البيع' },
+  { key: 'change_price', label: 'تعديل السعر اليدوي أثناء البيع' },
+  { key: 'edit_settings', label: 'تعديل وحفظ إعدادات المنظومة العامة' }
+];
 
 // Default print configuration
 const DEFAULT_PRINT_SETTINGS = {
@@ -346,11 +394,197 @@ const SettingsModule = () => {
   const { showSuccess, showError, showWarning, showInfo } = useUIStore();
   const { labels: customLabels, setLabel, setAllLabels, resetLabels } = useLabelsStore();
 
-  const [activeTab, setActiveTab] = useState('guide'); // 'guide' | 'print' | 'labels' | 'archive' | 'ai_updates'
+  const settingsStore = useSettingsStore();
+  const users = useAuthStore((s) => s.usersList || []);
+  const loadUsers = useAuthStore((s) => s.loadUsers);
+  const currentUser = useAuthStore((s) => s.currentUser);
+
+  const [activeTab, setActiveTab] = useState('guide'); // 'guide' | 'general' | 'users' | 'print' | 'labels' | 'archive' | 'ai_updates'
   const [openGuideStage, setOpenGuideStage] = useState(1);
   const [guideSearchTerm, setGuideSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // ----------------------------------------------------
+  // SECTION 0: General & Financial Settings State
+  // ----------------------------------------------------
+  const [generalForm, setGeneralForm] = useState({
+    store_name: 'الدفة للعطور',
+    store_subtitle: 'Aldaffa Perfumes - لأرقى العطور والخلطات',
+    store_phone: '0123456789',
+    store_address: 'ليبيا - مصراتة',
+    commercial_reg: '',
+    tax_id: '',
+    tax_rate: '0',
+    currency_symbol: 'د.ل',
+    currency_name: 'دينار ليبي',
+    invoice_prefix: 'INV-',
+    purchase_prefix: 'PUR-',
+    low_stock_threshold: '10',
+    default_payment_method: 'cash',
+    enable_wholesale: '1',
+    enable_price_override: '1',
+    auto_calculate_wac: '1',
+    sound_effects: '1'
+  });
+
+  useEffect(() => {
+    if (settingsStore.loaded) {
+      setGeneralForm({
+        store_name: settingsStore.getSetting('store_name', 'الدفة للعطور'),
+        store_subtitle: settingsStore.getSetting('store_subtitle', 'Aldaffa Perfumes - لأرقى العطور والخلطات'),
+        store_phone: settingsStore.getSetting('store_phone', '0123456789'),
+        store_address: settingsStore.getSetting('store_address', 'ليبيا - مصراتة'),
+        commercial_reg: settingsStore.getSetting('commercial_reg', ''),
+        tax_id: settingsStore.getSetting('tax_id', ''),
+        tax_rate: settingsStore.getSetting('tax_rate', '0'),
+        currency_symbol: settingsStore.getSetting('currency_symbol', 'د.ل'),
+        currency_name: settingsStore.getSetting('currency_name', 'دينار ليبي'),
+        invoice_prefix: settingsStore.getSetting('invoice_prefix', 'INV-'),
+        purchase_prefix: settingsStore.getSetting('purchase_prefix', 'PUR-'),
+        low_stock_threshold: settingsStore.getSetting('low_stock_threshold', '10'),
+        default_payment_method: settingsStore.getSetting('default_payment_method', 'cash'),
+        enable_wholesale: settingsStore.getSetting('enable_wholesale', '1'),
+        enable_price_override: settingsStore.getSetting('enable_price_override', '1'),
+        auto_calculate_wac: settingsStore.getSetting('auto_calculate_wac', '1'),
+        sound_effects: settingsStore.getSetting('sound_effects', '1')
+      });
+    }
+  }, [settingsStore.loaded, settingsStore.settings]);
+
+  // ----------------------------------------------------
+  // SECTION 0.5: Users & Permissions State
+  // ----------------------------------------------------
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [userForm, setUserForm] = useState({
+    name: '',
+    role: 'cashier',
+    pin: '',
+    permissions: { ...(ROLE_PRESETS.cashier?.permissions || ROLE_PRESETS.cashier || {}) }
+  });
+  const [deleteUserTarget, setDeleteUserTarget] = useState(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+
+  const handleSaveGeneral = async () => {
+    setSaving(true);
+    try {
+      const res = await settingsStore.saveMultipleSettings(generalForm);
+      if (res.success) {
+        showSuccess('✅ تم حفظ الإعدادات العامة والمالية بنجاح.');
+      } else {
+        showError('فشل حفظ الإعدادات: ' + res.error);
+      }
+    } catch (e) {
+      showError('خطأ أثناء حفظ الإعدادات: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResetGeneral = async () => {
+    setSaving(true);
+    try {
+      await settingsStore.resetToDefaults();
+      showSuccess('✅ تم استعادة الإعدادات الافتراضية بنجاح.');
+    } catch (e) {
+      showError('فشل استعادة الإعدادات: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openAddUser = () => {
+    setEditingUser(null);
+    setUserForm({
+      name: '',
+      role: 'cashier',
+      pin: '',
+      permissions: { ...(ROLE_PRESETS.cashier?.permissions || ROLE_PRESETS.cashier || {}) }
+    });
+    setUserModalOpen(true);
+  };
+
+  const openEditUser = (u) => {
+    setEditingUser(u);
+    setUserForm({
+      name: u.name,
+      role: u.role,
+      pin: u.pin,
+      permissions: { ...(ROLE_PRESETS[u.role]?.permissions || ROLE_PRESETS[u.role] || {}), ...(u.permissions || {}) }
+    });
+    setUserModalOpen(true);
+  };
+
+  const handleApplyRolePreset = (role) => {
+    setUserForm((prev) => ({
+      ...prev,
+      role,
+      permissions: { ...(ROLE_PRESETS[role]?.permissions || ROLE_PRESETS[role] || {}) }
+    }));
+  };
+
+  const handleTogglePermission = (key) => {
+    setUserForm((prev) => ({
+      ...prev,
+      permissions: {
+        ...prev.permissions,
+        [key]: !prev.permissions[key]
+      }
+    }));
+  };
+
+  const handleSaveUser = async () => {
+    if (!userForm.name.trim()) {
+      showWarning('يرجى إدخال اسم الموظف');
+      return;
+    }
+    if (!userForm.pin || userForm.pin.length < 4) {
+      showWarning('رمز PIN يجب أن يتكون من 4 أرقام على الأقل');
+      return;
+    }
+    const isPinAvail = await usersRepo.checkPinAvailability(userForm.pin, editingUser?.id);
+    if (!isPinAvail) {
+      showError('رمز PIN هذا مستخدم بالفعل من قبل موظف آخر. يرجى اختيار رمز مختلف.');
+      return;
+    }
+
+    try {
+      await usersRepo.saveUser(
+        {
+          id: editingUser ? editingUser.id : undefined,
+          name: userForm.name.trim(),
+          role: userForm.role,
+          pin: userForm.pin.trim()
+        },
+        userForm.permissions
+      );
+      await loadUsers();
+      setUserModalOpen(false);
+      showSuccess(editingUser ? '✅ تم تحديث بيانات وصلاحيات الموظف' : '✅ تم إضافة الموظف الجديد بنجاح');
+    } catch (err) {
+      showError('فشل حفظ بيانات الموظف: ' + err.message);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteUserTarget) return;
+    setIsDeletingUser(true);
+    try {
+      const res = await usersRepo.deleteUser(deleteUserTarget.id);
+      if (res === true || res?.success) {
+        showSuccess('✅ تم حذف حساب الموظف بنجاح');
+        await loadUsers();
+      } else {
+        showError('تعذر الحذف: ' + (res?.error || 'حدث خطأ غير معروف'));
+      }
+    } catch (err) {
+      showError('خطأ أثناء حذف الموظف: ' + err.message);
+    } finally {
+      setIsDeletingUser(false);
+      setDeleteUserTarget(null);
+    }
+  };
 
   // ----------------------------------------------------
   // SECTION 1: Print & Template Settings State
@@ -897,6 +1131,8 @@ const SettingsModule = () => {
   // Tab configurations
   const TABS = [
     { id: 'guide', label: '📘 كيف تعمل المنظومة؟ (دليل دورة الحياة)', icon: BookOpen },
+    { id: 'general', label: 'الإعدادات العامة والمالية', icon: Sliders },
+    { id: 'users', label: 'المستخدمين والصلاحيات', icon: Shield },
     { id: 'print', label: 'استوديو وقوالب الطباعة', icon: Printer },
     { id: 'labels', label: 'التعديل الحر للمسميات', icon: Type },
     { id: 'archive', label: 'الترحيل وصيانة المنظومة', icon: Database },
@@ -1098,6 +1334,421 @@ const SettingsModule = () => {
                     </div>
                   );
                 })}
+              </div>
+            </motion.div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB: GENERAL & FINANCIAL SETTINGS (الإعدادات العامة والمالية) */}
+          {/* ========================================================================= */}
+          {activeTab === 'general' && (
+            <motion.div
+              key="general-tab"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 pb-8"
+            >
+              {/* Header card */}
+              <div className="glass-card p-6 border border-amber-500/30 bg-gradient-to-l from-amber-500/10 via-[#161b22] to-[#0d1117] rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-bold text-[#e6edf3] flex items-center gap-2">
+                    <Sliders className="w-5 h-5 text-[#fbbf24]" />
+                    الإعدادات العامة والمالية ونقاط البيع
+                  </h2>
+                  <p className="text-xs text-[#768390] mt-1">
+                    تخصيص هوية المتجر، العملة الافتراضية، نسبة الضريبة، وبوادئ أرقام الفواتير وسلوك النظام
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleResetGeneral}
+                    disabled={saving}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    استعادة الافتراضيات
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveGeneral}
+                    disabled={saving}
+                    className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-l from-[#fbbf24] to-[#f59e0b] text-[#0d1117] shadow-[0_0_15px_rgba(251,191,36,0.4)] hover:brightness-110 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Save className="w-4 h-4" />
+                    {saving ? 'جارٍ الحفظ...' : 'حفظ الإعدادات'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Form Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 1. هوية المتجر والبيانات التجارية */}
+                <div className="glass-card p-5 space-y-4 border border-white/5 bg-[#161b22]/70 rounded-2xl">
+                  <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                    <Building2 className="w-4 h-4 text-[#fbbf24]" />
+                    <h3 className="text-sm font-bold text-[#e6edf3]">هوية المتجر والبيانات الرسمية</h3>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <label className="block text-[#adbac7] mb-1 font-semibold">اسم المتجر الرسمي:</label>
+                      <input
+                        type="text"
+                        value={generalForm.store_name}
+                        onChange={(e) => setGeneralForm({ ...generalForm, store_name: e.target.value })}
+                        className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none"
+                        placeholder="الدفة للعطور"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[#adbac7] mb-1 font-semibold">الوصف والترويسة (Subtitle):</label>
+                      <input
+                        type="text"
+                        value={generalForm.store_subtitle}
+                        onChange={(e) => setGeneralForm({ ...generalForm, store_subtitle: e.target.value })}
+                        className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none"
+                        placeholder="Aldaffa Perfumes - لأرقى العطور والخلطات"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[#adbac7] mb-1 font-semibold">هاتف المتجر / واتساب:</label>
+                        <input
+                          type="text"
+                          value={generalForm.store_phone}
+                          onChange={(e) => setGeneralForm({ ...generalForm, store_phone: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none font-mono text-left"
+                          dir="ltr"
+                          placeholder="091XXXXXXX"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[#adbac7] mb-1 font-semibold">العنوان والمقر:</label>
+                        <input
+                          type="text"
+                          value={generalForm.store_address}
+                          onChange={(e) => setGeneralForm({ ...generalForm, store_address: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none"
+                          placeholder="ليبيا - مصراتة"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[#adbac7] mb-1 font-semibold">رقم السجل التجاري:</label>
+                        <input
+                          type="text"
+                          value={generalForm.commercial_reg}
+                          onChange={(e) => setGeneralForm({ ...generalForm, commercial_reg: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none font-mono text-left"
+                          dir="ltr"
+                          placeholder="CR-XXXXX"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[#adbac7] mb-1 font-semibold">الرقم الضريبي:</label>
+                        <input
+                          type="text"
+                          value={generalForm.tax_id}
+                          onChange={(e) => setGeneralForm({ ...generalForm, tax_id: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none font-mono text-left"
+                          dir="ltr"
+                          placeholder="TAX-XXXXX"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. الإعدادات المالية والعملة ونقاط البيع */}
+                <div className="glass-card p-5 space-y-4 border border-white/5 bg-[#161b22]/70 rounded-2xl">
+                  <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                    <DollarSign className="w-4 h-4 text-emerald-400" />
+                    <h3 className="text-sm font-bold text-[#e6edf3]">العملة والخيارات المالية والضرائب</h3>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[#adbac7] mb-1 font-semibold">رمز العملة (Symbol):</label>
+                        <input
+                          type="text"
+                          value={generalForm.currency_symbol}
+                          onChange={(e) => setGeneralForm({ ...generalForm, currency_symbol: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#fbbf24] font-bold focus:border-[#fbbf24] outline-none text-center"
+                          placeholder="د.ل"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[#adbac7] mb-1 font-semibold">اسم العملة (Name):</label>
+                        <input
+                          type="text"
+                          value={generalForm.currency_name}
+                          onChange={(e) => setGeneralForm({ ...generalForm, currency_name: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none text-center"
+                          placeholder="دينار ليبي"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[#adbac7] mb-1 font-semibold">نسبة الضريبة (%):</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="100"
+                          value={generalForm.tax_rate}
+                          onChange={(e) => setGeneralForm({ ...generalForm, tax_rate: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none text-center"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[#adbac7] mb-1 font-semibold">بادئة المبيعات:</label>
+                        <input
+                          type="text"
+                          value={generalForm.invoice_prefix}
+                          onChange={(e) => setGeneralForm({ ...generalForm, invoice_prefix: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none font-mono text-center"
+                          placeholder="INV-"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[#adbac7] mb-1 font-semibold">بادئة المشتريات:</label>
+                        <input
+                          type="text"
+                          value={generalForm.purchase_prefix}
+                          onChange={(e) => setGeneralForm({ ...generalForm, purchase_prefix: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none font-mono text-center"
+                          placeholder="PUR-"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[#adbac7] mb-1 font-semibold">حد تنبيه المخزون المنخفض:</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={generalForm.low_stock_threshold}
+                          onChange={(e) => setGeneralForm({ ...generalForm, low_stock_threshold: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#fbbf24] font-bold focus:border-[#fbbf24] outline-none text-center"
+                          placeholder="10"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[#adbac7] mb-1 font-semibold">طريقة الدفع الافتراضية:</label>
+                        <select
+                          value={generalForm.default_payment_method}
+                          onChange={(e) => setGeneralForm({ ...generalForm, default_payment_method: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none"
+                        >
+                          <option value="cash">نقداً (Cash)</option>
+                          <option value="card">بطاقة مصرفية (Card)</option>
+                          <option value="bank_transfer">تحويل بنكي (Transfer)</option>
+                          <option value="debt">آجل / دين (Debt)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. الخيارات التشغيلية وسلوك النظام */}
+                <div className="glass-card p-5 space-y-4 border border-white/5 bg-[#161b22]/70 rounded-2xl md:col-span-2">
+                  <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                    <Sliders className="w-4 h-4 text-purple-400" />
+                    <h3 className="text-sm font-bold text-[#e6edf3]">الخيارات التشغيلية وسلوك نقاط البيع والمخزون</h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-[#0d1117] border border-white/5 cursor-pointer hover:border-white/20 transition-all">
+                      <input
+                        type="checkbox"
+                        checked={generalForm.enable_wholesale === '1'}
+                        onChange={(e) => setGeneralForm({ ...generalForm, enable_wholesale: e.target.checked ? '1' : '0' })}
+                        className="w-4 h-4 rounded text-[#fbbf24] accent-[#fbbf24]"
+                      />
+                      <div>
+                        <div className="font-bold text-[#e6edf3]">تفعيل أسعار الجملة</div>
+                        <div className="text-[10px] text-[#768390]">إظهار واحتساب خيار سعر الجملة</div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-[#0d1117] border border-white/5 cursor-pointer hover:border-white/20 transition-all">
+                      <input
+                        type="checkbox"
+                        checked={generalForm.enable_price_override === '1'}
+                        onChange={(e) => setGeneralForm({ ...generalForm, enable_price_override: e.target.checked ? '1' : '0' })}
+                        className="w-4 h-4 rounded text-[#fbbf24] accent-[#fbbf24]"
+                      />
+                      <div>
+                        <div className="font-bold text-[#e6edf3]">تعديل الأسعار عند البيع</div>
+                        <div className="text-[10px] text-[#768390]">السماح للكاشير بتعديل السعر اليدوي</div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-[#0d1117] border border-white/5 cursor-pointer hover:border-white/20 transition-all">
+                      <input
+                        type="checkbox"
+                        checked={generalForm.auto_calculate_wac === '1'}
+                        onChange={(e) => setGeneralForm({ ...generalForm, auto_calculate_wac: e.target.checked ? '1' : '0' })}
+                        className="w-4 h-4 rounded text-[#fbbf24] accent-[#fbbf24]"
+                      />
+                      <div>
+                        <div className="font-bold text-[#e6edf3]">حساب التكلفة المرجحة WAC</div>
+                        <div className="text-[10px] text-[#768390]">إعادة احتساب متوسط التكلفة تلقائياً</div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-[#0d1117] border border-white/5 cursor-pointer hover:border-white/20 transition-all">
+                      <input
+                        type="checkbox"
+                        checked={generalForm.sound_effects === '1'}
+                        onChange={(e) => setGeneralForm({ ...generalForm, sound_effects: e.target.checked ? '1' : '0' })}
+                        className="w-4 h-4 rounded text-[#fbbf24] accent-[#fbbf24]"
+                      />
+                      <div>
+                        <div className="font-bold text-[#e6edf3]">المؤثرات الصوتية</div>
+                        <div className="text-[10px] text-[#768390]">أصوات التنبيه ومسح الباركود</div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB: USERS & GRANULAR PERMISSIONS (المستخدمين والصلاحيات) */}
+          {/* ========================================================================= */}
+          {activeTab === 'users' && (
+            <motion.div
+              key="users-tab"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 pb-8"
+            >
+              {/* Header */}
+              <div className="glass-card p-6 border border-amber-500/30 bg-gradient-to-l from-amber-500/10 via-[#161b22] to-[#0d1117] rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-bold text-[#e6edf3] flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-[#fbbf24]" />
+                    إدارة حسابات الموظفين والصلاحيات الدقيقة (RBAC)
+                  </h2>
+                  <p className="text-xs text-[#768390] mt-1">
+                    تعيين أدوار المستخدمين (مدير عام، محاسب، كاشير)، رموز PIN السريعة، وتخصيص صلاحيات الأقسام والأزرار الحساسة
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={openAddUser}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-l from-[#fbbf24] to-[#f59e0b] text-[#0d1117] shadow-[0_0_15px_rgba(251,191,36,0.4)] hover:brightness-110 flex items-center gap-2 transition-all cursor-pointer"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>إضافة موظف جديد</span>
+                </button>
+              </div>
+
+              {/* Users Table */}
+              <div className="glass-card p-5 border border-white/5 bg-[#161b22]/70 rounded-2xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-[#0d1117] text-[#adbac7] border-b border-white/10">
+                      <tr>
+                        <th className="p-3">الموظف</th>
+                        <th className="p-3">الدور الوظيفي</th>
+                        <th className="p-3 text-center">رمز الدخول PIN</th>
+                        <th className="p-3 text-center">تاريخ الإنشاء</th>
+                        <th className="p-3 text-left">الإجراءات</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {users.map((u) => {
+                        const isManager = u.role === 'manager';
+                        const isAccountant = u.role === 'accountant';
+                        const isCurrent = currentUser?.id === u.id;
+
+                        return (
+                          <tr key={u.id} className="hover:bg-white/[0.02] transition-colors">
+                            <td className="p-3">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm ${
+                                  isManager
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                    : isAccountant
+                                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                }`}>
+                                  {u.name.charAt(0)}
+                                </div>
+                                <div>
+                                  <div className="font-bold text-[#e6edf3] flex items-center gap-2">
+                                    <span>{u.name}</span>
+                                    {isCurrent && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                        الحساب الحالي
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-[#768390] font-mono">ID: {u.id}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${
+                                isManager
+                                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                  : isAccountant
+                                  ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                                  : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                              }`}>
+                                {isManager ? 'مدير عام (Manager)' : isAccountant ? 'محاسب (Accountant)' : 'كاشير (Cashier)'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center font-mono font-bold text-gray-400">
+                              •••• ({u.pin ? u.pin.length : 4} أرقام)
+                            </td>
+                            <td className="p-3 text-center text-gray-400">
+                              {u.created_at ? new Date(u.created_at).toLocaleDateString('ar-SD') : '—'}
+                            </td>
+                            <td className="p-3 text-left">
+                              <div className="flex items-center gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditUser(u)}
+                                  className="px-3 py-1.5 rounded-lg bg-blue-500/15 text-blue-300 hover:bg-blue-500/25 border border-blue-500/30 font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  <span>تعديل الصلاحيات</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteUserTarget(u)}
+                                  disabled={isCurrent}
+                                  className="p-1.5 rounded-lg bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title={isCurrent ? 'لا يمكنك حذف حسابك الحالي' : 'حذف الموظف'}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </motion.div>
           )}
@@ -2268,6 +2919,187 @@ const SettingsModule = () => {
         title="تأكيد تفريغ وتنظيف قاعدة البيانات (VACUUM)"
         message={`هل أنت متأكد من حذف السجلات القديمة الأقدم من (${customCutoffDate || cutoffYear}) نهائياً من قاعدة البيانات النشطة وتفريغ المساحة؟ تأكد من تصدير الأرشيف أولاً.`}
         confirmText="نعم، تفريغ وتنظيف الآن"
+        cancelText="إلغاء"
+        danger={true}
+      />
+
+      {/* ========================================================================= */}
+      {/* USER ADD / EDIT MODAL */}
+      {/* ========================================================================= */}
+      <Modal
+        isOpen={userModalOpen}
+        onClose={() => setUserModalOpen(false)}
+        title={editingUser ? `تعديل صلاحيات وبيانات: ${editingUser.name}` : 'إضافة موظف جديد للمنظومة'}
+        size="lg"
+      >
+        <div className="space-y-5 text-xs">
+          {/* Basic User Info */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-[#adbac7] mb-1 font-semibold">اسم الموظف:</label>
+              <input
+                type="text"
+                value={userForm.name}
+                onChange={(e) => setUserForm({ ...userForm, name: e.target.value })}
+                className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none"
+                placeholder="مثال: أحمد عبد الله"
+              />
+            </div>
+            <div>
+              <label className="block text-[#adbac7] mb-1 font-semibold">الدور الوظيفي:</label>
+              <select
+                value={userForm.role}
+                onChange={(e) => handleApplyRolePreset(e.target.value)}
+                className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#e6edf3] focus:border-[#fbbf24] outline-none"
+              >
+                <option value="cashier">كاشير (Cashier)</option>
+                <option value="accountant">محاسب (Accountant)</option>
+                <option value="manager">مدير عام (Manager)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[#adbac7] mb-1 font-semibold">رمز الدخول السريع (PIN):</label>
+              <input
+                type="password"
+                maxLength={6}
+                value={userForm.pin}
+                onChange={(e) => setUserForm({ ...userForm, pin: e.target.value.replace(/\D/g, '') })}
+                className="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-xl text-[#fbbf24] font-mono text-center tracking-widest font-bold focus:border-[#fbbf24] outline-none"
+                placeholder="4-6 أرقام"
+              />
+            </div>
+          </div>
+
+          {/* Role Presets Fast Apply */}
+          <div className="p-3 bg-[#0d1117] border border-white/5 rounded-xl flex items-center justify-between gap-3">
+            <span className="text-[#adbac7] font-semibold">تطبيق الصلاحيات القياسية الموصى بها للدور:</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleApplyRolePreset('manager')}
+                className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold cursor-pointer"
+              >
+                مدير عام (كاملة)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyRolePreset('accountant')}
+                className="px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-[11px] font-bold cursor-pointer"
+              >
+                محاسب
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyRolePreset('cashier')}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-bold cursor-pointer"
+              >
+                كاشير (مبيعات فقط)
+              </button>
+            </div>
+          </div>
+
+          {/* Granular Permissions Matrix */}
+          <div className="space-y-4">
+            {/* Special Permissions */}
+            <div className="space-y-2">
+              <h4 className="font-bold text-[#fbbf24] flex items-center gap-1.5 border-b border-white/5 pb-1">
+                <Shield className="w-3.5 h-3.5" />
+                الصلاحيات الخاصة والعمليات الحساسة:
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {SPECIAL_PERMISSIONS_LIST.map((sp) => {
+                  const checked = Boolean(userForm.permissions?.[sp.key]);
+                  return (
+                    <label
+                      key={sp.key}
+                      onClick={() => handleTogglePermission(sp.key)}
+                      className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all ${
+                        checked
+                          ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+                          : 'bg-[#0d1117] border-white/5 text-gray-400 hover:border-white/15'
+                      }`}
+                    >
+                      <span className="font-semibold">{sp.label}</span>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {}}
+                        className="w-4 h-4 rounded text-emerald-500 accent-emerald-500 cursor-pointer"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Module Permissions */}
+            <div className="space-y-2">
+              <h4 className="font-bold text-[#adbac7] flex items-center gap-1.5 border-b border-white/5 pb-1">
+                <Layers className="w-3.5 h-3.5 text-blue-400" />
+                صلاحيات الوصول إلى أقسام وشاشات المنظومة:
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto custom-scrollbar p-1">
+                {ALL_MODULES_LIST.map((mod) => {
+                  const permKey = `module_${mod.id}`;
+                  const checked = Boolean(userForm.permissions?.[permKey]);
+                  return (
+                    <label
+                      key={mod.id}
+                      onClick={() => handleTogglePermission(permKey)}
+                      className={`flex items-center justify-between p-2 rounded-lg border text-[11px] cursor-pointer transition-all ${
+                        checked
+                          ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 font-bold'
+                          : 'bg-[#0d1117] border-white/5 text-gray-400 hover:border-white/15'
+                      }`}
+                    >
+                      <span className="truncate">{mod.name}</span>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {}}
+                        className="w-3.5 h-3.5 rounded text-[#fbbf24] accent-[#fbbf24] cursor-pointer"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+            <button
+              type="button"
+              onClick={() => setUserModalOpen(false)}
+              className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 font-bold transition-all cursor-pointer"
+            >
+              إلغاء
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveUser}
+              className="px-6 py-2 rounded-xl bg-gradient-to-l from-[#fbbf24] to-[#f59e0b] text-[#0d1117] font-bold shadow-[0_0_15px_rgba(251,191,36,0.4)] hover:brightness-110 transition-all cursor-pointer"
+            >
+              {editingUser ? 'تحديث الصلاحيات والحفظ' : 'إضافة الموظف الآن'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* CONFIRM DELETE USER MODAL */}
+      {/* ========================================================================= */}
+      <ConfirmModal
+        open={Boolean(deleteUserTarget)}
+        onClose={() => setDeleteUserTarget(null)}
+        onConfirm={handleDeleteUser}
+        title="تأكيد حذف حساب الموظف"
+        message={
+          deleteUserTarget
+            ? `هل أنت متأكد من حذف حساب الموظف "${deleteUserTarget.name}" ذو الدور (${deleteUserTarget.role}) نهائياً؟`
+            : ''
+        }
+        confirmText="نعم، حذف الحساب"
         cancelText="إلغاء"
         danger={true}
       />

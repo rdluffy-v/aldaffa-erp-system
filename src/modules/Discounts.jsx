@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { db } from '../database/connection.js';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
 import { CategoriesRepository } from '../database/repositories/CategoriesRepository.js';
 import { NotesRepository } from '../database/repositories/NotesRepository.js';
@@ -110,15 +111,16 @@ const DiscountsModule = () => {
         if (product) affectedProducts = [product];
       }
 
+      const queries = [];
+
       // Apply price + discount_rate to each product
       for (const product of affectedProducts) {
         const originalPrice = product.original_price || product.price;
         const newPrice = originalPrice * (1 - percentage / 100);
 
-        await inventoryRepo.update(product.id, {
-          original_price: originalPrice,
-          price: newPrice,
-          discount_rate: percentage
+        queries.push({
+          sql: 'UPDATE inventory SET original_price = ?, price = ?, discount_rate = ? WHERE id = ?',
+          params: [originalPrice, newPrice, percentage, product.id]
         });
 
         discountData.affectedItems.push({
@@ -139,13 +141,19 @@ const DiscountsModule = () => {
       }
 
       // Save discount record
-      await notesRepo.create({
-        id: generateId(),
-        date: new Date().toISOString(),
-        title: `DISCOUNT: ${discountName}`,
-        content: JSON.stringify(discountData, null, 2),
-        priority: 'high'
+      queries.push({
+        sql: 'INSERT INTO notes (id, date, title, content, priority) VALUES (?, ?, ?, ?, ?)',
+        params: [
+          generateId(),
+          new Date().toISOString(),
+          `DISCOUNT: ${discountName}`,
+          JSON.stringify(discountData, null, 2),
+          'high'
+        ]
       });
+
+      await db.transaction(queries);
+      db.invalidateCache();
 
       resetForm();
       await Promise.all([loadDiscounts(), loadProducts(true)]);
@@ -165,16 +173,22 @@ const DiscountsModule = () => {
 
     try {
       const discountData = JSON.parse(discount.content);
+      const queries = [];
 
       for (const item of discountData.affectedItems) {
-        await inventoryRepo.update(item.id, {
-          price: item.originalPrice,
-          original_price: null,
-          discount_rate: 0
+        queries.push({
+          sql: 'UPDATE inventory SET price = ?, original_price = NULL, discount_rate = 0 WHERE id = ?',
+          params: [item.originalPrice, item.id]
         });
       }
 
-      await notesRepo.delete(discount.id);
+      queries.push({
+        sql: 'DELETE FROM notes WHERE id = ?',
+        params: [discount.id]
+      });
+
+      await db.transaction(queries);
+      db.invalidateCache();
 
       await Promise.all([loadDiscounts(), loadProducts(true)]);
 

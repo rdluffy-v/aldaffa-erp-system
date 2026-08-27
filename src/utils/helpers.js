@@ -193,7 +193,7 @@ export const formatNumber = (num) => {
  */
 export const safeParseFloat = (value, fallback = 0) => {
   const parsed = parseFloat(value);
-  return isNaN(parsed) ? fallback : parsed;
+  return !Number.isFinite(parsed) ? fallback : parsed;
 };
 
 /**
@@ -261,3 +261,5 @@ export const generateValidBarcode = (prefix = '628') => {
   const checkDigit = (10 - (sum % 10)) % 10;
   return `${raw12}${checkDigit}`;
 };
+
+export const roundToTwo = (num) => Math.round((Number(num) || 0) * 100) / 100;

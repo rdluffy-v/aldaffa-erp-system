@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useInventoryStore } from '../stores/useInventoryStore.js';
 import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { useUIStore } from '../stores/useUIStore.js';
+import { useAuthStore } from '../stores/useAuthStore.js';
 import useDebounce from '../hooks/useDebounce.js';
 import usePagination from '../hooks/usePagination.js';
 import Modal from '../components/ui/Modal.jsx';
@@ -57,6 +58,9 @@ const ProductSkeleton = () => (
  * Main Module
  * ------------------------------------------------------------------------- */
 const InventoryFullModule = () => {
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const canViewProfit = hasPermission('view_profit');
+
   // ---- Global state (locked contracts) ----
   const {
     products,
@@ -478,7 +482,7 @@ const InventoryFullModule = () => {
             <span aria-hidden="true">💰</span> قيمة المخزون (تكلفة)
           </div>
           <div className="text-2xl font-bold text-green-400 mt-1">
-            {formatCurrency(stats.totalStockValue)}
+            {canViewProfit ? formatCurrency(stats.totalStockValue) : '••••••'}
           </div>
         </div>
         <div className="bg-gray-800/70 border border-white/5 p-3 rounded-lg">
@@ -630,7 +634,7 @@ const InventoryFullModule = () => {
                         <div>
                           <span className="text-gray-400">التكلفة: </span>
                           <span className="font-bold">
-                            {formatCurrency(safeParseFloat(product.cost))}
+                            {canViewProfit ? formatCurrency(safeParseFloat(product.cost)) : '••••••'}
                           </span>
                         </div>
                         <div>

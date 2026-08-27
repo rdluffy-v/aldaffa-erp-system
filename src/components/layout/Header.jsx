@@ -1,15 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { useUIStore } from '../../stores/useUIStore.js';
+import { useAuthStore } from '../../stores/useAuthStore.js';
+import { useSettingsStore } from '../../stores/useSettingsStore.js';
 import { SandboxEngine } from '../../database/SandboxEngine.js';
 import { FlaconEmblem } from '../ui/FlaconIcons.jsx';
-import { Sun, Moon, Keyboard, Sparkles } from 'lucide-react';
+import { Sun, Moon, Keyboard, Sparkles, User, Lock, Users } from 'lucide-react';
 
 /**
  * Organic Atelier Canopy Header
  * Features:
  * - Live Arabic Libyan Date/Time clock
- * - Sandbox/Demo Mode Indicator & 1-Click Purge
- * - Organic luxury flacon brand emblem
+ * - Sandbox/Demo Mode Indicator & 1-Click Purge (Permission Guarded)
+ * - User Badge (Name & Arabic Role) with Quick Switcher Trigger
+ * - Screen Lock Trigger Button
+ * - Organic luxury flacon brand emblem with reactive Store Name
  * - In-app Keyboard Language Mode Switcher (عربي / EN)
  * - Theme Switcher (Daylight Atelier ☀️ / Nocturne Obsidian 🌙)
  * - Actions slot
@@ -23,6 +27,23 @@ const Header = ({ children }) => {
   const toggleKeyboardLanguage = useUIStore((state) => state.toggleKeyboardLanguage);
   const showSuccess = useUIStore((state) => state.showSuccess);
   const showError = useUIStore((state) => state.showError);
+
+  // Auth & Settings
+  const currentUser = useAuthStore((state) => state.currentUser);
+  const lockApp = useAuthStore((state) => state.lockApp);
+  const openSwitchModal = useAuthStore((state) => state.openSwitchModal);
+  const hasPermission = useAuthStore((state) => state.hasPermission);
+
+  const storeName = useSettingsStore((state) => state.getSetting('store_name', 'الدفة للعطور'));
+  const storeSubtitle = useSettingsStore(
+    (state) => state.getSetting('store_subtitle', 'ALDAFFA PERFUMES ERP')
+  );
+
+  const roleLabels = {
+    manager: 'المدير العام',
+    accountant: 'المحاسب',
+    cashier: 'كاشير'
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
@@ -80,7 +101,7 @@ const Header = ({ children }) => {
 
   return (
     <div className="w-full flex items-center justify-between px-6 pt-3 pb-2 select-none">
-      {/* Date & Time Clock & Sandbox Badge (Left in RTL) */}
+      {/* Date & Time Clock, Sandbox Badge & User Controls (Left in RTL) */}
       <div className="flex items-center gap-3">
         <div className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-amber-900/10 dark:border-amber-500/20 shadow-sm flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -88,17 +109,54 @@ const Header = ({ children }) => {
           <span className="text-[11px] text-[#5C524F] dark:text-slate-400 font-mono">({timeText})</span>
         </div>
 
+        {/* User Identity Badge with Click-to-Switch */}
+        {currentUser && (
+          <div className="flex items-center gap-1.5 bg-white/70 dark:bg-slate-900/70 border border-amber-900/10 dark:border-amber-500/20 rounded-full px-3 py-1 shadow-sm">
+            <div className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
+              <User className="w-3.5 h-3.5" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold text-[#2D2424] dark:text-gray-100">
+                {currentUser.name}
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold border border-amber-500/30">
+                {roleLabels[currentUser.role] || currentUser.role}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={openSwitchModal}
+              title="تبديل المستخدم السريع"
+              className="p-1 rounded-full hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 transition-colors cursor-pointer mr-1"
+            >
+              <Users className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={lockApp}
+              title="قفل المنظومة برمز PIN"
+              className="p-1 rounded-full hover:bg-red-500/20 text-red-600 dark:text-red-400 transition-colors cursor-pointer"
+            >
+              <Lock className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {isSandbox && (
           <div className="flex items-center gap-2 bg-amber-500/20 border border-amber-500/50 px-3 py-1 rounded-full text-xs font-bold text-amber-800 dark:text-amber-300 shadow-sm">
             <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-spin" />
             <span>وضع التجربة (بيانات وهمية)</span>
-            <button
-              onClick={handleExitSandbox}
-              className="bg-red-600 hover:bg-red-700 text-white text-[10px] px-2.5 py-0.5 rounded-full transition-all cursor-pointer font-bold shadow"
-              title="إيقاف وضع التجربة وحذف كافة البيانات الوهمية"
-            >
-              تطهير وإيقاف
-            </button>
+            {hasPermission('purge_data') && (
+              <button
+                onClick={handleExitSandbox}
+                className="bg-red-600 hover:bg-red-700 text-white text-[10px] px-2.5 py-0.5 rounded-full transition-all cursor-pointer font-bold shadow"
+                title="إيقاف وضع التجربة وحذف كافة البيانات الوهمية"
+              >
+                تطهير وإيقاف
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -146,10 +204,10 @@ const Header = ({ children }) => {
         <div className="flex items-center gap-2.5">
           <div className="text-right leading-tight">
             <h1 className="text-base font-extrabold text-[var(--text-primary)] dark:text-[#F3F4F6] tracking-tight transition-colors duration-200">
-              الدفة للعطور
+              {storeName}
             </h1>
             <p className="text-[9px] font-bold text-[var(--text-muted)] dark:text-amber-400/80 tracking-[0.2em] uppercase transition-colors duration-200">
-              ALDAFFA PERFUMES ERP
+              {storeSubtitle}
             </p>
           </div>
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-100 to-amber-200 dark:from-amber-950 dark:to-slate-900 border border-amber-400/40 shadow-sm flex items-center justify-center">
@@ -162,3 +220,4 @@ const Header = ({ children }) => {
 };
 
 export default Header;
+

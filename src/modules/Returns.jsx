@@ -15,6 +15,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { db } from '../database/connection.js';
 import { SalesRepository } from '../database/repositories/SalesRepository.js';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
 import { BaseRepository } from '../database/repositories/BaseRepository.js';
@@ -104,7 +105,7 @@ const ReturnsModule = () => {
       const saleWithCount = { ...sale, items_count: items.length };
 
       // Bring the found invoice to the top of the list if not already there
-      setRecentSales((prev) => {
+      setAllRecentSales((prev) => {
         if (prev.some((s) => s.id === sale.id)) return prev;
         return [saleWithCount, ...prev];
       });
@@ -176,6 +177,7 @@ const ReturnsModule = () => {
     try {
       let totalReturnAmount = 0;
       let totalReturnCost = 0;
+      const queries = [];
 
       for (const item of itemsToReturn) {
         const returnAmount = item.final_price * item.return_qty;
@@ -189,40 +191,56 @@ const ReturnsModule = () => {
           ? (item.return_qty * item.portion_ml / (item.capacity || 1))
           : item.return_qty;
 
-        await inventoryRepo.adjustStock(item.product_id, qtyToRestore);
+        queries.push({
+          sql: 'UPDATE inventory SET qty = qty + ? WHERE id = ?',
+          params: [qtyToRestore, item.product_id]
+        });
 
         // Update sale item quantity (or delete if fully returned)
         const newQty = item.cart_qty - item.return_qty;
         if (newQty === 0) {
-          await saleItemsRepo.delete(item.id);
+          queries.push({
+            sql: 'DELETE FROM sale_items WHERE id = ?',
+            params: [item.id]
+          });
         } else {
-          await saleItemsRepo.update(item.id, { cart_qty: newQty });
+          queries.push({
+            sql: 'UPDATE sale_items SET cart_qty = ? WHERE id = ?',
+            params: [newQty, item.id]
+          });
         }
       }
 
       // Update sale totals
-      const newTotal = selectedSale.total - totalReturnAmount;
+      const newTotal = Math.max(0, selectedSale.total - totalReturnAmount);
       const profitLoss = totalReturnAmount - totalReturnCost;
       const newProfit = selectedSale.profit - profitLoss;
 
-      await salesRepo.update(selectedSale.id, {
-        total: newTotal,
-        subtotal: newTotal + (selectedSale.discount || 0),
-        profit: newProfit
+      queries.push({
+        sql: 'UPDATE sales SET total = ?, subtotal = ?, profit = ? WHERE id = ?',
+        params: [newTotal, newTotal + (selectedSale.discount || 0), newProfit, selectedSale.id]
       });
 
       // Record the return transaction
-      await returnsRepo.create({
-        sale_id: selectedSale.id,
-        date: new Date().toISOString(),
-        returned_amount: totalReturnAmount,
-        returned_cost: totalReturnCost,
-        items_json: JSON.stringify(itemsToReturn.map((item) => ({
-          name: item.name,
-          qty: item.return_qty,
-          price: item.final_price
-        })))
+      queries.push({
+        sql: 'INSERT INTO returns (sale_id, date, returned_amount, returned_cost, items_json, reason) VALUES (?, ?, ?, ?, ?, ?)',
+        params: [
+          selectedSale.id,
+          new Date().toISOString(),
+          totalReturnAmount,
+          totalReturnCost,
+          JSON.stringify(itemsToReturn.map((item) => ({
+            name: item.name,
+            qty: item.return_qty,
+            price: item.final_price
+          }))),
+          reason || 'استرجاع من شاشة المرتجعات'
+        ]
       });
+
+      // Execute all operations atomically in a single SQLite transaction
+      await db.transaction(queries);
+      db.invalidateCache();
 
       showSuccess(`✅ تم معالجة المرتجع بنجاح\nالمبلغ المسترجع: ${formatCurrency(totalReturnAmount)}`);
 

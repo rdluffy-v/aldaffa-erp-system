@@ -18,6 +18,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { DebtorsRepository } from '../database/repositories/DebtorsRepository.js';
 import { useUIStore } from '../stores/useUIStore.js';
+import { useAuthStore } from '../stores/useAuthStore.js';
 import { formatCurrency, formatDate, generateId, safeParseFloat } from '../utils/helpers.js';
 import useDebounce from '../hooks/useDebounce.js';
 
@@ -25,6 +26,9 @@ const debtorsRepo = new DebtorsRepository();
 
 const DebtorsModule = () => {
   const { showSuccess, showError, showWarning } = useUIStore();
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const currentUser = useAuthStore((s) => s.currentUser);
+  const canDeleteDebts = currentUser?.role === 'manager' || hasPermission('delete_invoice');
 
   // Data
   const [debtors, setDebtors] = useState([]);
@@ -195,6 +199,10 @@ const DebtorsModule = () => {
   // Delete debtor (via custom confirm modal)
   // ---------------------------------------------------------------
   const deleteDebtor = (debtor) => {
+    if (!canDeleteDebts) {
+      showError('حذف حسابات العملاء مخصص للمدير العام فقط.');
+      return;
+    }
     setConfirmDelete({
       message:
         debtor.total_debt !== 0
@@ -224,6 +232,10 @@ const DebtorsModule = () => {
   // Delete individual debt history record
   // ---------------------------------------------------------------
   const deleteHistoryRecord = (record) => {
+    if (!canDeleteDebts) {
+      showError('حذف حركات الديون مخصص للمدير العام فقط.');
+      return;
+    }
     if (!selectedDebtor) return;
     setConfirmDelete({
       message: `هل أنت متأكد من حذف حركة (${record.type === 'debt' ? 'الدين' : 'الدفعة'}) بقيمة ${formatCurrency(record.amount)}؟ سيتم تعديل رصيد العميل تلقائياً.`,

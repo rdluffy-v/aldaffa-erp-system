@@ -228,4 +228,70 @@ export class SalesRepository extends BaseRepository {
     `;
     return await db.query(sql, [startDate, endDate]);
   }
+
+  /**
+   * Get most profitable products
+   */
+  async getMostProfitableProducts(limit = 10, startDate = null, endDate = null) {
+    let sql = `
+      SELECT
+        si.product_id,
+        si.name,
+        SUM(si.cart_qty) as total_qty,
+        SUM(si.cart_qty * si.final_price) as total_revenue,
+        SUM(si.cart_qty * (si.final_price - si.unit_cost)) as total_profit,
+        CASE
+          WHEN SUM(si.cart_qty * si.final_price) > 0
+          THEN (SUM(si.cart_qty * (si.final_price - si.unit_cost)) / SUM(si.cart_qty * si.final_price)) * 100
+          ELSE 0
+        END as profit_margin_pct
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+    `;
+
+    const params = [];
+    if (startDate && endDate) {
+      sql += ' WHERE s.date >= ? AND s.date <= ?';
+      params.push(startDate, endDate);
+    }
+
+    sql += `
+      GROUP BY si.product_id, si.name
+      ORDER BY total_profit DESC
+      LIMIT ?
+    `;
+    params.push(limit);
+
+    return await db.query(sql, params);
+  }
+
+  /**
+   * Get sales by category
+   */
+  async getSalesByCategory(startDate = null, endDate = null) {
+    let sql = `
+      SELECT
+        COALESCE(i.category, 'غير مصنف') as category,
+        COUNT(DISTINCT s.id) as invoice_count,
+        SUM(si.cart_qty) as total_qty,
+        SUM(si.cart_qty * si.final_price) as total_revenue,
+        SUM(si.cart_qty * (si.final_price - si.unit_cost)) as total_profit
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      LEFT JOIN inventory i ON si.product_id = i.id
+    `;
+
+    const params = [];
+    if (startDate && endDate) {
+      sql += ' WHERE s.date >= ? AND s.date <= ?';
+      params.push(startDate, endDate);
+    }
+
+    sql += `
+      GROUP BY COALESCE(i.category, 'غير مصنف')
+      ORDER BY total_revenue DESC
+    `;
+
+    return await db.query(sql, params);
+  }
 }

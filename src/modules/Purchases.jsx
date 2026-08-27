@@ -12,6 +12,8 @@ import { BaseRepository } from '../database/repositories/BaseRepository.js';
 import { db } from '../database/connection.js';
 import { useInventoryStore } from '../stores/useInventoryStore.js';
 import { useUIStore } from '../stores/useUIStore.js';
+import { useAuthStore } from '../stores/useAuthStore.js';
+import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { formatCurrency, formatDate, generateId, safeParseFloat, generateValidBarcode } from '../utils/helpers.js';
 import { BarcodeSVG, generateBarcodeSvgString } from '../utils/barcodeGenerator.jsx';
 import useDebounce from '../hooks/useDebounce.js';
@@ -204,6 +206,13 @@ const PurchasesModule = () => {
 
   const handleDeletePurchase = async () => {
     if (!deleteTarget) return;
+    const currentUser = useAuthStore.getState().currentUser;
+    const hasPermission = useAuthStore.getState().hasPermission;
+    const canDelete = currentUser?.role === 'manager' || hasPermission('delete_invoice');
+    if (!canDelete) {
+      showError('حذف فواتير المشتريات مخصص للمدير العام فقط.');
+      return;
+    }
     setIsDeleting(true);
     try {
       await purchasesRepo.deletePurchaseWithStockAdjustment(deleteTarget.id);

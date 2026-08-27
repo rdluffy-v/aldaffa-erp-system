@@ -3,7 +3,16 @@
  * Provides enhanced IPC bridge with error handling, retry logic, and connection pooling simulation
  */
 
-const { ipcRenderer } = window.require('electron');
+const getIpcRenderer = () => {
+  if (typeof window !== 'undefined' && window.require) {
+    try {
+      return window.require('electron').ipcRenderer;
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+};
 
 class DatabaseConnection {
   constructor() {
@@ -65,29 +74,11 @@ class DatabaseConnection {
   }
 
   /**
-   * Execute multiple queries in transaction
+   * Execute multiple queries in an atomic native transaction
    */
   async transaction(queries) {
-    try {
-      await this.run('BEGIN TRANSACTION');
-
-      const results = [];
-      for (const { sql, params } of queries) {
-        const result = await ipcRenderer.invoke('db:run', { sql, params });
-        if (!result.success) {
-          throw new Error(result.error);
-        }
-        results.push(result.data);
-      }
-
-      await this.run('COMMIT');
-      this.invalidateCache();
-
-      return results;
-    } catch (error) {
-      await this.run('ROLLBACK').catch(() => {});
-      throw error;
-    }
+    this.invalidateCache();
+    return await this._executeWithRetry('db:transaction', { queries });
   }
 
   /**
@@ -95,7 +86,11 @@ class DatabaseConnection {
    */
   async _executeWithRetry(channel, payload, attempt = 1) {
     try {
-      const result = await ipcRenderer.invoke(channel, payload);
+      const ipc = getIpcRenderer();
+      if (!ipc) {
+        throw new Error('Electron IPCRenderer not available in this environment');
+      }
+      const result = await ipc.invoke(channel, payload);
 
       if (!result.success) {
         throw new Error(result.error);

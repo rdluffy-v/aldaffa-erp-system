@@ -30,6 +30,8 @@ import Card from '../components/ui/Card.jsx';
 import Table from '../components/ui/Table.jsx';
 import Button from '../components/ui/Button.jsx';
 import { useUIStore } from '../stores/useUIStore.js';
+import { useAuthStore } from '../stores/useAuthStore.js';
+import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { SalesRepository } from '../database/repositories/SalesRepository.js';
 import { DebtorsRepository } from '../database/repositories/DebtorsRepository.js';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
@@ -349,6 +351,10 @@ const PieTooltip = ({ active, payload, total }) => {
  * ==========================================================================*/
 
 const Dashboard = () => {
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const canViewProfit = hasPermission('view_profit');
+  const lowStockThreshold = Number(useSettingsStore((s) => s.getSetting('low_stock_threshold', '10'))) || 10;
+
   const [range, setRange] = useState('today');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -443,8 +449,8 @@ const Dashboard = () => {
         ['البند', 'القيمة'],
         [
           ['إجمالي الإيرادات', data.summary.revenue],
-          ['إجمالي الأرباح', data.summary.profit],
-          ['هامش الربح (%)', data.summary.marginPct.toFixed(2)],
+          ['إجمالي الأرباح', canViewProfit ? data.summary.profit : '••••••'],
+          ['هامش الربح (%)', canViewProfit ? data.summary.marginPct.toFixed(2) : '••••••'],
           ['التغير مقابل الفترة السابقة (%)', data.summary.changePct.toFixed(2)],
           ['عدد المبيعات', data.summary.salesCount],
           ['منتجات المخزون المنخفض', data.lowStockCount],
@@ -456,7 +462,12 @@ const Dashboard = () => {
       pushSection(
         'أعلى المنتجات مبيعاً',
         ['المنتج', 'الكمية', 'الإيرادات', 'الربح'],
-        data.topProducts.map((p) => [p.name, p.total_qty, p.total_revenue, p.total_profit])
+        data.topProducts.map((p) => [
+          p.name,
+          p.total_qty,
+          p.total_revenue,
+          canViewProfit ? p.total_profit : '••••••'
+        ])
       );
 
       pushSection(
@@ -590,21 +601,7 @@ const Dashboard = () => {
     show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 240, damping: 24 } }
   };
 
-  const renderDelta = (value) => {
-    const rounded = Math.round(value * 10) / 10;
-    const isUp = value > 0;
-    const isDown = value < 0;
-    const Arrow = isUp ? ArrowUpRight : isDown ? ArrowDownRight : Minus;
-    const color = isUp ? 'text-[#34d399]' : isDown ? 'text-[#f87171]' : 'text-[#768390]';
-    return (
-      <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${color}`}>
-        <Arrow className="w-3.5 h-3.5" aria-hidden="true" />
-        {Math.abs(rounded).toFixed(1)}%
-      </span>
-    );
-  };
-
-  const summaryCards = [
+  const kpis = [
     {
       id: 'revenue',
       label: 'إجمالي المبيعات',
@@ -614,15 +611,19 @@ const Dashboard = () => {
       delta: summary.changePct,
       deltaLabel: `مقارنة بـ ${prevLabel}`
     },
-    {
-      id: 'profit',
-      label: 'صافي الربح',
-      value: formatCurrency(summary.profit),
-      icon: TrendingUp,
-      iconBg: 'from-[#34d399]/20 to-[#10b981]/10 text-[#34d399]',
-      badge: `هامش ${summary.marginPct.toFixed(1)}%`,
-      subtitle: `${formatNumber(summary.salesCount)} عملية بيع`
-    },
+    ...(canViewProfit
+      ? [
+          {
+            id: 'profit',
+            label: 'صافي الربح',
+            value: formatCurrency(summary.profit),
+            icon: TrendingUp,
+            iconBg: 'from-[#34d399]/20 to-[#10b981]/10 text-[#34d399]',
+            badge: `هامش ${summary.marginPct.toFixed(1)}%`,
+            subtitle: `${formatNumber(summary.salesCount)} عملية بيع`
+          }
+        ]
+      : []),
     {
       id: 'lowstock',
       label: 'مخزون منخفض',
@@ -675,7 +676,7 @@ const Dashboard = () => {
       align: 'end',
       render: (row) => (
         <span className="font-semibold text-[#34d399] tabular-nums">
-          {formatNumber(row.total_profit)}
+          {canViewProfit ? formatNumber(row.total_profit) : '••••••'}
         </span>
       )
     }
@@ -851,9 +852,9 @@ const Dashboard = () => {
             </div>
             <div>
               <p className="text-[11px] font-bold text-[#5C524F] dark:text-slate-300">الربح</p>
-              <p className="text-sm font-extrabold text-[#2D2424] dark:text-rose-300 tabular-nums">{formatCurrency(summary.profit)}</p>
+              <p className="text-sm font-extrabold text-[#2D2424] dark:text-rose-300 tabular-nums">{canViewProfit ? formatCurrency(summary.profit) : '••••••'}</p>
             </div>
-            <div className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">{summary.marginPct.toFixed(1)}% هامش</div>
+            <div className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">{canViewProfit ? `${summary.marginPct.toFixed(1)}% هامش` : '••••••'}</div>
           </div>
         </motion.div>
 
@@ -865,9 +866,9 @@ const Dashboard = () => {
             </div>
             <div>
               <p className="text-[11px] font-extrabold text-emerald-800 dark:text-emerald-200">صافي الربح</p>
-              <p className="text-sm font-black text-emerald-900 dark:text-emerald-300 tabular-nums">{formatCurrency(summary.profit)}</p>
+              <p className="text-sm font-black text-emerald-900 dark:text-emerald-300 tabular-nums">{canViewProfit ? formatCurrency(summary.profit) : '••••••'}</p>
             </div>
-            <div className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold">كفاءة عالية</div>
+            <div className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold">{canViewProfit ? 'كفاءة عالية' : '••••••'}</div>
           </div>
         </motion.div>
 
@@ -879,7 +880,7 @@ const Dashboard = () => {
             </div>
             <div>
               <p className="text-[11px] font-bold text-[#5C524F] dark:text-slate-300">التكلفة</p>
-              <p className="text-sm font-extrabold text-[#2D2424] dark:text-purple-300 tabular-nums">{formatCurrency(summary.revenue - summary.profit)}</p>
+              <p className="text-sm font-extrabold text-[#2D2424] dark:text-purple-300 tabular-nums">{canViewProfit ? formatCurrency(summary.revenue - summary.profit) : '••••••'}</p>
             </div>
             <div className="text-[10px] text-[#8C827A] dark:text-slate-400">تكلفة البضاعة</div>
           </div>
@@ -993,16 +994,18 @@ const Dashboard = () => {
                     dot={false}
                     activeDot={{ r: 5, fill: '#fbbf24', stroke: '#0d1117', strokeWidth: 2 }}
                   />
-                  <Area
-                    type="monotone"
-                    dataKey="profit"
-                    name="الأرباح"
-                    stroke="#34d399"
-                    strokeWidth={2.5}
-                    fill="url(#gradProfit)"
-                    dot={false}
-                    activeDot={{ r: 5, fill: '#34d399', stroke: '#0d1117', strokeWidth: 2 }}
-                  />
+                  {canViewProfit && (
+                    <Area
+                      type="monotone"
+                      dataKey="profit"
+                      name="الأرباح"
+                      stroke="#34d399"
+                      strokeWidth={2.5}
+                      fill="url(#gradProfit)"
+                      dot={false}
+                      activeDot={{ r: 5, fill: '#34d399', stroke: '#0d1117', strokeWidth: 2 }}
+                    />
+                  )}
                 </AreaChart>
               </ResponsiveContainer>
             </div>

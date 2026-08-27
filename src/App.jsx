@@ -5,14 +5,18 @@
  *
  * Clean Architecture integration point:
  * - MainLayout (Header + Navigation + content) from components/layout
- * - All 17 feature modules registered with Lucide icons
+ * - All 21 feature modules registered with Lucide icons
+ * - Role-Based Access Control (RBAC) & Dynamic Module Authorization
+ * - Full-screen PIN LockScreenModal & QuickUserSwitchModal
  * - Global ToastContainer for unified notifications
  * - Module switching via state (activeModule)
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSettingsStore } from './stores/useSettingsStore.js';
+import { useAuthStore } from './stores/useAuthStore.js';
+import { useLabelsStore } from './stores/useLabelsStore.js';
 
 // Lucide icons
 import {
@@ -39,10 +43,11 @@ import {
   BarChart3
 } from 'lucide-react';
 
-// Layout
+// Layout & Modals
 import MainLayout from './components/layout/MainLayout.jsx';
 import ToastContainer from './components/ui/ToastContainer.jsx';
-import { useLabelsStore } from './stores/useLabelsStore.js';
+import LockScreenModal from './components/auth/LockScreenModal.jsx';
+import QuickUserSwitchModal from './components/auth/QuickUserSwitchModal.jsx';
 
 // Feature modules
 import DashboardModule from './modules/Dashboard.jsx';
@@ -98,27 +103,48 @@ const App = () => {
   const [activeModule, setActiveModule] = useState('settings');
   const customLabels = useLabelsStore((state) => state.labels);
   const loadSettings = useSettingsStore((state) => state.loadSettings);
+  const loadUsers = useAuthStore((state) => state.loadUsers);
+  const canAccessModule = useAuthStore((state) => state.canAccessModule);
+  const currentUser = useAuthStore((state) => state.currentUser);
+  const isLocked = useAuthStore((state) => state.isLocked);
 
   useEffect(() => {
     loadSettings();
-  }, [loadSettings]);
+    loadUsers();
+  }, [loadSettings, loadUsers]);
 
-  const modules = MODULE_DEFINITIONS.map((mod) => ({
-    ...mod,
-    label: customLabels[mod.id] || mod.defaultLabel
-  }));
+  // Filter modules based on current user role and granular permissions
+  const allowedModules = useMemo(() => {
+    return MODULE_DEFINITIONS.filter((mod) => canAccessModule(mod.id)).map((mod) => ({
+      ...mod,
+      label: customLabels[mod.id] || mod.defaultLabel
+    }));
+  }, [canAccessModule, customLabels, currentUser]);
+
+  // If current activeModule is not authorized, automatically redirect to pos or first available
+  useEffect(() => {
+    if (allowedModules.length > 0) {
+      const isCurrentAllowed = allowedModules.some((m) => m.id === activeModule);
+      if (!isCurrentAllowed) {
+        const fallback = allowedModules.find((m) => m.id === 'pos') || allowedModules[0];
+        if (fallback) {
+          setActiveModule(fallback.id);
+        }
+      }
+    }
+  }, [allowedModules, activeModule]);
 
   const handleSelect = useCallback((id) => {
     setActiveModule(id);
   }, []);
 
-  const activeConfig = modules.find((m) => m.id === activeModule);
+  const activeConfig = allowedModules.find((m) => m.id === activeModule);
   const ActiveComponent = activeConfig?.component;
 
   return (
     <>
       <MainLayout
-        modules={modules}
+        modules={allowedModules}
         activeModule={activeModule}
         onSelect={handleSelect}
       >
@@ -131,10 +157,20 @@ const App = () => {
             transition={{ duration: 0.18 }}
             className="h-full"
           >
-            {ActiveComponent ? <ActiveComponent /> : null}
+            {ActiveComponent ? <ActiveComponent /> : (
+              <div className="h-full flex items-center justify-center text-sm text-gray-400">
+                لا تملك صلاحية للوصول إلى هذا القسم.
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
       </MainLayout>
+
+      {/* Full-Screen PIN Lock Modal */}
+      {isLocked && <LockScreenModal />}
+
+      {/* Quick User Switcher Modal */}
+      <QuickUserSwitchModal />
 
       {/* Global toast notifications */}
       <ToastContainer />

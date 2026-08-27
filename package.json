@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "node test/harness/test-runner.js",
     "electron:dev": "electron .",
     "electron:build": "electron-builder --linux deb",
     "postinstall": "electron-rebuild"

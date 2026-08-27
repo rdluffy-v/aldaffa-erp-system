@@ -3,6 +3,7 @@ import { SalesRepository } from '../database/repositories/SalesRepository.js';
 import { PurchasesRepository } from '../database/repositories/PurchasesRepository.js';
 import { BaseRepository } from '../database/repositories/BaseRepository.js';
 import { useUIStore } from '../stores/useUIStore.js';
+import { useAuthStore } from '../stores/useAuthStore.js';
 import { useInventoryStore } from '../stores/useInventoryStore.js';
 import { formatCurrency, formatDate } from '../utils/helpers.js';
 import ConfirmModal from '../components/shared/ConfirmModal.jsx';
@@ -27,6 +28,8 @@ const saleItemsRepo = new BaseRepository('sale_items');
 const InvoicesModule = () => {
   const { showSuccess, showError } = useUIStore();
   const { loadProducts } = useInventoryStore();
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const canDeleteInvoice = hasPermission('delete_invoice');
 
   const [activeTab, setActiveTab] = useState('pos'); // 'pos' | 'online' | 'purchases'
   const [sales, setSales] = useState([]);
@@ -131,6 +134,10 @@ const InvoicesModule = () => {
 
   // Trigger Delete Confirmation
   const confirmDeleteInvoice = (invoice, tabType = activeTab) => {
+    if (!canDeleteInvoice) {
+      showError('حذف الفواتير غير مصرح به لهذا الحساب. يتطلب صلاحية حذف الفواتير.');
+      return;
+    }
     setDeleteTarget({ invoice, tabType });
   };
 
@@ -345,13 +352,15 @@ const InvoicesModule = () => {
                           <Printer className="w-3.5 h-3.5 ml-1" />
                           <span>طباعة</span>
                         </button>
-                        <button
-                          onClick={() => confirmDeleteInvoice(row)}
-                          className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white transition-colors cursor-pointer"
-                          title="حذف الفاتورة نهائياً"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canDeleteInvoice && (
+                          <button
+                            onClick={() => confirmDeleteInvoice(row)}
+                            className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white transition-colors cursor-pointer"
+                            title="حذف الفاتورة نهائياً"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -438,13 +447,15 @@ const InvoicesModule = () => {
                 <span>إعادة طباعة حرارية (80mm)</span>
               </button>
 
-              <button
-                onClick={() => confirmDeleteInvoice(selectedInvoice)}
-                className="btn-atelier-secondary py-2.5 px-4 text-xs text-rose-600 hover:bg-rose-500 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>حذف الفاتورة</span>
-              </button>
+              {canDeleteInvoice && (
+                <button
+                  onClick={() => confirmDeleteInvoice(selectedInvoice)}
+                  className="btn-atelier-secondary py-2.5 px-4 text-xs text-rose-600 hover:bg-rose-500 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>حذف الفاتورة</span>
+                </button>
+              )}
 
               <button
                 onClick={() => setPreviewOpen(false)}

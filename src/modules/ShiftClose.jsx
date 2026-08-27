@@ -57,6 +57,9 @@ const shiftReportsRepo = new BaseRepository('shift_reports');
 
 const ShiftCloseModule = () => {
   const { showSuccess, showError, showWarning } = useUIStore();
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const currentUser = useAuthStore((s) => s.currentUser);
+  const canViewProfit = hasPermission('view_profit');
 
   const [cashierName, setCashierName] = useState('الكاشير المناوب');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
@@ -121,6 +124,10 @@ const ShiftCloseModule = () => {
 
   const handleDeleteReport = async () => {
     if (!deleteTarget) return;
+    if (currentUser?.role !== 'manager') {
+      showError('حذف تقارير الورديات مخصص للمدير العام فقط.');
+      return;
+    }
     setIsDeleting(true);
     try {
       await shiftReportsRepo.delete(deleteTarget.id);
@@ -142,7 +149,7 @@ const ShiftCloseModule = () => {
       const end = new Date(endDate + 'T23:59:59.999Z').toISOString();
 
       // Gather all financial and operational data across all modules
-      const [sales, purchases, withdrawals, capitalInjections, losses, gifts, notesList] =
+      const [sales, purchases, withdrawals, capitalInjections, losses, gifts, returnsList, notesList] =
         await Promise.all([
           salesRepo.getSalesInRange(start, end),
           purchasesRepo.getPurchasesInRange(start, end),
@@ -150,6 +157,7 @@ const ShiftCloseModule = () => {
           capitalRepo.getInjectionsInRange(start, end),
           lossesRepo.getLossesInRange(start, end),
           giftsRepo.getGiftsInRange(start, end),
+          db.query("SELECT * FROM returns WHERE date >= ? AND date <= ?", [start, end]).catch(() => []),
           notesRepo.findAll({}, 'date DESC').catch(() => [])
         ]);
 
@@ -179,16 +187,18 @@ const ShiftCloseModule = () => {
       const debtPurchases = (purchases || []).filter((p) => p.payment_type === 'debt');
       const totalDebtPurchases = debtPurchases.reduce((sum, p) => sum + safeParseFloat(p.total, 0), 0);
 
-      // Expenses, Losses, Gifts, Capital
+      // Expenses, Losses, Gifts, Capital, Returns
       const totalWithdrawals = (withdrawals || []).reduce((sum, w) => sum + safeParseFloat(w.amount, 0), 0);
       const totalCapital = (capitalInjections || []).reduce((sum, c) => sum + safeParseFloat(c.amount, 0), 0);
       const totalLosses = (losses || []).reduce((sum, l) => sum + safeParseFloat(l.cost_value, 0), 0);
       const totalLossesQty = (losses || []).reduce((sum, l) => sum + safeParseFloat(l.qty, 0), 0);
       const totalGifts = (gifts || []).reduce((sum, g) => sum + safeParseFloat(g.cost_value, 0), 0);
+      const totalReturns = (returnsList || []).reduce((sum, r) => sum + safeParseFloat(r.returned_amount, 0), 0);
+      const totalCashReturns = totalReturns;
 
       // Cash Drawer Calculation Formula:
-      // Expected Cash in Drawer = Cash Sales + Cash Capital Injected - Cash Withdrawals - Cash Purchases
-      const expectedCashBalance = totalCashSales + totalCapital - totalWithdrawals - totalCashPurchases;
+      // Expected Cash in Drawer = Cash Sales + Cash Capital Injected - Cash Withdrawals - Cash Purchases - Cash Returns
+      const expectedCashBalance = totalCashSales + totalCapital - totalWithdrawals - totalCashPurchases - totalCashReturns;
       const actualCashValue = safeParseFloat(actualCash, 0);
       const variance = actualCashValue - expectedCashBalance;
 
@@ -203,6 +213,11 @@ const ShiftCloseModule = () => {
           transfer: totalTransferSales,
           debt: totalDebtSales,
           items: sales || []
+        },
+        returns: {
+          total: totalReturns,
+          count: (returnsList || []).length,
+          items: returnsList || []
         },
         profit: totalProfit,
         purchases: {
@@ -467,7 +482,7 @@ const ShiftCloseModule = () => {
                     <TrendingUp className="w-4 h-4 text-emerald-500" />
                   </div>
                   <div className="text-lg font-black text-emerald-700 dark:text-emerald-300 mt-1 tabular-nums">
-                    {formatCurrency(report.profit)}
+                    {canViewProfit ? formatCurrency(report.profit) : '••••••'}
                   </div>
                   <div className="text-[9px] text-gray-400">هامش الربح التشغيلي</div>
                 </div>
@@ -668,7 +683,9 @@ const ShiftCloseModule = () => {
                                   </span>
                                 </td>
                                 <td className="p-2 text-left font-bold text-emerald-600">{formatCurrency(s.total)}</td>
-                                <td className="p-2 text-left font-mono text-emerald-700">{formatCurrency(s.profit)}</td>
+                                <td className="p-2 text-left font-mono text-emerald-700">
+                                  {canViewProfit ? formatCurrency(s.profit) : '••••••'}
+                                </td>
                               </tr>
                             ))
                           )}

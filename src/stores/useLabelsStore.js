@@ -1,13 +1,13 @@
-/**
- * Labels Store - Dynamic Navigation & UI Label Customization
- * Manages tab labels, persistence to localStorage & SQLite settings
- */
-
 import { create } from 'zustand';
+import { SettingsRepository } from '../database/repositories/SettingsRepository.js';
+
+const settingsRepo = new SettingsRepository();
 
 export const DEFAULT_MODULE_LABELS = {
   dashboard: 'الرئيسية',
   pos: 'نقاط البيع',
+  invoices: 'الفواتير',
+  analytics: 'التحليلات',
   online: 'أونلاين',
   returns: 'المرتجعات',
   debtors: 'الديون',
@@ -44,11 +44,30 @@ const loadStoredLabels = () => {
 export const useLabelsStore = create((set, get) => ({
   labels: loadStoredLabels(),
 
+  loadFromDatabase: async () => {
+    try {
+      const dbValue = await settingsRepo.getValue('custom_labels');
+      if (dbValue) {
+        const parsed = JSON.parse(dbValue);
+        const merged = { ...DEFAULT_MODULE_LABELS, ...parsed };
+        set({ labels: merged });
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        } catch (e) {}
+        return merged;
+      }
+    } catch (err) {
+      console.warn('Could not load custom_labels from database:', err);
+    }
+    return get().labels;
+  },
+
   setLabel: (moduleId, customLabel) => {
     set((state) => {
       const updated = { ...state.labels, [moduleId]: customLabel || DEFAULT_MODULE_LABELS[moduleId] };
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        settingsRepo.setValue('custom_labels', JSON.stringify(updated)).catch(() => {});
       } catch (e) {
         console.error('Error saving labels:', e);
       }
@@ -61,6 +80,7 @@ export const useLabelsStore = create((set, get) => ({
       const merged = { ...DEFAULT_MODULE_LABELS, ...newLabels };
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        settingsRepo.setValue('custom_labels', JSON.stringify(merged)).catch(() => {});
       } catch (e) {
         console.error('Error saving labels:', e);
       }
@@ -72,6 +92,7 @@ export const useLabelsStore = create((set, get) => ({
     set(() => {
       try {
         localStorage.removeItem(STORAGE_KEY);
+        settingsRepo.setValue('custom_labels', JSON.stringify(DEFAULT_MODULE_LABELS)).catch(() => {});
       } catch (e) {
         console.error('Error clearing custom labels:', e);
       }
