@@ -71,14 +71,35 @@ export const useInventoryStore = create((set, get) => ({
     }
   },
 
-  deleteProduct: async (id) => {
+  deleteProduct: async (id, name = null) => {
     set({ loading: true, error: null });
 
     try {
-      await inventoryRepo.delete(id);
+      // 1. Optimistically remove from state immediately
+      set((state) => ({
+        products: state.products.filter(
+          (p) => p.id !== id && String(p.id) !== String(id) && (!name || p.name !== name)
+        )
+      }));
+
+      // 2. Delete from database
+      if (inventoryRepo.deleteProduct) {
+        await inventoryRepo.deleteProduct(id, name);
+      } else {
+        await inventoryRepo.delete(id);
+      }
+
+      // 3. Invalidate DB cache & fetch fresh state
       await get().loadProducts(true);
+
+      // 4. Notify other modules
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
+
       return { success: true };
     } catch (error) {
+      await get().loadProducts(true);
       set({ error: error.message, loading: false });
       return { success: false, error: error.message };
     }

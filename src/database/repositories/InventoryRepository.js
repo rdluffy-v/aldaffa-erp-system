@@ -83,14 +83,18 @@ export class InventoryRepository extends BaseRepository {
   }
 
   /**
-   * Bulk update products
+   * Delete product by ID and/or name fallback
    */
-  async bulkUpdate(updates) {
-    const queries = updates.map(({ id, ...data }) => ({
-      sql: `UPDATE ${this.tableName} SET ${Object.keys(data).map(k => `${k} = ?`).join(', ')} WHERE id = ?`,
-      params: [...Object.values(data), id]
-    }));
-
-    await db.transaction(queries);
+  async deleteProduct(id, name = null) {
+    if (id !== undefined && id !== null && id !== '') {
+      const strId = String(id);
+      const sql = `DELETE FROM ${this.tableName} WHERE id = ? OR CAST(id AS TEXT) = ?`;
+      await db.run(sql, [id, strId]);
+    }
+    if (name) {
+      const sqlName = `DELETE FROM ${this.tableName} WHERE name = ? AND (id IS NULL OR id = '' OR id = ?)`;
+      await db.run(sqlName, [name, id ? String(id) : '']);
+    }
+    return true;
   }
 }

@@ -129,11 +129,15 @@ export class BaseRepository {
   }
 
   /**
-   * Delete record by ID
+   * Delete record by ID (Multi-type matching)
    */
   async delete(id) {
-    const sql = `DELETE FROM ${this.tableName} WHERE id = ?`;
-    await db.run(sql, [id]);
+    if (id === undefined || id === null) {
+      throw new Error('ID parameter is required for deletion');
+    }
+    const strId = String(id);
+    const sql = `DELETE FROM ${this.tableName} WHERE id = ? OR CAST(id AS TEXT) = ?`;
+    await db.run(sql, [id, strId]);
     return true;
   }
 

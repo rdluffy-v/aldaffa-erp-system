@@ -323,10 +323,12 @@ const InventoryFullModule = () => {
   // ---- Delete (confirmed via modal) ----
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
+    const targetName = deleteTarget.name;
+    const targetId = deleteTarget.id;
     try {
-      const result = await deleteProduct(deleteTarget.id);
+      const result = await deleteProduct(targetId, targetName);
       if (result.success) {
-        showSuccess(`✅ تم حذف المنتج "${deleteTarget.name}"`);
+        showSuccess(`✅ تم حذف المنتج "${targetName}" بنجاح`);
       } else {
         showError(`خطأ في حذف المنتج: ${result.error}`);
       }
