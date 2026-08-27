@@ -461,7 +461,7 @@ const SettingsModule = () => {
     name: '',
     role: 'cashier',
     pin: '',
-    permissions: { ...(ROLE_PRESETS.cashier?.permissions || ROLE_PRESETS.cashier || {}) }
+    permissions: { ...getPresetPerms('cashier') }
   });
   const [deleteUserTarget, setDeleteUserTarget] = useState(null);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
@@ -500,7 +500,7 @@ const SettingsModule = () => {
       name: '',
       role: 'cashier',
       pin: '',
-      permissions: { ...(ROLE_PRESETS.cashier?.permissions || ROLE_PRESETS.cashier || {}) }
+      permissions: { ...getPresetPerms('cashier') }
     });
     setUserModalOpen(true);
   };
@@ -511,7 +511,7 @@ const SettingsModule = () => {
       name: u.name,
       role: u.role,
       pin: u.pin,
-      permissions: { ...(ROLE_PRESETS[u.role]?.permissions || ROLE_PRESETS[u.role] || {}), ...(u.permissions || {}) }
+      permissions: { ...getPresetPerms(u.role), ...(u.permissions || {}) }
     });
     setUserModalOpen(true);
   };
@@ -520,7 +520,7 @@ const SettingsModule = () => {
     setUserForm((prev) => ({
       ...prev,
       role,
-      permissions: { ...(ROLE_PRESETS[role]?.permissions || ROLE_PRESETS[role] || {}) }
+      permissions: { ...getPresetPerms(role) }
     }));
   };
 

@@ -1,14 +1,16 @@
 # Progress — Worker Refine 2
 
-Last visited: 2026-08-27T20:48:10Z
+Last visited: 2026-08-27T20:58:10Z
 
 ## Status
 - [x] Initialized workspace and briefing
-- [ ] Read reviewer and challenger reports
-- [ ] Inspect target files (`Settings.jsx`, `useAuthStore.js`, `Dashboard.jsx`, etc.)
-- [ ] Apply fixes to `src/modules/Settings.jsx`
-- [ ] Apply fixes to `src/stores/useAuthStore.js`
-- [ ] Apply fixes to `src/modules/Dashboard.jsx`
-- [ ] Run `npm run build` and `node test/harness/test-runner.js`
-- [ ] Document changes in `changes.md` and `handoff.md`
-- [ ] Send message to orchestrator
+- [x] Read reviewer and challenger reports
+- [x] Inspect target files (`Settings.jsx`, `useAuthStore.js`, `Dashboard.jsx`, `Returns.jsx`, `POS.jsx`, `UsersRepository.js`)
+- [x] Apply fixes to `src/modules/Settings.jsx`
+- [x] Apply fixes to `src/stores/useAuthStore.js`
+- [x] Apply fixes to `src/database/repositories/UsersRepository.js`
+- [x] Apply fixes to `src/modules/Returns.jsx`
+- [x] Apply fixes to `src/modules/POS.jsx`
+- [x] Verify profit masking and export protections in `src/modules/Dashboard.jsx`
+- [x] Document changes in `changes.md` and `handoff.md`
+- [x] Send completion message to orchestrator

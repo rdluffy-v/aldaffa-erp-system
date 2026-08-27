@@ -10,10 +10,11 @@
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| 1 | M1: User Roles & Granular Permissions System | SQLite user/permissions schema, PIN auth, role restrictions across all 20 modules, user management UI in Settings | none | IN_PROGRESS |
-| 2 | M2: Advanced Financial Analytics & Profit Charts | Interactive Recharts dashboards, profit/revenue trends, product rankings, PDF (A4) & CSV export with Arabic branding | M1 | IN_PROGRESS |
-| 3 | M3: Universal Settings & Full System Customization | 100% parameter editability, store branding, tax, printer configs, section labels, reactive store sync | M1 | IN_PROGRESS |
-| 4 | M4: Multi-Agent Automated QA & 20-Module Testing Suite | Automated test harness, transaction locking verification, IPC safety, 20-module E2E validation | M1, M2, M3 | IN_PROGRESS |
+| 1 | M1: User Roles & Granular Permissions System | SQLite user/permissions schema, PIN auth, role restrictions across all 20 modules, user management UI in Settings | none | DONE |
+| 2 | M2: Advanced Financial Analytics & Profit Charts | Interactive Recharts dashboards, profit/revenue trends, product rankings, PDF (A4) & CSV export with Arabic branding | M1 | DONE |
+| 3 | M3: Universal Settings & Full System Customization | 100% parameter editability, store branding, tax, printer configs, section labels, reactive store sync | M1 | DONE |
+| 4 | M4: Multi-Agent Automated QA & 20-Module Testing Suite | Automated test harness, transaction locking verification, IPC safety, 20-module E2E validation | M1, M2, M3 | DONE |
+
 
 ## Interface Contracts
 ### Auth Store (`useAuthStore`) ↔ ERP Modules
