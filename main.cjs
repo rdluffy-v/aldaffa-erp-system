@@ -2444,14 +2444,21 @@ async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30, 
   });
 
   try {
+    win.webContents.setZoomFactor(1.0);
     await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlString));
     // Wait for fonts and vector SVGs to rasterize cleanly
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 120));
 
-    const image = await win.webContents.capturePage({ x: 0, y: 0, width: dotsW, height: dotsH });
-    const imgSize = image.getSize();
-    const w = imgSize.width;
-    const h = imgSize.height;
+    let image = await win.webContents.capturePage({ x: 0, y: 0, width: dotsW, height: dotsH });
+
+    // GUARANTEE 1:1 pixel match for 203 DPI thermal head regardless of screen DPI/scale factor
+    const currentSize = image.getSize();
+    if (currentSize.width !== dotsW || currentSize.height !== dotsH) {
+      image = image.resize({ width: dotsW, height: dotsH, quality: 'best' });
+    }
+
+    const w = dotsW;
+    const h = dotsH;
     const bytesPerRow = Math.ceil(w / 8);
     const bitmap = image.toBitmap(); // RGBA Buffer
 
@@ -2481,6 +2488,10 @@ async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30, 
       `SIZE ${widthMm} mm, ${heightMm} mm\r\n` +
       `GAP 2 mm, 0 mm\r\n` +
       `DIRECTION ${direction},0\r\n` +
+      `REFERENCE 0,0\r\n` +
+      `OFFSET 0 mm\r\n` +
+      `SET PEEL OFF\r\n` +
+      `SET TEAR ON\r\n` +
       `CLS\r\n` +
       `BITMAP 0,0,${bytesPerRow},${h},0,`
     );
@@ -2498,7 +2509,7 @@ async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30, 
 ipcMain.handle('print:barcodes-direct', async (event, printData) => {
   return new Promise(async (resolve) => {
     try {
-      const { html, printerName, silent = false, widthMm = 50, heightMm = 30, direction = 0 } = printData || {};
+      const { html, labels = [], printerName, silent = false, widthMm = 50, heightMm = 30, direction = 0 } = printData || {};
 
       // Mode 1: Interactive System Dialog (silent: false)
       if (!silent) {
@@ -2559,7 +2570,8 @@ ipcMain.handle('print:barcodes-direct', async (event, printData) => {
       #print-content {
         padding: 24px;
         display: flex;
-        justify-content: center;
+        flex-direction: column;
+        align-items: center;
         background: #0d1117;
         min-height: 100vh;
       }
@@ -2593,11 +2605,20 @@ ipcMain.handle('print:barcodes-direct', async (event, printData) => {
       }
 
       // Mode 2: Instant Hardware TSPL Direct Printing (silent: true)
-      // Extract individual label elements from html
-      const labelBoxes = html.split('<div class="label-wrapper">').filter((s) => s.includes('label-box'));
-      const boxesToPrint = labelBoxes.length > 0
-        ? labelBoxes.map((b) => `<div class="label-box">${b.split('</div></div>')[0]}</div>`)
-        : [html];
+      let boxesToPrint = [];
+      if (Array.isArray(labels) && labels.length > 0) {
+        boxesToPrint = labels;
+      } else if (typeof html === 'string' && html.includes('label-box')) {
+        // Safe extraction of label-box elements without HTML truncation
+        const matches = Array.from(html.matchAll(/<div\s+class="label-box"[^>]*>([\s\S]*?)<\/div>/g));
+        if (matches.length > 0) {
+          boxesToPrint = matches.map((m) => `<div class="label-box">${m[1]}</div>`);
+        }
+      }
+
+      if (boxesToPrint.length === 0) {
+        boxesToPrint = [html];
+      }
 
       let combinedTsplBuffer = Buffer.alloc(0);
 
@@ -2609,9 +2630,11 @@ ipcMain.handle('print:barcodes-direct', async (event, printData) => {
   <meta charset="UTF-8">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
+    html, body {
       width: ${widthMm}mm;
       height: ${heightMm}mm;
+      margin: 0;
+      padding: 0;
       background: #FFFFFF;
       color: #000000;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -2619,6 +2642,7 @@ ipcMain.handle('print:barcodes-direct', async (event, printData) => {
       display: flex;
       justify-content: center;
       align-items: center;
+      direction: rtl;
     }
     .label-box {
       width: 100%;
@@ -2628,13 +2652,14 @@ ipcMain.handle('print:barcodes-direct', async (event, printData) => {
       justify-content: space-between;
       align-items: center;
       text-align: center;
-      padding: 1.5mm 2mm;
+      padding: 1.5mm 1.5mm;
+      box-sizing: border-box;
     }
-    .store-title { font-size: 9px; font-weight: 700; color: #222; }
-    .product-title { font-size: 11px; font-weight: 900; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: ${widthMm - 6}mm; margin: 0.5mm 0; }
-    .barcode-area { width: 100%; display: flex; justify-content: center; align-items: center; }
-    .barcode-area svg { width: ${widthMm - 8}mm !important; height: auto !important; max-height: 14mm; }
-    .price-badge { font-size: 11px; font-weight: 900; color: #000; }
+    .store-title { font-size: 9px; font-weight: 800; color: #111; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 98%; }
+    .product-title { font-size: 11px; font-weight: 900; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 98%; line-height: 1.1; margin: 0.5mm 0; }
+    .barcode-area { width: 100%; display: flex; justify-content: center; align-items: center; flex-grow: 1; }
+    .barcode-area svg { width: ${widthMm - 6}mm !important; height: auto !important; max-height: ${heightMm - 14}mm; display: block; margin: 0 auto; }
+    .price-badge { font-size: 11.5px; font-weight: 900; color: #000; line-height: 1.1; }
   </style>
 </head>
 <body>

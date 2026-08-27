@@ -295,23 +295,22 @@ const PurchasesModule = () => {
       const widthMm = isThermal ? 50 : 210;
       const heightMm = isThermal ? 30 : 297;
 
-      const labelsHtml = selectedItems
-        .flatMap((item) => {
-          const count = item.printCount || 0;
-          const svgCode = generateBarcodeSvgString(item.barcode, 150, 45, true);
-          return Array.from({ length: count }).map(() => {
-            const inner = `
-              <div class="store-title">الدفة للعطور الملكية</div>
-              <div class="product-title">${item.name}</div>
-              <div class="barcode-area">${svgCode}</div>
-              <div class="price-badge">${formatCurrency(item.sell_price || (item.cost_per_unit || 0) * 1.35)}</div>
-            `;
-            if (isThermal) {
-              return `<div class="label-wrapper"><div class="label-box">${inner}</div></div>`;
-            }
-            return `<div class="label-box">${inner}</div>`;
-          });
-        })
+      const rawLabelsList = selectedItems.flatMap((item) => {
+        const count = item.printCount || 0;
+        const svgCode = generateBarcodeSvgString(item.barcode, 150, 45, true);
+        return Array.from({ length: count }).map(() => {
+          const inner = `
+            <div class="store-title">الدفة للعطور الملكية</div>
+            <div class="product-title">${item.name}</div>
+            <div class="barcode-area">${svgCode}</div>
+            <div class="price-badge">${formatCurrency(item.sell_price || (item.cost_per_unit || 0) * 1.35)}</div>
+          `;
+          return `<div class="label-box">${inner}</div>`;
+        });
+      });
+
+      const labelsHtml = rawLabelsList
+        .map((box) => (isThermal ? `<div class="label-wrapper">${box}</div>` : box))
         .join('');
 
       const fullHtml = `
@@ -434,6 +433,7 @@ const PurchasesModule = () => {
         const { ipcRenderer } = window.require('electron');
         const res = await ipcRenderer.invoke('print:barcodes-direct', {
           html: fullHtml,
+          labels: rawLabelsList,
           printerName: selectedPrinter || undefined,
           silent: true,
           widthMm,

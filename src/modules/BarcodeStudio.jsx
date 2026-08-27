@@ -415,44 +415,43 @@ const BarcodeStudioModule = () => {
       const widthMm = currentSizeConfig.widthMm;
       const heightMm = currentSizeConfig.heightMm;
 
-      // Build each label markup directly without mangling or splitting tags
-      const labelsHtml = selectedItems
-        .flatMap((item) => {
-          const count = Math.max(1, item.printCount || 1);
-          const svgCode = generateBarcodeSvgString(item.barcode, 180, barcodePixelHeight, showBarcodeText);
+      // Build individual label markups
+      const rawLabelsList = selectedItems.flatMap((item) => {
+        const count = Math.max(1, item.printCount || 1);
+        const svgCode = generateBarcodeSvgString(item.barcode, 180, barcodePixelHeight, showBarcodeText);
 
-          return Array.from({ length: count }).map(() => {
-            let innerContent = '';
+        return Array.from({ length: count }).map(() => {
+          let innerContent = '';
 
-            if (layoutStyle === 'price_top') {
-              innerContent = `
-                ${showPrice ? `<div class="price-badge">${formatCurrency(item.price)}</div>` : ''}
-                ${showProductName ? `<div class="product-title">${item.name}</div>` : ''}
-                <div class="barcode-area">${svgCode}</div>
-                ${showStoreTitle ? `<div class="store-title">${storeTitle}</div>` : ''}
-              `;
-            } else if (layoutStyle === 'barcode_focus') {
-              innerContent = `
-                ${showProductName ? `<div class="product-title">${item.name}</div>` : ''}
-                <div class="barcode-area">${svgCode}</div>
-                ${showPrice ? `<div class="price-badge">${formatCurrency(item.price)}</div>` : ''}
-              `;
-            } else {
-              // Classic layout
-              innerContent = `
-                ${showStoreTitle ? `<div class="store-title">${storeTitle}</div>` : ''}
-                ${showProductName ? `<div class="product-title">${item.name}</div>` : ''}
-                <div class="barcode-area">${svgCode}</div>
-                ${showPrice ? `<div class="price-badge">${formatCurrency(item.price)}</div>` : ''}
-              `;
-            }
+          if (layoutStyle === 'price_top') {
+            innerContent = `
+              ${showPrice ? `<div class="price-badge">${formatCurrency(item.price)}</div>` : ''}
+              ${showProductName ? `<div class="product-title">${item.name}</div>` : ''}
+              <div class="barcode-area">${svgCode}</div>
+              ${showStoreTitle ? `<div class="store-title">${storeTitle}</div>` : ''}
+            `;
+          } else if (layoutStyle === 'barcode_focus') {
+            innerContent = `
+              ${showProductName ? `<div class="product-title">${item.name}</div>` : ''}
+              <div class="barcode-area">${svgCode}</div>
+              ${showPrice ? `<div class="price-badge">${formatCurrency(item.price)}</div>` : ''}
+            `;
+          } else {
+            // Classic layout
+            innerContent = `
+              ${showStoreTitle ? `<div class="store-title">${storeTitle}</div>` : ''}
+              ${showProductName ? `<div class="product-title">${item.name}</div>` : ''}
+              <div class="barcode-area">${svgCode}</div>
+              ${showPrice ? `<div class="price-badge">${formatCurrency(item.price)}</div>` : ''}
+            `;
+          }
 
-            if (isThermal) {
-              return `<div class="label-wrapper"><div class="label-box">${innerContent}</div></div>`;
-            }
-            return `<div class="label-box">${innerContent}</div>`;
-          });
-        })
+          return `<div class="label-box">${innerContent}</div>`;
+        });
+      });
+
+      const labelsHtml = rawLabelsList
+        .map((box) => (isThermal ? `<div class="label-wrapper">${box}</div>` : box))
         .join('');
 
       const printHtmlDocument = `
@@ -575,6 +574,7 @@ const BarcodeStudioModule = () => {
         const { ipcRenderer } = window.require('electron');
         const res = await ipcRenderer.invoke('print:barcodes-direct', {
           html: printHtmlDocument,
+          labels: rawLabelsList,
           printerName: selectedPrinter || undefined,
           silent: !!silent,
           widthMm,
