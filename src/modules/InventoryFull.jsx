@@ -1,13 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useInventoryStore } from '../stores/useInventoryStore.js';
+import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { useUIStore } from '../stores/useUIStore.js';
 import useDebounce from '../hooks/useDebounce.js';
 import usePagination from '../hooks/usePagination.js';
 import Modal from '../components/ui/Modal.jsx';
 import { generateId, formatCurrency, safeParseFloat } from '../utils/helpers.js';
 
-// Low stock threshold (matches repository default)
-const LOW_STOCK_THRESHOLD = 10;
 const PAGE_SIZE = 8;
 
 // Premium gold button (btn-gold is referenced app-wide but not defined in CSS)
@@ -28,8 +27,6 @@ const EMPTY_FORM = {
   capacity: '0',
   image_url: ''
 };
-
-const isLowStock = (product) => safeParseFloat(product.qty) <= LOW_STOCK_THRESHOLD;
 
 /* ---------------------------------------------------------------------------
  * Loading Skeleton
@@ -119,6 +116,13 @@ const InventoryFullModule = () => {
     return names.sort((a, b) => a.localeCompare(b, 'ar'));
   }, [products]);
 
+  const lowStockThresholdSetting = useSettingsStore((s) => s.settings.low_stock_threshold);
+  const lowStockThreshold = safeParseFloat(lowStockThresholdSetting) || 10;
+  const isLowStock = useCallback(
+    (product) => safeParseFloat(product.qty) <= lowStockThreshold,
+    [lowStockThreshold]
+  );
+
   // ---- Stats header ----
   const stats = useMemo(() => {
     let totalStockValue = 0;
@@ -128,7 +132,7 @@ const InventoryFullModule = () => {
       const qty = safeParseFloat(p.qty);
       totalStockValue += safeParseFloat(p.cost) * qty;
       totalRetailValue += safeParseFloat(p.price) * qty;
-      if (qty <= LOW_STOCK_THRESHOLD) lowStockCount += 1;
+      if (qty <= lowStockThreshold) lowStockCount += 1;
     }
     return {
       totalProducts: products.length,
@@ -136,7 +140,7 @@ const InventoryFullModule = () => {
       totalRetailValue,
       lowStockCount
     };
-  }, [products]);
+  }, [products, lowStockThreshold]);
 
   // ---- Pagination ----
   const {

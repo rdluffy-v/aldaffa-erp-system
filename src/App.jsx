@@ -10,8 +10,9 @@
  * - Module switching via state (activeModule)
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSettingsStore } from './stores/useSettingsStore.js';
 
 // Lucide icons
 import {
@@ -34,7 +35,8 @@ import {
   Lock,
   FileText,
   QrCode,
-  SettingsIcon
+  SettingsIcon,
+  BarChart3
 } from 'lucide-react';
 
 // Layout
@@ -63,12 +65,14 @@ import NotesModule from './modules/Notes.jsx';
 import AIAdvisorModule from './modules/AIAdvisor.jsx';
 import ShiftCloseModule from './modules/ShiftClose.jsx';
 import SettingsModule from './modules/Settings.jsx';
+import AnalyticsModule from './modules/Analytics.jsx';
 
 /**
  * Raw Module definitions (id, defaultLabel, icon, component)
  */
 const MODULE_DEFINITIONS = [
   { id: 'dashboard', defaultLabel: 'الرئيسية', icon: LayoutDashboard, component: DashboardModule },
+  { id: 'analytics', defaultLabel: 'التحليلات والتقارير', icon: BarChart3, component: AnalyticsModule },
   { id: 'pos', defaultLabel: 'نقاط البيع', icon: ShoppingCart, component: POSModule },
   { id: 'online', defaultLabel: 'أونلاين', icon: Smartphone, component: OnlineSalesModule },
   { id: 'returns', defaultLabel: 'المرتجعات', icon: Undo2, component: ReturnsModule },
@@ -93,6 +97,11 @@ const MODULE_DEFINITIONS = [
 const App = () => {
   const [activeModule, setActiveModule] = useState('settings');
   const customLabels = useLabelsStore((state) => state.labels);
+  const loadSettings = useSettingsStore((state) => state.loadSettings);
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
 
   const modules = MODULE_DEFINITIONS.map((mod) => ({
     ...mod,

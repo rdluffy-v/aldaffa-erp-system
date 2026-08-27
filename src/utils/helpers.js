@@ -13,13 +13,18 @@ export const generateId = () => {
 };
 
 /**
- * Format currency to Libyan Dinar (د.ل)
+ * Format currency with dynamic currency symbol
  * @param {number} amount - Amount to format
+ * @param {string} [customSymbol] - Optional currency symbol override
  * @returns {string} Formatted currency
  */
-export const formatCurrency = (amount) => {
+export const formatCurrency = (amount, customSymbol = null) => {
   const val = Number(amount) || 0;
-  return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} د.ل`;
+  const symbol =
+    customSymbol ||
+    (typeof window !== 'undefined' && window.__CURRENCY_SYMBOL__) ||
+    'د.ل';
+  return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${symbol}`;
 };
 
 /**

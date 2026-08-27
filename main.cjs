@@ -174,6 +174,22 @@ function initDatabase() {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      pin TEXT NOT NULL,
+      role TEXT DEFAULT 'cashier',
+      avatar TEXT,
+      created_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS user_permissions (
+      user_id TEXT NOT NULL,
+      permission_key TEXT NOT NULL,
+      is_allowed INTEGER DEFAULT 1,
+      PRIMARY KEY(user_id, permission_key)
+    );
   `;
 
   db.exec(schema);
@@ -256,6 +272,20 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_returns_sale ON returns(sale_id);
   `;
   db.exec(indexes);
+
+  // Seed default manager user if users table is empty
+  try {
+    const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
+    if (!userCount || userCount.count === 0) {
+      db.prepare(`
+        INSERT INTO users (id, name, pin, role, created_at)
+        VALUES ('admin_1', 'المدير العام', '1234', 'manager', datetime('now'))
+      `).run();
+      console.log('Default Manager user created (PIN: 1234)');
+    }
+  } catch (seedErr) {
+    console.warn('User seed warning:', seedErr);
+  }
 
   // Automatic Safe Database Snapshot Backup
   try {

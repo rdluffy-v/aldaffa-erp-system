@@ -54,6 +54,32 @@ export class SettingsRepository extends BaseRepository {
   }
 
   /**
+   * Alias for getSetting
+   */
+  async getValue(key) {
+    return await this.getSetting(key);
+  }
+
+  /**
+   * Alias for setSetting
+   */
+  async setValue(key, value) {
+    return await this.setSetting(key, value);
+  }
+
+  /**
+   * Set multiple key/value pairs in one transaction
+   */
+  async setMultipleValues(settingsDict) {
+    const queries = Object.keys(settingsDict).map((key) => ({
+      sql: `INSERT INTO ${this.tableName} (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      params: [key, String(settingsDict[key] ?? '')]
+    }));
+    await db.transaction(queries);
+    return true;
+  }
+
+  /**
    * Get all settings
    */
   async getAllSettings() {
