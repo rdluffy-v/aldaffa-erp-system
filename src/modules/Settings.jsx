@@ -1122,9 +1122,22 @@ const SettingsModule = () => {
 
   const handleInstallUpdate = async () => {
     try {
-      await invokeIpc('updater:install');
+      const res = await invokeIpc('updater:install');
+      if (res && !res.success) {
+        showError('تعذر التثبيت التلقائي: ' + (res.error || 'يرجى تنزيل حزمة التثبيت المباشرة'));
+      }
     } catch (error) {
       showError('خطأ أثناء التثبيت: ' + error.message);
+    }
+  };
+
+  const handleOpenDirectDownload = async () => {
+    try {
+      const url = updateStatus?.fallbackUrl || 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
+      await invokeIpc('updater:open-releases', { url });
+      showInfo('تم فتح صفحة تنزيل حزمة التحديث (.deb) المباشرة في المتصفح');
+    } catch (e) {
+      showError('فشل فتح الرابط: ' + e.message);
     }
   };
 
@@ -2820,7 +2833,7 @@ const SettingsModule = () => {
                       className="btn-secondary text-xs flex items-center gap-2 text-[#fbbf24]"
                     >
                       <Download className="w-4 h-4" />
-                      تحميل التحديث
+                      تنزيل التحديث التلقائي
                     </button>
                   )}
 
@@ -2834,6 +2847,16 @@ const SettingsModule = () => {
                       تثبيت وإعادة التشغيل
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={handleOpenDirectDownload}
+                    className="btn-secondary text-xs flex items-center gap-2 text-sky-400 border-sky-500/30 hover:bg-sky-500/10 cursor-pointer"
+                    title="تنزيل حزمة التحديث المباشرة (.deb) من GitHub"
+                  >
+                    <Download className="w-4 h-4" />
+                    تنزيل حزمة (.deb) المباشرة
+                  </button>
                 </div>
               </div>
             </motion.div>

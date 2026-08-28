@@ -423,6 +423,19 @@ function setupAutoUpdater() {
   }
 
   autoUpdater.autoDownload = false;
+  autoUpdater.allowDowngrade = false;
+
+  try {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: 'rdluffy-v',
+      repo: 'aldaffa-erp-system',
+      private: true,
+      token: process.env.GH_TOKEN || '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'
+    });
+  } catch (e) {
+    console.warn('setFeedURL warning:', e.message);
+  }
 
   autoUpdater.on('checking-for-update', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -440,8 +453,15 @@ function setupAutoUpdater() {
     }
   });
   autoUpdater.on('error', (err) => {
+    console.error('AutoUpdater error event:', err);
+    const errorMsg = err?.message || String(err);
+    const fallbackUrl = 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', { status: 'error', error: err.message || String(err) });
+      mainWindow.webContents.send('update-status', {
+        status: 'error',
+        error: errorMsg,
+        fallbackUrl
+      });
     }
   });
   autoUpdater.on('download-progress', (progress) => {
@@ -465,6 +485,15 @@ ipcMain.handle('updater:set-token', async (event, { token }) => {
   try {
     if (token) {
       process.env.GH_TOKEN = token;
+      try {
+        autoUpdater.setFeedURL({
+          provider: 'github',
+          owner: 'rdluffy-v',
+          repo: 'aldaffa-erp-system',
+          private: true,
+          token
+        });
+      } catch (e) {}
       return { success: true };
     }
     return { success: false, error: 'Token is empty' };
@@ -492,16 +521,35 @@ ipcMain.handle('updater:download', async () => {
     return { success: true };
   } catch (error) {
     console.error('Download update error:', error);
-    return { success: false, error: error.message };
+    return {
+      success: false,
+      error: error.message,
+      fallbackUrl: 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest'
+    };
   }
 });
 
 ipcMain.handle('updater:install', async () => {
   try {
-    autoUpdater.quitAndInstall();
+    // Attempt standard quiet/interactive quitAndInstall
+    autoUpdater.quitAndInstall(false, true);
     return { success: true };
   } catch (error) {
     console.error('Install update error:', error);
+    return {
+      success: false,
+      error: error.message,
+      fallbackUrl: 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest'
+    };
+  }
+});
+
+ipcMain.handle('updater:open-releases', async (event, { url } = {}) => {
+  try {
+    const targetUrl = url || 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
+    await shell.openExternal(targetUrl);
+    return { success: true };
+  } catch (error) {
     return { success: false, error: error.message };
   }
 });

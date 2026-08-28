@@ -1,6 +1,6 @@
 {
   "name": "aldaffa-app-desktop",
-  "version": "2.3.24",
+  "version": "2.3.25",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/rdluffy-v/aldaffa-erp-system.git"
@@ -70,14 +70,6 @@
     "directories": {
       "buildResources": "build",
       "output": "release"
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "rdluffy-v",
-        "repo": "aldaffa-erp-system",
-        "private": true
-      }
-    ]
+    }
   }
 }
