@@ -106,6 +106,7 @@ const BarcodeStudioModule = () => {
   });
   const [selectedPrinter, setSelectedPrinter] = useState('');
   const [checkingHardware, setCheckingHardware] = useState(false);
+  const [calibrating, setCalibrating] = useState(false);
   const [printing, setPrinting] = useState(false);
 
   // Load Products & Hardware on mount + listen for global data refresh
@@ -142,6 +143,33 @@ const BarcodeStudioModule = () => {
       setCheckingHardware(false);
     }
   }, [selectedPrinter]);
+
+  // Automatic Gap Sensor Calibration for Xprinter XP-365B
+  const handleAutoCalibrateSensor = async () => {
+    setCalibrating(true);
+    try {
+      if (typeof window !== 'undefined' && window.require) {
+        const { ipcRenderer } = window.require('electron');
+        const [w, h] = selectedSize.split('x').map(Number);
+        const res = await ipcRenderer.invoke('printer:calibrate-sensor', {
+          printerName: selectedPrinter || undefined,
+          widthMm: w || 50,
+          heightMm: h || 30
+        });
+        if (res && res.success) {
+          showSuccess(res.message || '✅ تمت معايرة حساس الفواصل بنجاح');
+        } else {
+          showError(res?.error || 'فشلت المعايرة: يرجى التأكد من تشغيل الطابعة وتوصيل كابل USB');
+        }
+      } else {
+        showError('معايرة الحساس متاحة فقط في تطبيق سطح المكتب');
+      }
+    } catch (e) {
+      showError('خطأ أثناء المعايرة: ' + e.message);
+    } finally {
+      setCalibrating(false);
+    }
+  };
 
   const loadRecentPurchases = async () => {
     setLoadingPurchases(true);
@@ -635,20 +663,57 @@ const BarcodeStudioModule = () => {
             </span>
           </div>
 
-          {/* Connected Printer Status */}
-          {hardwareInfo.systemPrinters && hardwareInfo.systemPrinters.length > 0 ? (
-            <div className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="truncate max-w-[160px]" title={selectedPrinter || hardwareInfo.systemPrinters[0]?.name}>
-                {selectedPrinter || hardwareInfo.systemPrinters[0]?.name}
-              </span>
-            </div>
-          ) : (
-            <div className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5">
-              <Usb className="w-3.5 h-3.5" />
-              <span>طابعة النظام الافتراضية</span>
-            </div>
-          )}
+          {/* Connected Printer Genuine Hardware Status */}
+          {(() => {
+            const activePrinterObj = (hardwareInfo.systemPrinters || []).find((p) => p.name === selectedPrinter) || hardwareInfo.primaryPrinter;
+            const isOnline = !!activePrinterObj?.isOnline || (hardwareInfo.lpDevices && hardwareInfo.lpDevices.length > 0);
+
+            if (activePrinterObj) {
+              return isOnline ? (
+                <div
+                  className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                  title={`الطابعة متصلة وجاهزة للطباعة (${activePrinterObj.name})`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span className="truncate max-w-[160px]">
+                    {activePrinterObj.name} (متصلة)
+                  </span>
+                </div>
+              ) : (
+                <div
+                  className="px-3 py-1.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-700 dark:text-red-400 text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                  title={activePrinterObj.statusReason || 'الكيبل مفصول أو الطابعة مغلقة'}
+                >
+                  <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                  <span className="truncate max-w-[160px]">
+                    {activePrinterObj.name} (غير متصلة)
+                  </span>
+                </div>
+              );
+            }
+
+            return (
+              <div
+                className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5"
+                title="لم يتم العثور على طابعة مثبتة"
+              >
+                <Usb className="w-3.5 h-3.5" />
+                <span>لا توجد طابعة محددة</span>
+              </div>
+            );
+          })()}
+
+          {/* Auto-Calibrate Gap Sensor Button */}
+          <button
+            type="button"
+            onClick={handleAutoCalibrateSensor}
+            disabled={calibrating || checkingHardware}
+            className="btn-atelier-secondary py-1.5 px-2.5 text-xs font-bold flex items-center gap-1 cursor-pointer text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
+            title="معايرة حساس الفواصل التلقائية (Auto-Gap Calibration)"
+          >
+            <Sliders className={`w-3.5 h-3.5 ${calibrating ? 'animate-spin' : ''}`} />
+            <span>معايرة الحساس</span>
+          </button>
 
           <button
             type="button"

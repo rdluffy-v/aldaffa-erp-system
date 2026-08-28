@@ -2401,7 +2401,7 @@ ipcMain.handle('export:financial-pdf', async (event, payload = {}) => {
   }
 });
 
-// Hardware & USB Printer/Scanner Discovery Handler
+// Hardware & USB Printer/Scanner Discovery Handler (Real Hardware Status Polling)
 ipcMain.handle('hardware:get-devices', async () => {
   const result = {
     systemPrinters: [],
@@ -2410,19 +2410,12 @@ ipcMain.handle('hardware:get-devices', async () => {
     rawUsbDevices: [],
     lpDevices: [],
     cupsRunning: false,
-    platform: process.platform
+    platform: process.platform,
+    isOnline: false,
+    primaryPrinter: null
   };
 
-  // 1. Query OS System Printers (via Electron)
-  try {
-    if (mainWindow && mainWindow.webContents) {
-      result.systemPrinters = await mainWindow.webContents.getPrintersAsync();
-    }
-  } catch (e) {
-    console.warn('getPrintersAsync error:', e.message);
-  }
-
-  // 2. Query Linux /dev/usb/lp devices
+  // 1. Query Linux /dev/usb/lp devices
   if (process.platform === 'linux') {
     try {
       if (fs.existsSync('/dev/usb')) {
@@ -2431,7 +2424,7 @@ ipcMain.handle('hardware:get-devices', async () => {
       }
     } catch (e) {}
 
-    // 3. Query CUPS status
+    // 2. Query CUPS service status
     try {
       const { execSync } = require('child_process');
       const cupsCheck = execSync('systemctl is-active cups 2>&1 || true', { encoding: 'utf8' }).trim();
@@ -2439,7 +2432,7 @@ ipcMain.handle('hardware:get-devices', async () => {
     } catch (e) {}
   }
 
-  // 4. Query USB Bus Devices (lsusb on Linux)
+  // 3. Query USB Bus Devices (lsusb on Linux)
   if (process.platform === 'linux') {
     try {
       const { execSync } = require('child_process');
@@ -2466,7 +2459,134 @@ ipcMain.handle('hardware:get-devices', async () => {
     } catch (e) {}
   }
 
+  // 4. Query CUPS lpstat printer detailed hardware states on Linux
+  let cupsPrinterStates = {};
+  if (process.platform === 'linux') {
+    try {
+      const { execSync } = require('child_process');
+      const lpstatOut = execSync('lpstat -p -d 2>&1 || true', { encoding: 'utf8' });
+      const printerBlocks = lpstatOut.split(/^printer /m);
+      for (const block of printerBlocks) {
+        if (!block.trim()) continue;
+        const firstLine = block.split('\n')[0] || '';
+        const pName = firstLine.split(' ')[0];
+        if (pName) {
+          const isUnplugged = /unplugged|turned off|disabled|offline/i.test(block);
+          const isIdle = /is idle|enabled/i.test(firstLine) && !isUnplugged;
+          cupsPrinterStates[pName] = {
+            raw: block.trim(),
+            isOnline: isIdle || (result.lpDevices.length > 0 && !isUnplugged),
+            isUnplugged
+          };
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 5. Query OS System Printers (via Electron) & Decorate with Live Status
+  try {
+    if (mainWindow && mainWindow.webContents) {
+      const rawPrinters = await mainWindow.webContents.getPrintersAsync();
+      result.systemPrinters = rawPrinters.map(p => {
+        let isOnline = false;
+        let statusReason = 'جاهزة للطباعة';
+
+        if (process.platform === 'linux') {
+          const cupsInfo = cupsPrinterStates[p.name];
+          if (cupsInfo) {
+            isOnline = cupsInfo.isOnline;
+            if (cupsInfo.isUnplugged) {
+              statusReason = 'الكيبل مفصول أو الطابعة مغلقة (Unplugged / Off)';
+            } else if (!isOnline) {
+              statusReason = 'الطابعة غير مفعلة (Disabled)';
+            }
+          } else {
+            // If /dev/usb/lp0 exists or status is 0
+            isOnline = result.lpDevices.length > 0 || p.status === 0;
+            if (!isOnline) statusReason = 'الطابعة غير متصلة';
+          }
+        } else {
+          // Windows / macOS: status 0 is IDLE/Ready
+          isOnline = p.status === 0;
+          if (!isOnline) statusReason = `حالة غير متصلة (${p.status})`;
+        }
+
+        return {
+          ...p,
+          isOnline,
+          statusReason,
+          hasDirectUsbNode: result.lpDevices.length > 0
+        };
+      });
+    }
+  } catch (e) {
+    console.warn('getPrintersAsync error:', e.message);
+  }
+
+  // Determine top-level primary printer status
+  if (result.systemPrinters.length > 0) {
+    const primary = result.systemPrinters.find(p => p.isDefault) || result.systemPrinters[0];
+    result.primaryPrinter = primary;
+    result.isOnline = !!primary.isOnline;
+  } else {
+    result.isOnline = result.lpDevices.length > 0;
+  }
+
   return { success: true, ...result };
+});
+
+// Hardware Sensor Auto-Calibration Handler (TSPL GAPDETECT for Xprinter XP-365B)
+ipcMain.handle('printer:calibrate-sensor', async (event, { printerName, widthMm = 50, heightMm = 30 } = {}) => {
+  try {
+    const calibrateCmd = Buffer.from(
+      `SIZE ${widthMm} mm, ${heightMm} mm\r\n` +
+      `GAP 2 mm, 0 mm\r\n` +
+      `OFFSET 0 mm\r\n` +
+      `REFERENCE 0,0\r\n` +
+      `DIRECTION 0,0\r\n` +
+      `SET PEEL OFF\r\n` +
+      `SET CUTTER OFF\r\n` +
+      `SET TEAR ON\r\n` +
+      `GAPDETECT\r\n` +
+      `FEED 1\r\n`
+    );
+
+    // 1. Direct write to USB device node if present
+    const usbDevices = ['/dev/usb/lp0', '/dev/usb/lp1', '/dev/usb/lp2'];
+    for (const devPath of usbDevices) {
+      if (fs.existsSync(devPath)) {
+        try {
+          fs.writeFileSync(devPath, calibrateCmd);
+          return { success: true, message: `✅ تم إرسال أمر معايرة حساس الفواصل (Auto-Gap) بنجاح عبر ${devPath}` };
+        } catch (e) {
+          console.warn(`Direct write to ${devPath} failed:`, e.message);
+        }
+      }
+    }
+
+    // 2. Pipe raw TSPL to CUPS printer queue
+    if (printerName && process.platform === 'linux') {
+      const tempPath = path.join(os.tmpdir(), `aldaffa_calib_${Date.now()}.bin`);
+      fs.writeFileSync(tempPath, calibrateCmd);
+      const lpCmd = `lp -d "${printerName}" -o raw "${tempPath}"`;
+      const { exec } = require('child_process');
+      await new Promise((resolve) => {
+        exec(lpCmd, (error) => {
+          try { fs.unlinkSync(tempPath); } catch (e) {}
+          resolve();
+        });
+      });
+      return { success: true, message: `✅ تم إرسال أمر معايرة الحساس (Auto-Gap) إلى الطابعة (${printerName})` };
+    }
+
+    return {
+      success: false,
+      error: 'لم يتم العثور على منفذ طابعة حرارية نشط للمعايرة. يرجى التأكد من توصيل كابل USB بالطابعة وتشغيلها.'
+    };
+  } catch (err) {
+    console.error('printer:calibrate-sensor error:', err);
+    return { success: false, error: err.message };
+  }
 });
 
 /**
@@ -2539,6 +2659,7 @@ async function renderHtmlToTsplCommand(htmlString, widthMm = 50, heightMm = 30, 
       `REFERENCE 0,0\r\n` +
       `OFFSET 0 mm\r\n` +
       `SET PEEL OFF\r\n` +
+      `SET CUTTER OFF\r\n` +
       `SET TEAR ON\r\n` +
       `CLS\r\n` +
       `BITMAP 0,0,${bytesPerRow},${h},0,`
