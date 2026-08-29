@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useInventoryStore } from '../stores/useInventoryStore.js';
 import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { useUIStore } from '../stores/useUIStore.js';

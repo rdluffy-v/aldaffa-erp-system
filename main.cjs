@@ -559,6 +559,33 @@ ipcMain.handle('system:purge-cache', async () => {
 });
 
 // Data Archiving & Migration Engine
+ipcMain.handle('archive:create', async (event, { name } = {}) => {
+  try {
+    const archivesDir = path.join(app.getPath('userData'), 'archives');
+    await fs.promises.mkdir(archivesDir, { recursive: true });
+    const timestamp = Date.now();
+    const archiveFile = path.join(archivesDir, `aldaffa_backup_${timestamp}.json`);
+    
+    // Quick full tables snapshot
+    const tables = ['products', 'categories', 'sales', 'sale_items', 'purchases', 'purchase_items', 'debtors', 'losses', 'withdrawals', 'capital_injections', 'gifts', 'notes', 'discounts', 'settings'];
+    const snapshot = { createdAt: new Date().toISOString(), name: name || 'نسخة احتياطية يدوية', data: {} };
+    
+    for (const table of tables) {
+      try {
+        snapshot.data[table] = db.prepare(`SELECT * FROM ${table}`).all();
+      } catch (e) {
+        snapshot.data[table] = [];
+      }
+    }
+    
+    await fs.promises.writeFile(archiveFile, JSON.stringify(snapshot, null, 2));
+    return { success: true, filePath: archiveFile };
+  } catch (err) {
+    console.error('archive:create error:', err);
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('archive:export', async (event, { cutoffYear, cutoffDate: customCutoff }) => {
   try {
     const cutoffDate = customCutoff || (cutoffYear ? `${cutoffYear}-01-01` : '2024-01-01');
