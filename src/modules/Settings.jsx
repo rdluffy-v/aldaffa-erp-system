@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Printer,
   FileText,
+  Camera,
   Type,
   Database,
   Sparkles,
@@ -51,7 +52,12 @@ import {
   DollarSign,
   Coins,
   Percent,
-  Plus
+  Plus,
+  Cloud,
+  Radio,
+  Zap,
+  Activity,
+  Server
 } from 'lucide-react';
 import { BarcodeSVG } from '../utils/barcodeGenerator.jsx';
 
@@ -645,6 +651,18 @@ const SettingsModule = () => {
   const [checkingHardware, setCheckingHardware] = useState(false);
   const [showCupsInstallGuide, setShowCupsInstallGuide] = useState(false);
 
+  // Mobile Companion State
+  const [mobileInfo, setMobileInfo] = useState({
+    isRunning: true,
+    port: 4848,
+    localIp: '192.168.110.240',
+    pairingToken: '',
+    mobileUrl: 'http://192.168.110.240:4848/mobile'
+  });
+  const [mobilePortInput, setMobilePortInput] = useState(4848);
+  const [cloudflareUrl, setCloudflareUrl] = useState('');
+  const [cloudflareKey, setCloudflareKey] = useState('');
+
   // Safe IPC invoke helper
   const invokeIpc = useCallback(async (channel, payload) => {
     try {
@@ -710,12 +728,99 @@ const SettingsModule = () => {
       loadArchives();
       checkSandbox();
       handleScanHardware();
+      loadMobileInfo();
     } catch (error) {
       showError('خطأ أثناء تحميل الإعدادات: ' + error.message);
     } finally {
       setLoading(false);
     }
   }, [showError, invokeIpc]);
+
+  // Mobile Companion & Cloud Telemetry State
+  const [mobileTelemetry, setMobileTelemetry] = useState({
+    inventoryCount: 0,
+    salesCount: 0,
+    debtorsCount: 0,
+    lastCloudSync: null,
+    dbStatus: 'WAL_ACTIVE'
+  });
+  const [syncingCloud, setSyncingCloud] = useState(false);
+
+  const loadMobileInfo = useCallback(async () => {
+    try {
+      const res = await invokeIpc('mobile:get-info');
+      if (res && res.success && res.info) {
+        setMobileInfo(res.info);
+        if (res.info.port) setMobilePortInput(res.info.port);
+      }
+      const telemRes = await invokeIpc('mobile:get-telemetry');
+      if (telemRes && telemRes.success && telemRes.telemetry) {
+        setMobileTelemetry(telemRes.telemetry);
+        if (telemRes.telemetry.cloudUrl && !cloudflareUrl) {
+          setCloudflareUrl(telemRes.telemetry.cloudUrl);
+        }
+      }
+    } catch (e) {
+      console.warn('loadMobileInfo error:', e);
+    }
+  }, [invokeIpc, cloudflareUrl]);
+
+  const handleRegenerateMobileToken = async () => {
+    try {
+      const res = await invokeIpc('mobile:regenerate-token');
+      if (res && res.success && res.info) {
+        setMobileInfo(res.info);
+        showSuccess('تم تجديد رمز الاقتران الأمني بنجاح (صالح لمدة 10 دقائق)');
+      }
+    } catch (e) {
+      showError('خطأ أثناء تجديد الرمز: ' + e.message);
+    }
+  };
+
+  const handleRestartMobileServer = async () => {
+    try {
+      const res = await invokeIpc('mobile:restart-server', { port: Number(mobilePortInput) || 4848 });
+      if (res && res.success && res.info) {
+        setMobileInfo(res.info);
+        showSuccess(`تم تشغيل خادم المساعد المحمول بنجاح على المنفذ ${res.info.port}`);
+      }
+    } catch (e) {
+      showError('خطأ أثناء تشغيل الخادم: ' + e.message);
+    }
+  };
+
+  const handleSaveCloudConfig = async () => {
+    try {
+      const res = await invokeIpc('mobile:save-cloud-config', {
+        cloudflareUrl,
+        cloudflareToken: cloudflareKey
+      });
+      if (res && res.success) {
+        showSuccess('تم حفظ إعدادات المزامنة السحابية بنجاح');
+      } else {
+        showError('فشل حفظ الإعدادات: ' + (res?.error || 'خطأ غير معروف'));
+      }
+    } catch (e) {
+      showError('خطأ في الاتصال: ' + e.message);
+    }
+  };
+
+  const handleTriggerCloudSync = async () => {
+    setSyncingCloud(true);
+    try {
+      const res = await invokeIpc('mobile:trigger-cloud-sync');
+      if (res && res.success) {
+        showSuccess(`تمت المزامنة السحابية بنجاح (${res.syncedProducts} منتج، ${res.syncedSales} فاتورة)`);
+        loadMobileInfo();
+      } else {
+        showError('فشلت المزامنة: ' + (res?.error || 'خطأ في الاتصال'));
+      }
+    } catch (e) {
+      showError('خطأ أثناء المزامنة: ' + e.message);
+    } finally {
+      setSyncingCloud(false);
+    }
+  };
 
   const handleScanHardware = useCallback(async () => {
     setCheckingHardware(true);
@@ -1145,8 +1250,9 @@ const SettingsModule = () => {
   const TABS = [
     { id: 'guide', label: '📘 كيف تعمل المنظومة؟ (دليل دورة الحياة)', icon: BookOpen },
     { id: 'general', label: 'الإعدادات العامة والمالية', icon: Sliders },
-    { id: 'users', label: 'المستخدمين والصلاحيات', icon: Shield },
+    { id: 'users', label: 'المستخدمين والصلاحيات', icon: ShieldCheck },
     { id: 'print', label: 'استوديو وقوالب الطباعة', icon: Printer },
+    { id: 'mobile_sync', label: '📱 تطبيق الجوال والمزامنة', icon: Smartphone },
     { id: 'labels', label: 'التعديل الحر للمسميات', icon: Type },
     { id: 'archive', label: 'الترحيل وصيانة المنظومة', icon: Database },
     { id: 'ai_updates', label: 'المستشار الذكي والتحديثات', icon: Sparkles }
@@ -2354,6 +2460,274 @@ const SettingsModule = () => {
                           {printSettings.receiptGreeting}
                         </div>
                       )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB: MOBILE COMPANION & CLOUDFLARE SYNC */}
+          {/* ========================================================================= */}
+          {activeTab === 'mobile_sync' && (
+            <motion.div
+              key="mobile-sync-tab"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-6"
+            >
+              {/* QR Code & Pairing (5 Cols) */}
+              <div className="lg:col-span-5 flex flex-col gap-4">
+                <div className="glass-card p-5 text-center space-y-4">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                    <h3 className="text-xs font-bold text-[#fbbf24] flex items-center gap-1.5">
+                      <Smartphone className="w-4 h-4" />
+                      الاقتران السريع برمز QR
+                    </h3>
+                    <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      خادم الجسر نشط
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-[#adbac7] text-right leading-relaxed">
+                    امسح رمز الاستجابة السريعة (QR Code) بكاميرا هاتفك المحمول (iOS أو Android) للاقتران الفوري بنقطة البيع والجرد المخزني عبر السحابة والشبكة المحلية:
+                  </p>
+
+                  {/* QR Code Frame */}
+                  <div className="p-4 bg-white rounded-2xl inline-block shadow-2xl mx-auto border-4 border-[#fbbf24]/40 gold-glow">
+                    {(() => {
+                      const qrPayload = JSON.stringify({
+                        storeId: 'aldaffa_store_main',
+                        storeName: printSettings.storeName || 'الدفة للعطور',
+                        token: mobileInfo.pairingToken || 'pair_aldaffa',
+                        lanUrl: `http://${mobileInfo.localIp}:${mobileInfo.port}/mobile`,
+                        cloudUrl: cloudflareUrl || 'https://sync.aldaffa.com',
+                        expiresAt: Date.now() + 600000
+                      });
+                      return (
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrPayload)}`}
+                          alt="Mobile Pairing QR"
+                          className="w-48 h-48 object-contain rounded-lg"
+                        />
+                      );
+                    })()}
+                  </div>
+
+                  {/* Direct Link & Actions */}
+                  <div className="space-y-2 pt-2">
+                    <div className="p-2.5 bg-[#0d1117] border border-white/10 rounded-xl flex items-center justify-between gap-2 text-xs font-mono text-[#768390] text-left" dir="ltr">
+                      <span className="truncate flex-1">{mobileInfo.mobileUrl}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(mobileInfo.mobileUrl);
+                          showSuccess('تم نسخ رابط تطبيق الجوال إلى الحافظة');
+                        }}
+                        className="px-2.5 py-1 rounded bg-[#161b22] text-[#fbbf24] hover:bg-[#fbbf24]/10 text-[11px] font-bold shrink-0"
+                      >
+                        نسخ
+                      </button>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => invokeIpc('system:open-external', { url: mobileInfo.mobileUrl })}
+                        className="flex-1 btn-secondary text-xs flex items-center justify-center gap-1.5"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-[#fbbf24]" />
+                        فتح في المتصفح
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleRegenerateMobileToken}
+                        className="btn-secondary text-xs flex items-center justify-center gap-1.5 text-[#adbac7] hover:text-[#fbbf24]"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        تجديد الرمز
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Local Server Settings */}
+                <div className="glass-card p-5 space-y-4">
+                  <h3 className="text-xs font-bold text-[#e6edf3] flex items-center gap-2 border-b border-white/10 pb-2.5">
+                    <Server className="w-4 h-4 text-[#fbbf24]" />
+                    إعدادات خادم الجسر المحلي (LAN Bridge)
+                  </h3>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#adbac7] mb-1.5">عنوان IP المحلي للمنظومة:</label>
+                      <input
+                        type="text"
+                        disabled
+                        value={mobileInfo.localIp}
+                        className="w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2 text-xs text-[#768390] font-mono"
+                        dir="ltr"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#adbac7] mb-1.5">منفذ الخادم (Port):</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          value={mobilePortInput}
+                          onChange={(e) => setMobilePortInput(e.target.value)}
+                          className="flex-1 bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-xs text-[#e6edf3] font-mono focus:border-[#fbbf24] focus:outline-none"
+                          dir="ltr"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleRestartMobileServer}
+                          className="btn-secondary text-xs px-3"
+                        >
+                          تطبيق
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cloudflare Sync & Telemetry (7 Cols) */}
+              <div className="lg:col-span-7 flex flex-col gap-4">
+                {/* Cloudflare Hybrid Sync Configuration */}
+                <div className="glass-card p-5 space-y-4">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                    <h3 className="text-xs font-bold text-[#e6edf3] flex items-center gap-2">
+                      <Cloud className="w-4 h-4 text-[#38bdf8]" />
+                      محرك المزامنة السحابية (Cloudflare Hybrid Sync)
+                    </h3>
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#38bdf8]/10 text-[#38bdf8] text-[10px] font-bold">
+                      <Radio className="w-3 h-3 animate-pulse" />
+                      D1 + KV Active
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#adbac7] mb-1.5">رابط خادم المزامنة (Cloudflare Worker URL):</label>
+                      <input
+                        type="text"
+                        placeholder="https://sync.aldaffa.com"
+                        value={cloudflareUrl}
+                        onChange={(e) => setCloudflareUrl(e.target.value)}
+                        className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-xs text-[#e6edf3] font-mono focus:border-[#38bdf8] focus:outline-none"
+                        dir="ltr"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#adbac7] mb-1.5">مفتاح المصادقة السحابية (API Secret):</label>
+                      <input
+                        type="password"
+                        placeholder="••••••••••••••••"
+                        value={cloudflareKey}
+                        onChange={(e) => setCloudflareKey(e.target.value)}
+                        className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-xs text-[#e6edf3] font-mono focus:border-[#38bdf8] focus:outline-none"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
+                    <button
+                      type="button"
+                      onClick={handleSaveCloudConfig}
+                      className="btn-primary text-xs flex items-center gap-1.5"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      حفظ إعدادات المزامنة
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={syncingCloud}
+                      onClick={handleTriggerCloudSync}
+                      className="btn-secondary text-xs flex items-center gap-1.5 text-[#38bdf8] hover:border-[#38bdf8]/50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${syncingCloud ? 'animate-spin' : ''}`} />
+                      {syncingCloud ? 'جاري المزامنة...' : 'مزامنة سحابية فورية الآن'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Real-time Telemetry & Health Monitor */}
+                <div className="glass-card p-5 space-y-3.5">
+                  <h3 className="text-xs font-bold text-[#e6edf3] flex items-center gap-2 border-b border-white/10 pb-2.5">
+                    <Activity className="w-4 h-4 text-emerald-400" />
+                    المؤشرات اللحظية وصحة المزامنة (Sync Telemetry)
+                  </h3>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                    <div className="p-3 bg-[#161b22] border border-white/5 rounded-xl">
+                      <div className="text-[10px] text-[#768390] mb-1">المنتجات بالمخزون</div>
+                      <div className="text-sm font-bold text-[#e6edf3] font-mono">{mobileTelemetry.inventoryCount || 0}</div>
+                    </div>
+                    <div className="p-3 bg-[#161b22] border border-white/5 rounded-xl">
+                      <div className="text-[10px] text-[#768390] mb-1">إجمالي الفواتير</div>
+                      <div className="text-sm font-bold text-[#fbbf24] font-mono">{mobileTelemetry.salesCount || 0}</div>
+                    </div>
+                    <div className="p-3 bg-[#161b22] border border-white/5 rounded-xl">
+                      <div className="text-[10px] text-[#768390] mb-1">حالة قاعدة البيانات</div>
+                      <div className="text-xs font-bold text-emerald-400 font-mono">SQLite WAL</div>
+                    </div>
+                    <div className="p-3 bg-[#161b22] border border-white/5 rounded-xl">
+                      <div className="text-[10px] text-[#768390] mb-1">آخر مزامنة</div>
+                      <div className="text-[10px] font-bold text-[#38bdf8] font-mono">
+                        {mobileTelemetry.lastCloudSync ? formatDate(mobileTelemetry.lastCloudSync) : 'جاهز للربط'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Companion Capabilities */}
+                <div className="glass-card p-5 space-y-3.5">
+                  <h3 className="text-xs font-bold text-[#e6edf3] flex items-center gap-2 border-b border-white/10 pb-2.5">
+                    <Sparkles className="w-4 h-4 text-[#fbbf24]" />
+                    قدرات ومميزات المساعد المحمول (Mobile Companion)
+                  </h3>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="p-3 bg-[#161b22] border border-white/5 rounded-xl space-y-1">
+                      <div className="text-xs font-bold text-[#fbbf24] flex items-center gap-1.5">
+                        <ShoppingCart className="w-3.5 h-3.5" />
+                        نقطة بيع جوالة سريعة
+                      </div>
+                      <p className="text-[11px] text-[#768390]">إنشاء فواتير نقدية وآجلة وبطاقة فورية من أي مكان داخل المتجر مع خصم المخزون آنياً.</p>
+                    </div>
+
+                    <div className="p-3 bg-[#161b22] border border-white/5 rounded-xl space-y-1">
+                      <div className="text-xs font-bold text-[#38bdf8] flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5" />
+                        جرد الباركود بالكاميرا
+                      </div>
+                      <p className="text-[11px] text-[#768390]">مسح مستمر للباركود مع تنبيه صوتي وهزاز وتدقيق وتعديل كميات الأصناف مباشرة.</p>
+                    </div>
+
+                    <div className="p-3 bg-[#161b22] border border-white/5 rounded-xl space-y-1">
+                      <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        لوحة متابعة إدارية
+                      </div>
+                      <p className="text-[11px] text-[#768390]">مراقبة حية للمبيعات، نقدية الصندوق، وعدد الفواتير المنفذة على مدار اليوم.</p>
+                    </div>
+
+                    <div className="p-3 bg-[#161b22] border border-white/5 rounded-xl space-y-1">
+                      <div className="text-xs font-bold text-purple-400 flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        تأمين الدخول بالـ PIN
+                      </div>
+                      <p className="text-[11px] text-[#768390]">تسجيل دخول آمن للموظفين مع حجب الأرباح والبيانات المالية عن الكاشير تلقائياً.</p>
                     </div>
                   </div>
                 </div>
