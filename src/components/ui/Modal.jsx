@@ -12,7 +12,8 @@ import { X } from 'lucide-react';
  * during user keystrokes in form inputs.
  */
 const Modal = ({
-  open = false,
+  open,
+  isOpen,
   onClose,
   title,
   children,
@@ -23,6 +24,7 @@ const Modal = ({
   showCloseButton = true,
   className = ''
 }) => {
+  const isVisible = open !== undefined ? Boolean(open) : (isOpen !== undefined ? Boolean(isOpen) : false);
   const panelRef = useRef(null);
   const previousFocusRef = useRef(null);
   const onCloseRef = useRef(onClose);
@@ -38,7 +40,7 @@ const Modal = ({
 
   // ESC key listener & body scroll lock (only toggles on open boolean change)
   useEffect(() => {
-    if (!open) return undefined;
+    if (!isVisible) return undefined;
 
     previousFocusRef.current = document.activeElement;
 
@@ -68,7 +70,7 @@ const Modal = ({
         previousFocusRef.current.focus();
       }
     };
-  }, [open, closeOnEsc, handleClose]);
+  }, [isVisible, closeOnEsc, handleClose]);
 
   const handleBackdropClick = (e) => {
     if (closeOnBackdrop && e.target === e.currentTarget) {
@@ -87,7 +89,7 @@ const Modal = ({
 
   return ReactDOM.createPortal(
     <AnimatePresence>
-      {open && (
+      {isVisible && (
         <motion.div
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
           initial={{ opacity: 0 }}
