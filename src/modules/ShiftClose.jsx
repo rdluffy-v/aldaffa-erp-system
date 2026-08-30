@@ -15,6 +15,7 @@ import { NotesRepository } from '../database/repositories/NotesRepository.js';
 import { BaseRepository } from '../database/repositories/BaseRepository.js';
 import { db } from '../database/connection.js';
 import { useUIStore } from '../stores/useUIStore.js';
+import { useAuthStore } from '../stores/useAuthStore.js';
 import { formatCurrency, formatDate, generateId, safeParseFloat } from '../utils/helpers.js';
 import ConfirmModal from '../components/shared/ConfirmModal.jsx';
 import {
