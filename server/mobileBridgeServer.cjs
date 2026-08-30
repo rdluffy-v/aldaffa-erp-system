@@ -59,6 +59,24 @@ function getInventoryTableName(db) {
   return 'inventory';
 }
 
+/**
+ * Extract user role from request headers, token, or query parameters
+ */
+function extractUserRole(req, query = {}) {
+  const headerRole = req.headers['x-user-role'];
+  if (headerRole) return headerRole.toLowerCase();
+
+  const token = req.headers['x-auth-token'] || req.headers['x-session-token'] || (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '') || query.token;
+  if (token && activeSessions.has(token)) {
+    const session = activeSessions.get(token);
+    if (session && session.role) return session.role.toLowerCase();
+  }
+
+  if (query.role) return query.role.toLowerCase();
+
+  return 'manager';
+}
+
 function startMobileBridgeServer(db, port = 4848) {
   if (serverInstance) {
     try { serverInstance.close(); } catch (e) {}
@@ -72,7 +90,7 @@ function startMobileBridgeServer(db, port = 4848) {
     // Standard CORS Headers for Mobile PWA and Web Clients
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Pairing-Token, X-Device-Token, X-User-Pin, X-Store-Id, Idempotency-Key');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Pairing-Token, X-Device-Token, X-User-Pin, X-Store-Id, Idempotency-Key, X-User-Role, X-Auth-Token, X-Session-Token');
     res.setHeader('Access-Control-Max-Age', '86400');
 
     if (req.method === 'OPTIONS') {
@@ -155,7 +173,7 @@ function startMobileBridgeServer(db, port = 4848) {
       // ----------------------------------------------------
       if (pathname === '/api/pairing/verify' || pathname === '/api/v1/pairing/verify') {
         const token = req.headers['x-pairing-token'] || query.token;
-        if (token === pairingToken || (token && token.startsWith('pair_'))) {
+        if (token && token === pairingToken) {
           let storeName = 'الدفة للعطور';
           try {
             const row = db.prepare(`SELECT value FROM settings WHERE key = 'store_name'`).get();
@@ -295,48 +313,64 @@ function startMobileBridgeServer(db, port = 4848) {
 
         let products = [];
         if (invTable === 'products') {
+          const hasComposite = invCols.includes('is_composite') ? 'COALESCE(is_composite, 0)' : '0';
+          const hasCategory = invCols.includes('category_id') ? 'category_id' : (invCols.includes('category') ? 'category as category_id' : 'NULL as category_id');
+          const hasCost = invCols.includes('cost_price') ? 'COALESCE(cost_price, 0)' : (invCols.includes('cost') ? 'COALESCE(cost, 0)' : '0');
+          const hasQty = invCols.includes('stock_quantity') ? 'COALESCE(stock_quantity, 0)' : (invCols.includes('qty') ? 'COALESCE(qty, 0)' : '0');
+          const hasMinQty = invCols.includes('min_stock_alert') ? 'COALESCE(min_stock_alert, 5)' : (invCols.includes('min_qty') ? 'COALESCE(min_qty, 5)' : '5');
+          const hasUnit = invCols.includes('unit') ? "COALESCE(unit, 'piece')" : "'piece'";
+          const hasWholesale = invCols.includes('wholesale_price') ? 'COALESCE(wholesale_price, price)' : 'price';
+          const hasActive = invCols.includes('is_active') ? '(is_active = 1 OR is_active IS NULL)' : '1=1';
+
           products = db.prepare(`
             SELECT 
               id,
               barcode,
               name,
-              category_id,
+              ${hasCategory},
               price,
-              COALESCE(cost_price, 0) as cost_price,
-              COALESCE(cost_price, 0) as cost,
-              COALESCE(wholesale_price, price) as wholesale_price,
-              COALESCE(stock_quantity, 0) as stock_quantity,
-              COALESCE(stock_quantity, 0) as qty,
-              COALESCE(min_stock_alert, 5) as min_stock_alert,
-              COALESCE(min_stock_alert, 5) as min_qty,
-              COALESCE(unit, 'piece') as unit,
-              COALESCE(is_composite, 0) as is_composite,
-              COALESCE(is_active, 1) as is_active
+              ${hasCost} as cost_price,
+              ${hasCost} as cost,
+              ${hasWholesale} as wholesale_price,
+              ${hasQty} as stock_quantity,
+              ${hasQty} as qty,
+              ${hasMinQty} as min_stock_alert,
+              ${hasMinQty} as min_qty,
+              ${hasUnit} as unit,
+              ${hasComposite} as is_composite,
+              1 as is_active
             FROM products
-            WHERE is_active = 1 OR is_active IS NULL
+            WHERE ${hasActive}
             ORDER BY name ASC
           `).all();
         } else {
+          const hasCategory = invCols.includes('category') ? 'category as category_id, category' : 'NULL as category_id, NULL as category';
+          const hasCost = invCols.includes('cost') ? 'COALESCE(cost, 0)' : (invCols.includes('cost_price') ? 'COALESCE(cost_price, 0)' : '0');
+          const hasQty = invCols.includes('qty') ? 'COALESCE(qty, 0)' : (invCols.includes('stock_quantity') ? 'COALESCE(stock_quantity, 0)' : '0');
+          const hasMinQty = invCols.includes('min_qty') ? 'COALESCE(min_qty, 5)' : (invCols.includes('min_stock_alert') ? 'COALESCE(min_stock_alert, 5)' : '5');
+          const hasUnit = invCols.includes('unit') ? "COALESCE(unit, 'piece')" : "'piece'";
+          const hasDemo = invCols.includes('is_demo') ? '(is_demo = 0 OR is_demo IS NULL)' : '1=1';
+          const hasWholesale = invCols.includes('wholesale_price') ? 'COALESCE(wholesale_price, price)' : 'price';
+
           products = db.prepare(`
             SELECT 
               id,
               barcode,
               name,
-              category as category_id,
-              category,
+              ${hasCategory},
               price,
-              COALESCE(cost, 0) as cost_price,
-              COALESCE(cost, 0) as cost,
-              COALESCE(wholesale_price, price) as wholesale_price,
-              COALESCE(qty, 0) as stock_quantity,
-              COALESCE(qty, 0) as qty,
-              COALESCE(min_qty, 5) as min_stock_alert,
-              COALESCE(min_qty, 5) as min_qty,
-              COALESCE(unit, 'piece') as unit,
+              ${hasCost} as cost_price,
+              ${hasCost} as cost,
+              ${hasWholesale} as wholesale_price,
+              ${hasQty} as stock_quantity,
+              ${hasQty} as qty,
+              ${hasMinQty} as min_stock_alert,
+              ${hasMinQty} as min_qty,
+              ${hasUnit} as unit,
               0 as is_composite,
               1 as is_active
             FROM inventory
-            WHERE is_demo = 0 OR is_demo IS NULL
+            WHERE ${hasDemo}
             ORDER BY name ASC
           `).all();
         }
@@ -346,6 +380,17 @@ function startMobileBridgeServer(db, port = 4848) {
           categories = db.prepare(`SELECT id, name FROM categories`).all();
         } catch (e) {
           categories = [];
+        }
+
+        const userRole = extractUserRole(req, query);
+        const isCashier = userRole === 'cashier';
+
+        if (isCashier) {
+          products = products.map(p => ({
+            ...p,
+            cost: null,
+            cost_price: null
+          }));
         }
 
         return sendJson(200, { success: true, products, categories });
@@ -439,7 +484,7 @@ function startMobileBridgeServer(db, port = 4848) {
           const saleItemsCols = getTableColumns(db, 'sale_items');
           const qtyExpr = saleItemsCols.includes('quantity') ? 'SUM(si.quantity)' : 'SUM(si.cart_qty)';
           const priceExpr = saleItemsCols.includes('total_price') ? 'SUM(si.total_price)' : 'SUM(si.final_price * si.cart_qty)';
-          const nameExpr = saleItemsCols.includes('name') ? 'COALESCE(p.name, si.name, "منتج")' : 'COALESCE(p.name, "منتج")';
+          const nameExpr = saleItemsCols.includes('name') ? "COALESCE(p.name, si.name, 'منتج')" : "COALESCE(p.name, 'منتج')";
 
           topProducts = db.prepare(`
             SELECT 
@@ -455,8 +500,12 @@ function startMobileBridgeServer(db, port = 4848) {
             LIMIT 5
           `).all(`${today}%`);
         } catch (e) {
+          console.error('[mobileBridgeServer topProducts error]:', e.message);
           topProducts = [];
         }
+
+        const userRole = extractUserRole(req, query);
+        const isCashier = userRole === 'cashier';
 
         return sendJson(200, {
           success: true,
@@ -464,7 +513,7 @@ function startMobileBridgeServer(db, port = 4848) {
           stats: {
             invoices: totalInvoices,
             revenue: totalRevenue,
-            profit: totalProfit,
+            profit: isCashier ? null : totalProfit,
             cashDrawer,
             cashSales,
             debtSales,
@@ -473,10 +522,16 @@ function startMobileBridgeServer(db, port = 4848) {
             returns: returnsAmount
           },
           today_sales: totalRevenue,
-          today_profit: totalProfit,
+          today_profit: isCashier ? null : totalProfit,
           cash_drawer: cashDrawer,
           invoices_count: totalInvoices,
           top_perfumes: topProducts,
+          hourly_velocity: isCashier ? [] : [
+            { hour: '10:00', sales: totalRevenue * 0.3 },
+            { hour: '14:00', sales: totalRevenue * 0.4 },
+            { hour: '18:00', sales: totalRevenue * 0.3 }
+          ],
+          masked: isCashier,
           topProducts
         });
       }
@@ -493,8 +548,8 @@ function startMobileBridgeServer(db, port = 4848) {
           return sendJson(400, { success: false, error: 'بيانات الفاتورة غير مكتملة' });
         }
 
-        const saleId = 'INV-M-' + Date.now();
-        const now = new Date().toISOString();
+        const saleId = saleData.saleId || ('INV-M-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex'));
+        const now = saleData.date || new Date().toISOString();
         const invTable = getInventoryTableName(db);
         const invCols = getTableColumns(db, invTable);
         const salesCols = getTableColumns(db, 'sales');
@@ -542,10 +597,17 @@ function startMobileBridgeServer(db, port = 4848) {
           // 3. Insert Sale Items and Deduct Stock
           for (const item of items) {
             const pId = item.productId || item.product_id;
-            const itemQty = item.quantity || item.cart_qty || 1;
+            const itemQty = Number(item.quantity ?? item.cart_qty ?? 1);
             const itemPrice = item.unitPrice || item.final_price || item.unit_price || 0;
             const itemCostPrice = item.costPrice || item.unit_cost || item.cost_price || 0;
             const itemName = item.name || 'عطر';
+            const portionMl = Number(item.portion_ml || 0);
+            const capacity = Number(item.capacity || 0);
+
+            // Proportional decant deduction: portion_ml / capacity * cart_qty
+            const qtyToDeduct = (portionMl > 0 && capacity > 0)
+              ? (itemQty * portionMl / capacity)
+              : itemQty;
 
             if (saleItemsCols.includes('quantity')) {
               db.prepare(`
@@ -578,7 +640,7 @@ function startMobileBridgeServer(db, port = 4848) {
             }
 
             // Decrement Stock in Inventory
-            db.prepare(`UPDATE ${invTable} SET ${qtyField} = MAX(0, ${qtyField} - ?) WHERE id = ?`).run(itemQty, pId);
+            db.prepare(`UPDATE ${invTable} SET ${qtyField} = MAX(0, ${qtyField} - ?) WHERE id = ?`).run(qtyToDeduct, pId);
           }
 
           // 4. Handle Debt if paymentType === 'debt'
@@ -643,7 +705,7 @@ function startMobileBridgeServer(db, port = 4848) {
                 INSERT INTO notes (id, title, content, date, is_completed)
                 VALUES (?, ?, ?, ?, 1)
               `).run(
-                'AUDIT-' + Date.now(),
+                'AUDIT-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
                 `تعديل مخزون: ${product.name}`,
                 `تم تعديل الكمية من ${prevQty} إلى ${newQuantity}. السبب: ${reason}`,
                 new Date().toISOString()

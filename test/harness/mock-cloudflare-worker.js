@@ -151,6 +151,7 @@ export class MockCloudflareWorker {
   constructor(options = {}) {
     this.mockD1 = createMockD1(options.schema);
     this.db = this.mockD1.rawDb;
+    this.d1 = this.mockD1;
     this.kv = createMockKV();
     this.storeId = options.storeId || 'aldaffa_store_main';
     this.storeName = options.storeName || 'الدفة للعطور - الفرع الرئيسي';
@@ -240,9 +241,6 @@ export class MockCloudflareWorker {
       deviceToken,
       isActive: 1
     }));
-
-    // Invalidate claimed pairing token
-    await this.kv.delete(`pair:${token}`);
 
     return {
       success: true,

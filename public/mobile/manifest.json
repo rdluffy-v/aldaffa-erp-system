@@ -1,21 +1,28 @@
 {
   "name": "الدفة للعطور - المساعد المحمول",
   "short_name": "الدفة موبايل",
-  "start_url": "/mobile",
+  "description": "تطبيق الدفة للعطور لنقاط البيع والجرد والمؤشرات التنفيذية للمحمول",
+  "start_url": "/mobile/",
+  "scope": "/mobile/",
   "display": "standalone",
-  "background_color": "#0a0d12",
-  "theme_color": "#fbbf24",
+  "background_color": "#070b14",
+  "theme_color": "#070b14",
   "orientation": "portrait",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": ["business", "productivity", "shopping"],
   "icons": [
     {
       "src": "/vite.svg",
       "sizes": "192x192",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     },
     {
       "src": "/vite.svg",
       "sizes": "512x512",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }

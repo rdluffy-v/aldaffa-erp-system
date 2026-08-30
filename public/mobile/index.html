@@ -5,25 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>الدفة للعطور - المساعد المحمول</title>
   <link rel="manifest" href="/mobile/manifest.json">
-  <meta name="theme-color" content="#0a0d12">
+  <meta name="theme-color" content="#070b14">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="الدفة موبايل">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="/mobile/style.css">
 </head>
-<body class="bg-[#0a0d12] text-[#e6edf3]">
+<body class="bg-[#070b14] text-[#f0f6fc]">
 
   <!-- Top Glass Header -->
-  <header class="glass-header sticky top-0 z-40 px-4 py-3 flex items-center justify-between">
+  <header class="glass-header sticky top-0 z-40 px-4 py-3 flex items-center justify-between shadow-lg">
     <div class="flex items-center gap-2.5">
-      <div class="w-8 h-8 rounded-lg bg-[#fbbf24]/15 border border-[#fbbf24]/30 flex items-center justify-center text-[#fbbf24]">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#fbbf24]/20 to-[#d97706]/10 border border-[#fbbf24]/30 flex items-center justify-center text-[#fbbf24] shadow-sm">
         <i data-lucide="sparkles" class="w-4 h-4"></i>
       </div>
       <div>
-        <h1 class="text-sm font-black text-[#e6edf3] tracking-wide" id="headerStoreName">الدفة للعطور</h1>
-        <div class="flex items-center gap-1.5 text-[10px] text-[#768390]">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+        <h1 class="text-sm font-black text-[#f0f6fc] tracking-wide" id="headerStoreName">الدفة للعطور</h1>
+        <div class="flex items-center gap-1.5 text-[10px] text-[#8b949e]">
+          <span id="headerStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           <span id="headerUserStatus">متصل بالمحل</span>
         </div>
       </div>
@@ -31,14 +32,20 @@
 
     <!-- Quick Action / Cart Trigger -->
     <div class="flex items-center gap-2">
-      <button id="btnScannerTrigger" class="p-2 rounded-xl bg-[#161b22] border border-white/10 text-[#fbbf24] hover:bg-[#fbbf24]/10 transition-all flex items-center gap-1.5 text-xs font-bold">
-        <i data-lucide="scan" class="w-4 h-4"></i>
-        <span>مسح باركود</span>
+      <!-- Outbox Queue Badge (shown when pending offline records exist) -->
+      <button id="btnOfflineQueueStatus" class="hidden px-2 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold flex items-center gap-1">
+        <i data-lucide="cloud-off" class="w-3 h-3"></i>
+        <span id="offlineQueueBadge">0 معلقة</span>
       </button>
 
-      <button id="btnOpenCart" class="relative p-2 rounded-xl bg-[#fbbf24] text-[#0d1117] font-black text-xs hover:bg-amber-400 transition-all flex items-center gap-1">
+      <button id="btnScannerTrigger" class="p-2 rounded-xl bg-[#111726] border border-white/10 text-[#fbbf24] hover:bg-[#fbbf24]/10 transition-all flex items-center gap-1.5 text-xs font-bold touch-press">
+        <i data-lucide="scan" class="w-4 h-4"></i>
+        <span class="hidden sm:inline">مسح</span>
+      </button>
+
+      <button id="btnOpenCart" class="relative p-2.5 rounded-xl bg-gradient-to-r from-[#fbbf24] to-[#d97706] text-[#070b14] font-black text-xs hover:brightness-110 transition-all flex items-center gap-1 gold-glow-sm touch-press">
         <i data-lucide="shopping-bag" class="w-4 h-4"></i>
-        <span id="cartBadge" class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-500 text-white rounded-full text-[10px] flex items-center justify-center border-2 border-[#0a0d12]">0</span>
+        <span id="cartBadge" class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-500 text-white rounded-full text-[10px] flex items-center justify-center border-2 border-[#070b14] font-bold">0</span>
       </button>
     </div>
   </header>
@@ -49,21 +56,25 @@
     <!-- ==================================================== -->
     <!-- VIEW 1: POS QUICK CHECKOUT (DEFAULT) -->
     <!-- ==================================================== -->
-    <section id="viewPOS" class="space-y-4">
+    <section id="viewPOS" class="space-y-3.5">
       <!-- Search & Category Scroller -->
       <div class="space-y-2.5">
         <div class="relative">
-          <i data-lucide="search" class="w-4 h-4 absolute right-3.5 top-3.5 text-[#768390]"></i>
+          <i data-lucide="search" class="w-4 h-4 absolute right-3.5 top-3.5 text-[#8b949e]"></i>
           <input
             id="inputSearchProduct"
             type="text"
-            placeholder="بحث بالاسم أو مسح الباركود..."
-            class="w-full bg-[#161b22] border border-white/10 rounded-xl pr-10 pl-4 py-2.5 text-xs text-[#e6edf3] focus:border-[#fbbf24] focus:outline-none transition-all placeholder-[#768390]"
+            placeholder="بحث بالاسم أو الباركود..."
+            class="w-full bg-[#111726] border border-white/10 rounded-xl pr-10 pl-10 py-2.5 text-xs text-[#f0f6fc] focus:border-[#fbbf24] focus:outline-none transition-all placeholder-[#6e7681]"
           />
+          <button id="btnClearSearch" class="hidden absolute left-3 top-3 text-[#8b949e] hover:text-white">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
         </div>
 
+        <!-- Category Horizontal Pills -->
         <div id="categoriesList" class="flex gap-2 overflow-x-auto pb-1 custom-scrollbar text-xs">
-          <button class="category-pill active whitespace-nowrap px-3.5 py-1.5 rounded-lg bg-[#fbbf24] text-[#0d1117] font-bold text-xs">الكل</button>
+          <button class="category-pill active whitespace-nowrap px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#fbbf24] to-[#d97706] text-[#070b14] font-bold text-xs shadow-sm" data-cat="all">الكل</button>
         </div>
       </div>
 
@@ -80,49 +91,102 @@
       <div class="glass-card p-4 space-y-3">
         <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-sm font-bold text-[#e6edf3] flex items-center gap-1.5">
+            <h2 class="text-sm font-bold text-[#f0f6fc] flex items-center gap-1.5">
               <i data-lucide="camera" class="w-4 h-4 text-[#fbbf24]"></i>
               الجرد المخزني بالكاميرا
             </h2>
-            <p class="text-[10px] text-[#768390]">وجه الكاميرا نحو باركود المنتج لتدقيق وتعديل الكميات فوراً</p>
+            <p class="text-[10px] text-[#8b949e]">دعم قراءة الباركود EAN-13 و Code-128 بسرعة فائقة</p>
           </div>
-          <button id="btnToggleTorch" class="p-2 rounded-lg bg-[#161b22] border border-white/10 text-[#768390]">
-            <i data-lucide="zap" class="w-4 h-4"></i>
-          </button>
+          <div class="flex items-center gap-1.5">
+            <button id="btnToggleTorch" class="p-2 rounded-xl bg-[#111726] border border-white/10 text-[#8b949e] hover:text-[#fbbf24] transition-all touch-press" title="إضاءة الفلاش">
+              <i data-lucide="zap" class="w-4 h-4"></i>
+            </button>
+            <button id="btnSwitchCamera" class="p-2 rounded-xl bg-[#111726] border border-white/10 text-[#8b949e] hover:text-[#fbbf24] transition-all touch-press" title="تبديل الكاميرا">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            </button>
+          </div>
         </div>
 
         <!-- Video Viewfinder -->
         <div class="scanner-overlay bg-black relative aspect-[4/3] rounded-2xl border-2 border-dashed border-[#fbbf24]/40 flex items-center justify-center overflow-hidden">
           <video id="cameraPreview" playsinline class="w-full h-full object-cover"></video>
           <div class="scanner-laser"></div>
-          <div id="scanTargetBox" class="absolute w-48 h-32 border-2 border-[#fbbf24] rounded-xl pointer-events-none transition-all"></div>
-          <div id="cameraStatus" class="absolute bottom-2 bg-black/70 px-3 py-1 rounded-full text-[10px] text-amber-300">جاري تشغيل الكاميرا...</div>
+          
+          <!-- Reticle Target Box -->
+          <div id="scanTargetBox" class="absolute w-56 h-36 border-2 border-[#fbbf24] rounded-2xl pointer-events-none transition-all flex items-center justify-center">
+            <div class="text-[10px] text-white/60 bg-black/50 px-2 py-0.5 rounded-full font-mono">ضع الباركود هنا</div>
+          </div>
+          
+          <div id="cameraStatus" class="absolute bottom-2 bg-black/80 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] text-amber-300 border border-white/10">جاري تشغيل الكاميرا...</div>
         </div>
       </div>
 
       <!-- Scanned Item Audit Card -->
-      <div id="scannedProductCard" class="hidden glass-card p-4 space-y-3 border-[#fbbf24]/40 gold-glow">
-        <div class="flex items-center justify-between">
+      <div id="scannedProductCard" class="hidden glass-card p-4 space-y-3.5 border-[#fbbf24]/40 gold-glow">
+        <div class="flex items-start justify-between">
           <div>
-            <span class="text-[10px] text-[#768390] font-mono" id="scannedBarcode">6281100000000</span>
-            <h3 class="text-sm font-bold text-[#fbbf24]" id="scannedName">اسم العطر</h3>
-            <div class="text-xs text-[#adbac7]" id="scannedPrice">السعر: 0.00 ر.س</div>
+            <div class="flex items-center gap-1.5">
+              <span class="text-[10px] text-[#fbbf24] font-mono font-bold bg-[#fbbf24]/10 px-2 py-0.5 rounded border border-[#fbbf24]/30" id="scannedBarcode">6281100000000</span>
+              <span class="text-[10px] text-[#8b949e]" id="scannedUnit">قطعة</span>
+            </div>
+            <h3 class="text-sm font-bold text-[#f0f6fc] mt-1" id="scannedName">اسم العطر</h3>
+            <div class="text-xs text-[#adbac7] font-semibold" id="scannedPrice">السعر: 0.00 د.ل</div>
           </div>
-          <div class="text-left">
-            <span class="text-[10px] text-[#768390]">الرصيد الحالي</span>
-            <div class="text-base font-black text-[#e6edf3]" id="scannedCurrentStock">0</div>
+          
+          <button id="btnShowPriceChecker" class="px-2.5 py-1.5 rounded-xl bg-[#111726] border border-white/10 text-xs text-[#fbbf24] font-bold flex items-center gap-1 touch-press">
+            <i data-lucide="info" class="w-3.5 h-3.5"></i>
+            <span>التفاصيل</span>
+          </button>
+        </div>
+
+        <!-- Stock Comparison & Discrepancy Card -->
+        <div class="grid grid-cols-3 gap-2 bg-[#0b101b] p-2.5 rounded-xl border border-white/5 text-center">
+          <div>
+            <div class="text-[9px] text-[#8b949e]">الرصيد الدفتري</div>
+            <div class="text-sm font-black text-[#8b949e]" id="scannedCurrentStock">0</div>
+          </div>
+          <div>
+            <div class="text-[9px] text-[#fbbf24]">العدد الفعلي</div>
+            <div class="text-base font-black text-[#fbbf24]" id="scannedCountedDisplay">0</div>
+          </div>
+          <div>
+            <div class="text-[9px] text-[#8b949e]">الفارق (التباين)</div>
+            <div class="text-sm font-black text-emerald-400" id="scannedVarianceDisplay">0 (مطابق)</div>
           </div>
         </div>
 
-        <!-- Adjust Stock Form -->
-        <div class="flex items-center gap-2 pt-2 border-t border-white/5">
-          <button id="btnDecrementStock" class="w-10 h-10 rounded-xl bg-[#161b22] border border-white/10 text-rose-400 font-bold text-lg flex items-center justify-center">-1</button>
-          <input id="inputNewStockQty" type="number" class="flex-1 bg-[#0d1117] border border-white/20 rounded-xl py-2 text-center text-sm font-black text-[#fbbf24] focus:outline-none focus:border-[#fbbf24]" />
-          <button id="btnIncrementStock" class="w-10 h-10 rounded-xl bg-[#161b22] border border-white/10 text-emerald-400 font-bold text-lg flex items-center justify-center">+1</button>
+        <!-- Adjust Stock Stepper Controls -->
+        <div class="space-y-2">
+          <label class="block text-[11px] font-bold text-[#adbac7]">تعديل الكمية المفحوصة:</label>
+          <div class="flex items-center gap-1.5">
+            <button id="btnStepMinus5" class="px-2.5 py-2 rounded-xl bg-[#111726] border border-white/10 text-rose-400 font-bold text-xs touch-press">-5</button>
+            <button id="btnDecrementStock" class="w-10 h-10 rounded-xl bg-[#111726] border border-white/10 text-rose-400 font-bold text-base flex items-center justify-center touch-press">-1</button>
+            <input id="inputNewStockQty" type="number" step="any" class="flex-1 bg-[#0b101b] border border-white/20 rounded-xl py-2 text-center text-base font-black text-[#fbbf24] focus:outline-none focus:border-[#fbbf24]" />
+            <button id="btnIncrementStock" class="w-10 h-10 rounded-xl bg-[#111726] border border-white/10 text-emerald-400 font-bold text-base flex items-center justify-center touch-press">+1</button>
+            <button id="btnStepPlus5" class="px-2.5 py-2 rounded-xl bg-[#111726] border border-white/10 text-emerald-400 font-bold text-xs touch-press">+5</button>
+          </div>
         </div>
 
-        <button id="btnSaveStockAudit" class="w-full py-2.5 rounded-xl bg-[#fbbf24] text-[#0d1117] font-black text-xs hover:bg-amber-400 transition-all flex items-center justify-center gap-1.5">
-          <i data-lucide="check" class="w-4 h-4"></i>
+        <!-- Discrepancy Reason Presets -->
+        <div class="space-y-1.5">
+          <label class="block text-[11px] font-bold text-[#adbac7]">سبب التباين / الملاحظة:</label>
+          <div class="grid grid-cols-2 gap-1.5 text-[10px]">
+            <button type="button" class="reason-preset-btn active p-1.5 rounded-lg bg-[#fbbf24]/15 border border-[#fbbf24] text-[#fbbf24] font-bold text-center" data-reason="عجز جرد مخزني">عجز جرد مخزني</button>
+            <button type="button" class="reason-preset-btn p-1.5 rounded-lg bg-[#111726] border border-white/10 text-[#8b949e] font-bold text-center" data-reason="كسر/تلف أثناء العرض">كسر/تلف أثناء العرض</button>
+            <button type="button" class="reason-preset-btn p-1.5 rounded-lg bg-[#111726] border border-white/10 text-[#8b949e] font-bold text-center" data-reason="عينة تجربة وتستر">عينة تجربة وتستر</button>
+            <button type="button" class="reason-preset-btn p-1.5 rounded-lg bg-[#111726] border border-white/10 text-[#8b949e] font-bold text-center" data-reason="خطأ تسجيل سابق">خطأ تسجيل سابق</button>
+            <button type="button" class="reason-preset-btn p-1.5 rounded-lg bg-[#111726] border border-white/10 text-[#8b949e] font-bold text-center col-span-2" data-reason="زيادة غير مسجلة">زيادة غير مسجلة (فائض)</button>
+          </div>
+          <input
+            id="inputAuditCustomNotes"
+            type="text"
+            placeholder="ملاحظات إضافية على الجرد..."
+            class="w-full bg-[#0b101b] border border-white/10 rounded-xl px-3 py-2 text-xs text-[#f0f6fc] focus:border-[#fbbf24] focus:outline-none"
+          />
+        </div>
+
+        <button id="btnSaveStockAudit" class="w-full py-3 rounded-xl bg-gradient-to-r from-[#fbbf24] to-[#d97706] text-[#070b14] font-black text-xs hover:brightness-110 transition-all flex items-center justify-center gap-1.5 gold-glow touch-press">
+          <i data-lucide="check-check" class="w-4 h-4"></i>
           حفظ وتحديث المخزون
         </button>
       </div>
@@ -132,112 +196,277 @@
     <!-- VIEW 3: LIVE EXECUTIVE DASHBOARD -->
     <!-- ==================================================== -->
     <section id="viewDashboard" class="hidden space-y-4">
+      <!-- Top Financial KPI Cards (2x2 Grid) -->
       <div class="grid grid-cols-2 gap-3">
+        <!-- Revenue Card -->
         <div class="glass-card p-3.5 space-y-1">
-          <div class="flex items-center justify-between text-[10px] text-[#768390]">
+          <div class="flex items-center justify-between text-[10px] text-[#8b949e]">
             <span>مبيعات اليوم</span>
             <i data-lucide="trending-up" class="w-3.5 h-3.5 text-emerald-400"></i>
           </div>
-          <div class="text-base font-black text-[#e6edf3]" id="dashRevenue">0.00 ر.س</div>
+          <div class="text-lg font-black text-[#f0f6fc]" id="dashRevenue">0.00 د.ل</div>
           <div class="text-[10px] text-emerald-400 font-semibold" id="dashInvoices">0 فاتورة</div>
         </div>
 
+        <!-- Profit Card (Masked for Cashier) -->
+        <div class="glass-card p-3.5 space-y-1" id="dashProfitCard">
+          <div class="flex items-center justify-between text-[10px] text-[#8b949e]">
+            <span>إجمالي الأرباح</span>
+            <i data-lucide="badge-dollar-sign" class="w-3.5 h-3.5 text-amber-400"></i>
+          </div>
+          <div class="text-lg font-black text-amber-400" id="dashProfit">0.00 د.ل</div>
+          <div class="text-[10px] text-[#8b949e]" id="dashProfitSubtext">صافي الربح التقديري</div>
+        </div>
+
+        <!-- Cash Drawer Balance Card -->
         <div class="glass-card p-3.5 space-y-1">
-          <div class="flex items-center justify-between text-[10px] text-[#768390]">
-            <span>صافي الصندوق</span>
+          <div class="flex items-center justify-between text-[10px] text-[#8b949e]">
+            <span>نقدية الدرج الفعلية</span>
             <i data-lucide="wallet" class="w-3.5 h-3.5 text-[#fbbf24]"></i>
           </div>
-          <div class="text-base font-black text-[#fbbf24]" id="dashCashDrawer">0.00 ر.س</div>
-          <div class="text-[10px] text-[#768390]">نقدية الدرج الفعلية</div>
+          <div class="text-lg font-black text-[#fbbf24]" id="dashCashDrawer">0.00 د.ل</div>
+          <div class="text-[10px] text-[#8b949e]">مبيعات نقدية - سحوبات</div>
+        </div>
+
+        <!-- Invoice Count Card -->
+        <div class="glass-card p-3.5 space-y-1">
+          <div class="flex items-center justify-between text-[10px] text-[#8b949e]">
+            <span>متوسط الفاتورة</span>
+            <i data-lucide="calculator" class="w-3.5 h-3.5 text-blue-400"></i>
+          </div>
+          <div class="text-lg font-black text-blue-400" id="dashAvgInvoice">0.00 د.ل</div>
+          <div class="text-[10px] text-[#8b949e]">معدل القيمة الشرائية</div>
         </div>
       </div>
 
-      <!-- Top Selling Products -->
+      <!-- 24-Hour Sales Velocity Sparkline Graph -->
+      <div class="glass-card p-4 space-y-2">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold text-[#f0f6fc] flex items-center gap-1.5">
+            <i data-lucide="activity" class="w-4 h-4 text-[#fbbf24]"></i>
+            حركة المبيعات خلال الـ 24 ساعة
+          </h3>
+          <span class="text-[10px] text-[#8b949e]" id="dashVelocityPeak">الذروة: 0 د.ل</span>
+        </div>
+
+        <!-- SVG Sparkline Chart -->
+        <div class="w-full h-24 bg-[#0b101b] rounded-xl p-2 border border-white/5 flex items-center justify-center relative overflow-hidden">
+          <svg id="salesVelocitySvg" class="w-full h-full overflow-visible" viewBox="0 0 300 80" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="sparklineGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.45" />
+                <stop offset="100%" stop-color="#fbbf24" stop-opacity="0.0" />
+              </linearGradient>
+            </defs>
+            <path id="sparklineAreaPath" class="sparkline-area" d="" />
+            <path id="sparklineLinePath" class="sparkline-path" d="" />
+          </svg>
+          <div id="sparklineEmptyNotice" class="absolute inset-0 flex items-center justify-center text-[10px] text-[#8b949e]">
+            لا توجد مبيعات مسجلة في الرسم بعد
+          </div>
+        </div>
+        <div class="flex justify-between text-[9px] text-[#6e7681] px-1 font-mono">
+          <span>12 AM</span>
+          <span>6 AM</span>
+          <span>12 PM</span>
+          <span>6 PM</span>
+          <span>11 PM</span>
+        </div>
+      </div>
+
+      <!-- Top Selling Products of the Day -->
       <div class="glass-card p-4 space-y-3">
-        <h3 class="text-xs font-bold text-[#e6edf3] flex items-center gap-1.5">
-          <i data-lucide="flame" class="w-4 h-4 text-orange-400"></i>
-          الأكثر مبيعاً اليوم
-        </h3>
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold text-[#f0f6fc] flex items-center gap-1.5">
+            <i data-lucide="flame" class="w-4 h-4 text-orange-400"></i>
+            الأكثر طلباً ومبيعاً اليوم
+          </h3>
+          <button id="btnRefreshDashboard" class="text-[10px] text-[#fbbf24] hover:underline flex items-center gap-1">
+            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+            تحديث
+          </button>
+        </div>
+
         <div id="dashTopProductsList" class="space-y-2 text-xs">
-          <!-- Dynamically filled -->
+          <!-- Dynamically populated top products -->
         </div>
       </div>
     </section>
 
     <!-- ==================================================== -->
-    <!-- VIEW 4: PAIRING & PIN LOGIN -->
+    <!-- VIEW 4: PAIRING, PIN LOGIN & SETTINGS -->
     <!-- ==================================================== -->
     <section id="viewSettings" class="hidden space-y-4">
-      <div class="glass-card p-4 space-y-4">
-        <h3 class="text-xs font-bold text-[#fbbf24] flex items-center gap-1.5">
-          <i data-lucide="shield-check" class="w-4 h-4"></i>
-          المستخدم وتأمين الصلاحيات
-        </h3>
+      <!-- Active User Profile Card -->
+      <div class="glass-card p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold text-[#fbbf24] flex items-center gap-1.5">
+            <i data-lucide="shield-check" class="w-4 h-4"></i>
+            المستخدم وتأمين الصلاحيات (RBAC)
+          </h3>
+          <span id="badgeRoleRole" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/30">مدير عام</span>
+        </div>
 
-        <div class="space-y-2">
+        <div class="p-3 bg-[#0b101b] rounded-xl border border-white/5 space-y-1.5 text-xs">
+          <div class="flex items-center justify-between">
+            <span class="text-[#8b949e] text-[10px]">المستخدم الحالي:</span>
+            <span class="font-bold text-[#f0f6fc]" id="activeUserName">المدير العام</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-[#8b949e] text-[10px]">مستوى الصلاحية:</span>
+            <span class="text-[#fbbf24] text-[11px] font-semibold" id="activeUserRoleDesc">صلاحيات كاملة + إشراف مالي</span>
+          </div>
+        </div>
+
+        <!-- Quick Switch PIN Form -->
+        <div class="space-y-2 pt-2 border-t border-white/5">
           <label class="block text-[11px] font-bold text-[#adbac7]">تبديل المستخدم برمز الـ PIN:</label>
           <div class="flex gap-2">
             <input
               id="inputUserPin"
               type="password"
               maxlength="8"
-              placeholder="أدخل رمز الـ PIN (مثال: 1234)"
-              class="flex-1 bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-xs text-center font-mono tracking-widest text-[#fbbf24] focus:outline-none focus:border-[#fbbf24]"
+              inputmode="numeric"
+              placeholder="أدخل رمز الـ PIN (مثال: 9999)"
+              class="flex-1 bg-[#0b101b] border border-white/10 rounded-xl px-3 py-2 text-xs text-center font-mono tracking-widest text-[#fbbf24] focus:outline-none focus:border-[#fbbf24]"
             />
-            <button id="btnLoginPin" class="px-4 py-2 rounded-xl bg-[#fbbf24] text-[#0d1117] font-bold text-xs">دخول</button>
+            <button id="btnLoginPin" class="px-4 py-2 rounded-xl bg-gradient-to-r from-[#fbbf24] to-[#d97706] text-[#070b14] font-bold text-xs touch-press">دخول</button>
+          </div>
+          
+          <!-- Quick Role Shortcuts for Testing -->
+          <div class="flex gap-1.5 pt-1 text-[10px]">
+            <button type="button" class="btn-quick-pin flex-1 py-1 rounded-lg bg-[#111726] border border-white/10 text-[#8b949e] hover:text-[#fbbf24]" data-pin="9999">مدير (9999)</button>
+            <button type="button" class="btn-quick-pin flex-1 py-1 rounded-lg bg-[#111726] border border-white/10 text-[#8b949e] hover:text-[#fbbf24]" data-pin="2222">محاسب (2222)</button>
+            <button type="button" class="btn-quick-pin flex-1 py-1 rounded-lg bg-[#111726] border border-white/10 text-[#8b949e] hover:text-[#fbbf24]" data-pin="3333">كاشير (3333)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Offline Outbox Queue & Sync Telemetry -->
+      <div class="glass-card p-4 space-y-3">
+        <h3 class="text-xs font-bold text-[#f0f6fc] flex items-center gap-1.5">
+          <i data-lucide="database" class="w-4 h-4 text-emerald-400"></i>
+          طابور المعاملات غير المتصلة (IndexedDB)
+        </h3>
+
+        <div class="p-3 bg-[#0b101b] rounded-xl border border-white/5 space-y-2 text-xs">
+          <div class="flex items-center justify-between">
+            <span class="text-[#8b949e]">معاملات بانتظار المزامنة:</span>
+            <span class="font-black text-amber-400" id="syncPendingCount">0 معاملة</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-[#8b949e]">حالة الشبكة:</span>
+            <span class="font-bold text-emerald-400" id="syncNetworkState">متصل بالإنترنت</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-[#8b949e]">آخر مزامنة ناجحة:</span>
+            <span class="text-[#8b949e] font-mono text-[10px]" id="syncLastTime">الآن</span>
           </div>
         </div>
 
-        <div class="p-3 bg-[#161b22] rounded-xl border border-white/5 space-y-1 text-xs">
-          <div class="text-[#768390] text-[10px]">المستخدم الحالي:</div>
-          <div class="font-bold text-[#e6edf3]" id="activeUserName">المدير العام</div>
-          <div class="text-[#fbbf24] text-[10px]" id="activeUserRole">صلاحية كاملة (Manager)</div>
-        </div>
+        <button id="btnForceSyncOutbox" class="w-full py-2.5 rounded-xl bg-[#111726] border border-white/10 text-xs font-bold text-[#fbbf24] hover:bg-[#fbbf24]/10 transition-all flex items-center justify-center gap-1.5 touch-press">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          مزامنة الطابور المحلي الآن
+        </button>
       </div>
     </section>
   </main>
 
   <!-- ==================================================== -->
-  <!-- CART DRAWER / MODAL -->
+  <!-- MODAL 1: CART & MULTI-PAYMENT CHECKOUT DRAWER -->
   <!-- ==================================================== -->
-  <div id="cartDrawer" class="fixed inset-0 bg-black/70 backdrop-blur-md z-50 hidden flex flex-col justify-end transition-opacity">
-    <div class="bg-[#161b22] border-t border-white/10 rounded-t-3xl p-5 max-w-lg mx-auto w-full max-h-[85vh] flex flex-col space-y-4">
+  <div id="cartDrawer" class="fixed inset-0 bg-black/75 backdrop-blur-md z-50 hidden flex flex-col justify-end transition-opacity">
+    <div class="bg-[#111726] border-t border-white/10 rounded-t-3xl p-5 max-w-lg mx-auto w-full max-h-[90vh] flex flex-col space-y-4 shadow-2xl">
       <div class="flex items-center justify-between border-b border-white/10 pb-3">
-        <h3 class="text-sm font-black text-[#fbbf24] flex items-center gap-2">
-          <i data-lucide="shopping-cart" class="w-4 h-4"></i>
-          سلة المبيعات
-        </h3>
-        <button id="btnCloseCart" class="p-1 rounded-lg text-[#768390] hover:text-white">
-          <i data-lucide="x" class="w-5 h-5"></i>
-        </button>
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-lg bg-[#fbbf24]/20 text-[#fbbf24] flex items-center justify-center">
+            <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+          </div>
+          <h3 class="text-sm font-black text-[#fbbf24]">سلة المبيعات</h3>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btnClearCart" class="text-[10px] text-rose-400 hover:underline">تفريغ السلة</button>
+          <button id="btnCloseCart" class="p-1 rounded-lg text-[#8b949e] hover:text-white">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
       </div>
 
       <!-- Items List -->
-      <div id="cartItemsList" class="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar max-h-60">
+      <div id="cartItemsList" class="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar max-h-56">
         <!-- Dynamic cart items -->
       </div>
 
-      <!-- Payment & Customer Info -->
-      <div class="space-y-3 pt-2 border-t border-white/10">
-        <div class="grid grid-cols-3 gap-2 text-xs">
-          <button class="pay-type-btn active py-2 rounded-xl border border-[#fbbf24] bg-[#fbbf24]/10 text-[#fbbf24] font-bold text-center" data-type="cash">نقداً</button>
-          <button class="pay-type-btn py-2 rounded-xl border border-white/10 bg-[#0d1117] text-[#adbac7] font-bold text-center" data-type="bank">شبكة</button>
-          <button class="pay-type-btn py-2 rounded-xl border border-white/10 bg-[#0d1117] text-[#adbac7] font-bold text-center" data-type="debt">آجل</button>
+      <!-- Payment & Customer Form -->
+      <div class="space-y-3 pt-2 border-t border-white/10 text-xs">
+        <!-- Payment Method Tabs -->
+        <div>
+          <label class="block text-[10px] font-bold text-[#8b949e] mb-1">طريقة الدفع:</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" class="pay-type-btn active py-2 rounded-xl border border-[#fbbf24] bg-[#fbbf24]/10 text-[#fbbf24] font-bold text-center touch-press" data-type="cash">
+              💵 نقداً
+            </button>
+            <button type="button" class="pay-type-btn py-2 rounded-xl border border-white/10 bg-[#0b101b] text-[#adbac7] font-bold text-center touch-press" data-type="card">
+              💳 شبكة / بطاقة
+            </button>
+            <button type="button" class="pay-type-btn py-2 rounded-xl border border-white/10 bg-[#0b101b] text-[#adbac7] font-bold text-center touch-press" data-type="debt">
+              📝 آجل (ذمم)
+            </button>
+          </div>
         </div>
 
-        <input
-          id="inputCustomerName"
-          type="text"
-          placeholder="اسم العميل (اختياري للآجل)"
-          class="w-full bg-[#0d1117] border border-white/10 rounded-xl px-3 py-2 text-xs text-[#e6edf3] focus:border-[#fbbf24] focus:outline-none"
-        />
+        <!-- Cash Payment Section: Quick Banknotes & Change Calculator -->
+        <div id="sectionCashPayment" class="space-y-2 bg-[#0b101b] p-3 rounded-xl border border-white/5">
+          <div class="flex items-center justify-between text-[11px]">
+            <span class="text-[#8b949e]">المبلغ المستلم من الزبون:</span>
+            <input
+              id="inputCashReceived"
+              type="number"
+              step="any"
+              placeholder="0.00"
+              class="w-28 bg-[#111726] border border-white/10 rounded-lg px-2 py-1 text-left font-mono font-bold text-[#fbbf24] focus:outline-none focus:border-[#fbbf24]"
+            />
+          </div>
 
-        <div class="flex items-center justify-between text-sm font-black pt-1">
-          <span class="text-[#adbac7]">الإجمالي النهائي:</span>
-          <span class="text-lg text-[#fbbf24]" id="cartTotalAmount">0.00 ر.س</span>
+          <!-- Quick Banknotes Shortcuts (50, 100, 200 د.ل + Exact) -->
+          <div class="flex gap-1.5 text-[10px]">
+            <button type="button" class="btn-banknote flex-1 py-1 rounded-lg bg-[#111726] border border-white/10 text-[#f0f6fc] font-bold hover:bg-[#fbbf24]/20" data-val="50">+50 د.ل</button>
+            <button type="button" class="btn-banknote flex-1 py-1 rounded-lg bg-[#111726] border border-white/10 text-[#f0f6fc] font-bold hover:bg-[#fbbf24]/20" data-val="100">+100 د.ل</button>
+            <button type="button" class="btn-banknote flex-1 py-1 rounded-lg bg-[#111726] border border-white/10 text-[#f0f6fc] font-bold hover:bg-[#fbbf24]/20" data-val="200">+200 د.ل</button>
+            <button type="button" id="btnExactCash" class="flex-1 py-1 rounded-lg bg-[#fbbf24]/20 border border-[#fbbf24]/40 text-[#fbbf24] font-bold">المطابق</button>
+          </div>
+
+          <!-- Change Return Calculator Display -->
+          <div class="flex items-center justify-between text-xs pt-1 border-t border-white/5">
+            <span class="text-[#8b949e]">المتبقي للزبون (الفكة):</span>
+            <span class="font-black text-emerald-400 font-mono text-sm" id="calcChangeReturn">0.00 د.ل</span>
+          </div>
         </div>
 
-        <button id="btnCompleteCheckout" class="w-full py-3 rounded-xl bg-[#fbbf24] text-[#0d1117] font-black text-sm hover:bg-amber-400 transition-all flex items-center justify-center gap-2 gold-glow">
+        <!-- Debt Customer Name Input (Shown on Debt selection) -->
+        <div id="sectionDebtPayment" class="hidden space-y-1.5 bg-[#0b101b] p-3 rounded-xl border border-white/5">
+          <label class="block text-[10px] font-bold text-amber-400">اسم العميل لتسجيل المديونية:</label>
+          <input
+            id="inputCustomerName"
+            type="text"
+            placeholder="اسم العميل المدين..."
+            class="w-full bg-[#111726] border border-white/10 rounded-xl px-3 py-2 text-xs text-[#f0f6fc] focus:border-[#fbbf24] focus:outline-none"
+          />
+        </div>
+
+        <!-- Total Calculation & Checkout -->
+        <div class="space-y-1 pt-1">
+          <div class="flex items-center justify-between text-xs text-[#8b949e]">
+            <span>المجموع:</span>
+            <span id="cartSubtotalAmount">0.00 د.ل</span>
+          </div>
+          <div class="flex items-center justify-between text-sm font-black pt-1 border-t border-white/10">
+            <span class="text-[#adbac7]">الإجمالي النهائي:</span>
+            <span class="text-lg text-[#fbbf24] font-mono" id="cartTotalAmount">0.00 د.ل</span>
+          </div>
+        </div>
+
+        <button id="btnCompleteCheckout" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#fbbf24] to-[#d97706] text-[#070b14] font-black text-sm hover:brightness-110 transition-all flex items-center justify-center gap-2 gold-glow touch-press">
           <i data-lucide="check-circle" class="w-5 h-5"></i>
           إتمام البيع وحفظ الفاتورة
         </button>
@@ -245,24 +474,153 @@
     </div>
   </div>
 
+  <!-- ==================================================== -->
+  <!-- MODAL 2: FRACTIONAL PORTION (ML) DECANT CALCULATOR -->
+  <!-- ==================================================== -->
+  <div id="decantModal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+    <div class="glass-modal rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl border border-[#fbbf24]/30">
+      <div class="flex items-center justify-between border-b border-white/10 pb-2.5">
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-lg bg-[#fbbf24]/20 text-[#fbbf24] flex items-center justify-center">
+            <i data-lucide="flask-conical" class="w-4 h-4"></i>
+          </div>
+          <h3 class="text-xs font-bold text-[#f0f6fc]">حاسبة تقسيم العطور (بالمللي/تولة)</h3>
+        </div>
+        <button id="btnCloseDecantModal" class="text-[#8b949e] hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-1">
+        <div class="text-xs font-bold text-[#fbbf24]" id="decantProdName">اسم العطر</div>
+        <div class="text-[10px] text-[#8b949e]">سعر العبوة الكاملة: <span id="decantProdBasePrice" class="font-mono text-[#f0f6fc]">0.00 د.ل</span></div>
+      </div>
+
+      <!-- Portion Size Quick Presets -->
+      <div class="space-y-1.5">
+        <label class="block text-[10px] font-bold text-[#adbac7]">اختر حجم التقسيم المطلوب:</label>
+        <div class="grid grid-cols-3 gap-1.5 text-xs">
+          <button type="button" class="btn-decant-preset active py-2 rounded-xl border border-[#fbbf24] bg-[#fbbf24]/15 text-[#fbbf24] font-bold text-center touch-press" data-ml="3" data-label="ربع تولة (3 مل)">
+            3 مل (¼)
+          </button>
+          <button type="button" class="btn-decant-preset py-2 rounded-xl border border-white/10 bg-[#0b101b] text-[#adbac7] font-bold text-center touch-press" data-ml="6" data-label="نصف تولة (6 مل)">
+            6 مل (½)
+          </button>
+          <button type="button" class="btn-decant-preset py-2 rounded-xl border border-white/10 bg-[#0b101b] text-[#adbac7] font-bold text-center touch-press" data-ml="12" data-label="تولة كاملة (12 مل)">
+            12 مل (1)
+          </button>
+          <button type="button" class="btn-decant-preset py-2 rounded-xl border border-white/10 bg-[#0b101b] text-[#adbac7] font-bold text-center touch-press" data-ml="25" data-label="عبوة 25 مل">
+            25 مل
+          </button>
+          <button type="button" class="btn-decant-preset py-2 rounded-xl border border-white/10 bg-[#0b101b] text-[#adbac7] font-bold text-center touch-press" data-ml="50" data-label="عبوة 50 مل">
+            50 مل
+          </button>
+          <button type="button" class="btn-decant-preset py-2 rounded-xl border border-white/10 bg-[#0b101b] text-[#adbac7] font-bold text-center touch-press" data-ml="100" data-label="عبوة 100 مل">
+            100 مل
+          </button>
+        </div>
+      </div>
+
+      <!-- Custom ML Input -->
+      <div class="space-y-1">
+        <label class="block text-[10px] font-bold text-[#adbac7]">أو أدخل كمية مخصصة (مل):</label>
+        <div class="flex items-center gap-2">
+          <input
+            id="inputCustomDecantMl"
+            type="number"
+            step="any"
+            placeholder="مثال: 15"
+            class="flex-1 bg-[#0b101b] border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-center text-[#fbbf24] focus:outline-none focus:border-[#fbbf24]"
+          />
+          <span class="text-xs text-[#8b949e]">مل</span>
+        </div>
+      </div>
+
+      <!-- Calculated Decant Price Display -->
+      <div class="bg-[#0b101b] p-3 rounded-2xl border border-white/5 flex items-center justify-between">
+        <div>
+          <div class="text-[10px] text-[#8b949e]">السعر المحسوب للتقسيم:</div>
+          <div class="text-xs text-[#8b949e]" id="decantPortionLabel">ربع تولة (3 مل)</div>
+        </div>
+        <div class="text-base font-black text-[#fbbf24] font-mono" id="decantCalculatedPrice">0.00 د.ل</div>
+      </div>
+
+      <button id="btnAddDecantToCart" class="w-full py-3 rounded-2xl bg-gradient-to-r from-[#fbbf24] to-[#d97706] text-[#070b14] font-black text-xs hover:brightness-110 transition-all flex items-center justify-center gap-1.5 gold-glow touch-press">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+        إضافة التقسيم للسلة
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================================================== -->
+  <!-- MODAL 3: PRICE CHECKER & PRODUCT DETAILS -->
+  <!-- ==================================================== -->
+  <div id="productDetailsModal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+    <div class="glass-modal rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl border border-white/15">
+      <div class="flex items-center justify-between border-b border-white/10 pb-2.5">
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center">
+            <i data-lucide="tag" class="w-4 h-4"></i>
+          </div>
+          <h3 class="text-xs font-bold text-[#f0f6fc]">مدقق الأسعار وتفاصيل الصنف</h3>
+        </div>
+        <button id="btnCloseDetailsModal" class="text-[#8b949e] hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-2 text-xs">
+        <div class="p-3 bg-[#0b101b] rounded-xl border border-white/5 space-y-1.5">
+          <div class="text-[10px] text-[#8b949e] font-mono" id="detailsBarcode">6281100000000</div>
+          <h4 class="font-bold text-[#f0f6fc] text-sm" id="detailsName">اسم المنتج</h4>
+          <div class="text-[10px] text-[#fbbf24]" id="detailsCategory">دهن عود فاخر</div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 text-center">
+          <div class="p-2.5 bg-[#0b101b] rounded-xl border border-white/5">
+            <div class="text-[9px] text-[#8b949e]">سعر البيع (قطاعي)</div>
+            <div class="text-sm font-black text-[#fbbf24]" id="detailsRetailPrice">0.00 د.ل</div>
+          </div>
+          <div class="p-2.5 bg-[#0b101b] rounded-xl border border-white/5">
+            <div class="text-[9px] text-[#8b949e]">سعر الجملة</div>
+            <div class="text-sm font-bold text-[#f0f6fc]" id="detailsWholesalePrice">0.00 د.ل</div>
+          </div>
+          <div class="p-2.5 bg-[#0b101b] rounded-xl border border-white/5">
+            <div class="text-[9px] text-[#8b949e]">سعر التكلفة (للمدير)</div>
+            <div class="text-sm font-bold text-rose-400" id="detailsCostPrice">0.00 د.ل</div>
+          </div>
+          <div class="p-2.5 bg-[#0b101b] rounded-xl border border-white/5">
+            <div class="text-[9px] text-[#8b949e]">الرصيد بالمخزن</div>
+            <div class="text-sm font-black text-emerald-400" id="detailsStockQty">0 قطعة</div>
+          </div>
+        </div>
+      </div>
+
+      <button id="btnDetailsAddToCart" class="w-full py-2.5 rounded-xl bg-[#fbbf24] text-[#070b14] font-black text-xs hover:bg-amber-400 transition-all flex items-center justify-center gap-1.5 touch-press">
+        <i data-lucide="shopping-bag" class="w-4 h-4"></i>
+        إضافة إلى السلة
+      </button>
+    </div>
+  </div>
+
   <!-- Bottom Navigation Bar -->
   <nav class="glass-nav fixed bottom-0 left-0 right-0 z-40 px-6 py-2.5 flex items-center justify-around">
-    <button class="nav-tab active-nav-tab flex flex-col items-center gap-1 text-[11px] font-bold" data-target="viewPOS">
+    <button class="nav-tab active-nav-tab flex flex-col items-center gap-1 text-[11px] font-bold touch-press" data-target="viewPOS">
       <i data-lucide="layout-grid" class="w-4 h-4"></i>
       <span>نقطة البيع</span>
     </button>
 
-    <button class="nav-tab text-[#768390] flex flex-col items-center gap-1 text-[11px] font-bold hover:text-[#fbbf24] transition-all" data-target="viewStocktaking">
+    <button class="nav-tab text-[#8b949e] flex flex-col items-center gap-1 text-[11px] font-bold hover:text-[#fbbf24] transition-all touch-press" data-target="viewStocktaking">
       <i data-lucide="barcode" class="w-4 h-4"></i>
       <span>الجرد</span>
     </button>
 
-    <button class="nav-tab text-[#768390] flex flex-col items-center gap-1 text-[11px] font-bold hover:text-[#fbbf24] transition-all" data-target="viewDashboard">
+    <button class="nav-tab text-[#8b949e] flex flex-col items-center gap-1 text-[11px] font-bold hover:text-[#fbbf24] transition-all touch-press" data-target="viewDashboard">
       <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
       <span>المؤشرات</span>
     </button>
 
-    <button class="nav-tab text-[#768390] flex flex-col items-center gap-1 text-[11px] font-bold hover:text-[#fbbf24] transition-all" data-target="viewSettings">
+    <button class="nav-tab text-[#8b949e] flex flex-col items-center gap-1 text-[11px] font-bold hover:text-[#fbbf24] transition-all touch-press" data-target="viewSettings">
       <i data-lucide="settings" class="w-4 h-4"></i>
       <span>المستخدم</span>
     </button>
