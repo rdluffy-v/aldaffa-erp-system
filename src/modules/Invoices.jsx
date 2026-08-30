@@ -205,9 +205,56 @@ const InvoicesModule = () => {
           customerName: invoice.customer_name
         });
       }
-      showSuccess('✅ تم إرسال الفاتورة للطباعة الحرارية');
+      showSuccess('✅ تم فتح نافذة معاينة وطباعة الفاتورة بنجاح');
     } catch (err) {
       showError(`فشل الطباعة: ${err.message}`);
+    }
+  };
+
+  // PDF Export
+  const handleExportPdf = async (invoice) => {
+    try {
+      const electron = window.require ? window.require('electron') : null;
+      if (!electron) {
+        window.print();
+        return;
+      }
+
+      if (activeTab === 'purchases') {
+        const items = JSON.parse(invoice.items_json || '[]');
+        const res = await electron.ipcRenderer.invoke('export:purchase-order-pdf', {
+          orderId: invoice.id,
+          date: invoice.date,
+          supplier: invoice.supplier_name || 'غير محدد',
+          items,
+          total: invoice.total,
+          notes: invoice.notes
+        });
+        if (res?.success) {
+          showSuccess(`✅ تم تصدير الفاتورة كملف PDF بنجاح:\n${res.filePath}`);
+        }
+      } else {
+        const items = await saleItemsRepo.findAll({ sale_id: invoice.id });
+        const res = await electron.ipcRenderer.invoke('export:purchase-order-pdf', {
+          orderId: `SALE-${invoice.id}`,
+          date: invoice.date,
+          supplier: invoice.customer_name || 'عميل المحل',
+          items: items.map(it => ({
+            name: it.product_name || it.name,
+            quantity: it.quantity,
+            unit: it.unit || 'قطعة',
+            cost_per_unit: it.unit_price,
+            total_cost: it.total_price
+          })),
+          total: invoice.total,
+          notes: `طريقة الدفع: ${invoice.payment_method || 'نقدي'}`
+        });
+        if (res?.success) {
+          showSuccess(`✅ تم تصدير الفاتورة كملف PDF بنجاح:\n${res.filePath}`);
+        }
+      }
+    } catch (err) {
+      showError(`فشل تصدير PDF: ${err.message}`);
     }
   };
 
@@ -444,7 +491,16 @@ const InvoicesModule = () => {
                 className="flex-1 btn-atelier-primary py-2.5 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
-                <span>إعادة طباعة حرارية (80mm)</span>
+                <span>معاينة وطباعة (80mm)</span>
+              </button>
+
+              <button
+                onClick={() => handleExportPdf(selectedInvoice)}
+                className="btn-atelier-secondary py-2.5 px-4 text-xs text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors"
+                title="تصدير الفاتورة كملف PDF"
+              >
+                <FileText className="w-4 h-4" />
+                <span>تصدير كـ PDF</span>
               </button>
 
               {canDeleteInvoice && (

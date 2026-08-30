@@ -3,10 +3,13 @@ import { useInventoryStore } from '../stores/useInventoryStore.js';
 import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { useUIStore } from '../stores/useUIStore.js';
 import { useAuthStore } from '../stores/useAuthStore.js';
+import { CategoriesRepository } from '../database/repositories/CategoriesRepository.js';
 import useDebounce from '../hooks/useDebounce.js';
 import usePagination from '../hooks/usePagination.js';
 import Modal from '../components/ui/Modal.jsx';
 import { generateId, formatCurrency, safeParseFloat } from '../utils/helpers.js';
+
+const categoriesRepo = new CategoriesRepository();
 
 const PAGE_SIZE = 8;
 
@@ -89,11 +92,62 @@ const InventoryFullModule = () => {
   const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [dbCategoryNames, setDbCategoryNames] = useState([]);
+  const [showQuickCatModal, setShowQuickCatModal] = useState(false);
+  const [quickCatName, setQuickCatName] = useState('');
+  const [creatingQuickCat, setCreatingQuickCat] = useState(false);
+
+  const loadDbCategories = useCallback(async () => {
+    try {
+      const data = await categoriesRepo.findAll({}, 'name ASC');
+      if (data && data.length > 0) {
+        setDbCategoryNames(data.map((c) => c.name).filter(Boolean));
+      }
+    } catch (e) {
+      console.warn('Failed to load categories in InventoryFull:', e);
+    }
+  }, []);
 
   // ---- Load products on mount ----
   useEffect(() => {
     loadProducts();
-  }, [loadProducts]);
+    loadDbCategories();
+
+    const handleRefresh = () => {
+      loadProducts();
+      loadDbCategories();
+    };
+    window.addEventListener('aldaffa:data-refresh', handleRefresh);
+    return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
+  }, [loadProducts, loadDbCategories]);
+
+  const handleCreateQuickCategory = async () => {
+    const trimmed = quickCatName.trim();
+    if (!trimmed) {
+      showWarning('يرجى كتابة اسم التصنيف');
+      return;
+    }
+    setCreatingQuickCat(true);
+    try {
+      const existing = await categoriesRepo.findByName(trimmed);
+      if (!existing) {
+        await categoriesRepo.create({
+          id: generateId(),
+          name: trimmed,
+          icon: '🏷️'
+        });
+      }
+      await loadDbCategories();
+      setFormData((prev) => ({ ...prev, category: trimmed }));
+      setShowQuickCatModal(false);
+      setQuickCatName('');
+      showSuccess(`✅ تم إضافة واختيار فئة "${trimmed}" بنجاح`);
+    } catch (err) {
+      showError('خطأ أثناء إضافة التصنيف: ' + err.message);
+    } finally {
+      setCreatingQuickCat(false);
+    }
+  };
 
   // ---- Debounced search ----
   const debouncedSearch = useDebounce(searchInput, 300);
@@ -114,11 +168,12 @@ const InventoryFullModule = () => {
     [getFilteredProducts, products, categoryFilter, lowStockFilter, searchTerm]
   );
 
-  // ---- Categories derived from products (no direct db access) ----
+  // ---- Categories derived from database and products ----
   const categories = useMemo(() => {
-    const names = [...new Set(products.map((p) => p.category).filter(Boolean))];
-    return names.sort((a, b) => a.localeCompare(b, 'ar'));
-  }, [products]);
+    const productCats = products.map((p) => p.category).filter(Boolean);
+    const combined = [...new Set([...dbCategoryNames, ...productCats])];
+    return combined.sort((a, b) => a.localeCompare(b, 'ar'));
+  }, [products, dbCategoryNames]);
 
   const lowStockThresholdSetting = useSettingsStore((s) => s.settings.low_stock_threshold);
   const lowStockThreshold = safeParseFloat(lowStockThresholdSetting) || 10;
@@ -817,19 +872,32 @@ const InventoryFullModule = () => {
             <label htmlFor="inv-product-category" className="text-sm text-gray-400 mb-1 block">
               الفئة
             </label>
-            <select
-              id="inv-product-category"
-              value={formData.category}
-              onChange={(e) => updateFormField('category', e.target.value)}
-              className="select-luxury"
-            >
-              <option value="">بدون فئة</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  📁 {cat}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-1.5">
+              <select
+                id="inv-product-category"
+                value={formData.category}
+                onChange={(e) => updateFormField('category', e.target.value)}
+                className="select-luxury flex-1"
+              >
+                <option value="">بدون فئة</option>
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    📁 {cat}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickCatName('');
+                  setShowQuickCatModal(true);
+                }}
+                className="px-3 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-bold shrink-0 cursor-pointer"
+                title="إضافة تصنيف جديد"
+              >
+                ➕
+              </button>
+            </div>
           </div>
 
           {/* Qty + Unit */}
@@ -1062,6 +1130,51 @@ const InventoryFullModule = () => {
           <span className="font-bold text-gold">"{deleteTarget?.name}"</span>؟
         </p>
         <p className="text-gray-500 text-sm mt-2">لا يمكن التراجع عن هذا الإجراء.</p>
+      </Modal>
+
+      {/* ---- Quick Add Category Modal ---- */}
+      <Modal
+        open={showQuickCatModal}
+        onClose={() => setShowQuickCatModal(false)}
+        title="🏷️ إضافة تصنيف جديد للمخزون"
+        size="sm"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setShowQuickCatModal(false)}
+              className="px-6 py-2.5 bg-gray-700 text-white rounded-lg font-bold hover:bg-gray-600 transition-colors cursor-pointer"
+            >
+              إلغاء
+            </button>
+            <button
+              type="button"
+              onClick={handleCreateQuickCategory}
+              disabled={creatingQuickCat || !quickCatName.trim()}
+              className={`px-6 py-2.5 ${goldButtonClass}`}
+            >
+              {creatingQuickCat ? '⏳ جاري الحفظ...' : '➕ حفظ واختيار التصنيف'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <label className="text-sm text-gray-400 block">اسم التصنيف الجديد:</label>
+          <input
+            type="text"
+            placeholder="مثال: عطور ملكية، بخور فاخر، مستلزمات تركيب..."
+            value={quickCatName}
+            onChange={(e) => setQuickCatName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleCreateQuickCategory();
+            }}
+            className="input-luxury w-full"
+            autoFocus
+          />
+          <p className="text-xs text-gray-500">
+            سيتم حفظ التصنيف في قاعدة البيانات واعتماده فوراً للمنتج الحالي وكافة أقسام المنظومة.
+          </p>
+        </div>
       </Modal>
     </div>
   );

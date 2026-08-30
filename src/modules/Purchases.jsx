@@ -162,11 +162,16 @@ const PurchasesModule = () => {
   const [ocrImage, setOcrImage] = useState(null);
   const [ocrProcessing, setOcrProcessing] = useState(false);
 
+  // Quick Category Creation State
+  const [quickCatTargetIndex, setQuickCatTargetIndex] = useState(null);
+  const [quickCatName, setQuickCatName] = useState('');
+  const [creatingQuickCat, setCreatingQuickCat] = useState(false);
+
   const loadCategories = useCallback(async () => {
     try {
       const dbCategories = await categoriesRepo.findAll({}, 'name ASC');
       if (dbCategories && dbCategories.length > 0) {
-        const names = Array.from(new Set([...dbCategories.map((c) => c.name), ...DEFAULT_CATEGORIES]));
+        const names = dbCategories.map((c) => c.name).filter(Boolean);
         setCategories(names);
       } else {
         setCategories(DEFAULT_CATEGORIES);
@@ -175,6 +180,36 @@ const PurchasesModule = () => {
       setCategories(DEFAULT_CATEGORIES);
     }
   }, []);
+
+  const handleCreateQuickCategory = async () => {
+    const trimmed = quickCatName.trim();
+    if (!trimmed) {
+      showWarning('يرجى كتابة اسم التصنيف الجديد');
+      return;
+    }
+    setCreatingQuickCat(true);
+    try {
+      const existing = await categoriesRepo.findByName(trimmed);
+      if (!existing) {
+        await categoriesRepo.create({
+          id: generateId(),
+          name: trimmed,
+          icon: '🏷️'
+        });
+      }
+      await loadCategories();
+      if (quickCatTargetIndex !== null) {
+        updatePurchaseItem(quickCatTargetIndex, 'category', trimmed);
+      }
+      setQuickCatName('');
+      setQuickCatTargetIndex(null);
+      showSuccess(`✅ تم إضافة واختيار فئة "${trimmed}" بنجاح`);
+    } catch (err) {
+      showError('خطأ أثناء إضافة التصنيف: ' + err.message);
+    } finally {
+      setCreatingQuickCat(false);
+    }
+  };
 
   const loadPurchases = useCallback(async () => {
     setLoading(true);
@@ -199,6 +234,7 @@ const PurchasesModule = () => {
 
     const handleRefresh = () => {
       loadPurchases();
+      loadCategories();
     };
     window.addEventListener('aldaffa:data-refresh', handleRefresh);
     return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
@@ -674,21 +710,42 @@ const PurchasesModule = () => {
       // Transactional commit with WAC calculation
       await purchasesRepo.createPurchaseWithInventoryUpdate(purchaseData, inventoryUpdates, inventoryRepo);
 
-      // Best-effort thermal print receipt
-      try {
-        const electron = window.require ? window.require('electron') : null;
-        if (electron) {
-          await electron.ipcRenderer.invoke('print:purchase-order', {
-            orderId: id,
-            date: purchaseData.date,
-            supplier: supplierName.trim() || 'غير محدد',
-            items: finalItems,
-            total,
-            notes: purchaseData.notes
-          });
+      // Optional action: Print preview or PDF export if explicitly requested
+      if (actionType === 'print') {
+        try {
+          const electron = window.require ? window.require('electron') : null;
+          if (electron) {
+            await electron.ipcRenderer.invoke('print:purchase-order', {
+              orderId: id,
+              date: purchaseData.date,
+              supplier: supplierName.trim() || 'غير محدد',
+              items: finalItems,
+              total,
+              notes: purchaseData.notes
+            });
+          }
+        } catch (printErr) {
+          console.warn('Print purchase order failed:', printErr);
         }
-      } catch (printErr) {
-        console.warn('Print purchase order failed:', printErr);
+      } else if (actionType === 'pdf') {
+        try {
+          const electron = window.require ? window.require('electron') : null;
+          if (electron) {
+            const pdfRes = await electron.ipcRenderer.invoke('export:purchase-order-pdf', {
+              orderId: id,
+              date: purchaseData.date,
+              supplier: supplierName.trim() || 'غير محدد',
+              items: finalItems,
+              total,
+              notes: purchaseData.notes
+            });
+            if (pdfRes?.success) {
+              showSuccess(`✅ تم تصدير ملف PDF بنجاح في:\n${pdfRes.filePath}`);
+            }
+          }
+        } catch (pdfErr) {
+          console.warn('PDF export failed:', pdfErr);
+        }
       }
 
       // Automatically launch Barcode Studio for newly committed items
@@ -703,6 +760,51 @@ const PurchasesModule = () => {
       showError(`خطأ في حفظ طلب الشراء: ${error.message}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Reprint / Preview Existing Purchase
+  const handlePrintExistingPurchase = async (purchase) => {
+    try {
+      const items = JSON.parse(purchase.items_json || '[]');
+      const electron = window.require ? window.require('electron') : null;
+      if (electron) {
+        await electron.ipcRenderer.invoke('print:purchase-order', {
+          orderId: purchase.id,
+          date: purchase.date,
+          supplier: purchase.supplier_name || 'غير محدد',
+          items,
+          total: purchase.total,
+          notes: purchase.notes
+        });
+      }
+    } catch (err) {
+      showError('خطأ أثناء معاينة الطباعة: ' + err.message);
+    }
+  };
+
+  // Export Existing Purchase to PDF
+  const handleExportPdfExistingPurchase = async (purchase) => {
+    try {
+      const items = JSON.parse(purchase.items_json || '[]');
+      const electron = window.require ? window.require('electron') : null;
+      if (electron) {
+        const res = await electron.ipcRenderer.invoke('export:purchase-order-pdf', {
+          orderId: purchase.id,
+          date: purchase.date,
+          supplier: purchase.supplier_name || 'غير محدد',
+          items,
+          total: purchase.total,
+          notes: purchase.notes
+        });
+        if (res?.success) {
+          showSuccess(`✅ تم تصدير ملف PDF بنجاح في:\n${res.filePath}`);
+        } else if (!res?.canceled) {
+          showError('فشل تصدير PDF: ' + (res?.error || 'حدث خطأ غير متوقع'));
+        }
+      }
+    } catch (err) {
+      showError('خطأ أثناء تصدير PDF: ' + err.message);
     }
   };
 
@@ -1035,12 +1137,30 @@ No additional text, only JSON.`
                     </div>
 
                     <button
+                      onClick={() => handlePrintExistingPurchase(purchase)}
+                      className="btn-atelier-secondary py-1 px-2 text-[11px] flex items-center gap-1 font-bold cursor-pointer"
+                      title="معاينة وطباعة الفاتورة"
+                    >
+                      <Printer className="w-3 h-3 text-blue-500" />
+                      <span>طباعة</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleExportPdfExistingPurchase(purchase)}
+                      className="btn-atelier-secondary py-1 px-2 text-[11px] flex items-center gap-1 font-bold cursor-pointer"
+                      title="تصدير الفاتورة كملف PDF"
+                    >
+                      <FileText className="w-3 h-3 text-emerald-500" />
+                      <span>PDF</span>
+                    </button>
+
+                    <button
                       onClick={() => openBarcodePrintModal(items)}
-                      className="btn-atelier-secondary py-1 px-2.5 text-[11px] flex items-center gap-1 font-bold cursor-pointer"
+                      className="btn-atelier-secondary py-1 px-2 text-[11px] flex items-center gap-1 font-bold cursor-pointer"
                       title="استوديو طباعة باركود الكميات المشتراة"
                     >
                       <QrCode className="w-3 h-3 text-amber-600" />
-                      <span>استوديو الباركود</span>
+                      <span>الباركود</span>
                     </button>
 
                     <button
@@ -1671,24 +1791,49 @@ No additional text, only JSON.`
                     <ArrowLeft className="w-4 h-4" />
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={savePurchase}
-                    disabled={saving}
-                    className="btn-atelier-primary py-2 px-8 text-xs font-extrabold flex items-center gap-2 disabled:opacity-50 cursor-pointer shadow-lg"
-                  >
-                    {saving ? (
-                      <>
-                        <span>⏳</span>
-                        <span>جاري حفظ الفاتورة وتحديث المخزون...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>✅</span>
-                        <span>اعتماد الفاتورة والانتقال لطباعة الباركود</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => savePurchase('save')}
+                      disabled={saving}
+                      className="btn-atelier-primary py-2 px-5 text-xs font-extrabold flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-lg"
+                      title="حفظ الفاتورة وتحديث المخزون ومتوسط التكلفة مباشرة"
+                    >
+                      {saving ? (
+                        <>
+                          <span>⏳</span>
+                          <span>جاري الحفظ...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>💾</span>
+                          <span>حفظ واعتماد الفاتورة</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => savePurchase('print')}
+                      disabled={saving}
+                      className="btn-atelier-secondary py-2 px-4 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      title="حفظ الفاتورة وفتح معاينة الطباعة الرسمية"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-blue-500" />
+                      <span>حفظ ومعاينة الطباعة</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => savePurchase('pdf')}
+                      disabled={saving}
+                      className="btn-atelier-secondary py-2 px-4 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      title="حفظ الفاتورة وتصديرها كملف PDF"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>حفظ وتصدير PDF</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -2095,6 +2240,69 @@ No additional text, only JSON.`
                 className="btn-atelier-secondary py-2.5 px-5 text-xs font-bold cursor-pointer"
               >
                 إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Category Creation Modal */}
+      {quickCatTargetIndex !== null && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" dir="rtl">
+          <div className="atelier-card bg-white dark:bg-slate-900 w-full max-w-md p-5 shadow-2xl flex flex-col gap-4">
+            <div className="flex justify-between items-center border-b border-amber-500/20 pb-2.5">
+              <h3 className="text-sm font-extrabold text-[#2D2424] dark:text-white flex items-center gap-2">
+                <span>🏷️</span>
+                <span>إضافة فئة عطور وتصنيف جديد</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickCatTargetIndex(null);
+                  setQuickCatName('');
+                }}
+                className="text-gray-400 hover:text-gray-600 text-lg leading-none cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5">اسم التصنيف الجديد:</label>
+              <input
+                type="text"
+                placeholder="مثال: عطور ملكية، زيوت صيفية، خلطات خاصة..."
+                value={quickCatName}
+                onChange={(e) => setQuickCatName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreateQuickCategory();
+                }}
+                className="input-atelier w-full text-xs font-bold"
+                autoFocus
+              />
+              <span className="text-[10px] text-gray-400 block mt-1">
+                سيتم حفظ الفئة في قاعدة البيانات وإتاحتها في كافة أقسام المنظومة
+              </span>
+            </div>
+
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickCatTargetIndex(null);
+                  setQuickCatName('');
+                }}
+                className="btn-atelier-secondary py-1.5 px-4 text-xs font-bold cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateQuickCategory}
+                disabled={creatingQuickCat || !quickCatName.trim()}
+                className="btn-atelier-primary py-1.5 px-6 text-xs font-extrabold flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-md"
+              >
+                {creatingQuickCat ? '⏳ جاري الإضافة...' : '➕ حفظ واختيار الفئة'}
               </button>
             </div>
           </div>

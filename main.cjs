@@ -2461,6 +2461,276 @@ ipcMain.handle('export:financial-pdf', async (event, payload = {}) => {
   }
 });
 
+// Export Purchase Order to PDF Handler
+ipcMain.handle('export:purchase-order-pdf', async (event, orderData = {}) => {
+  let printWin = null;
+  try {
+    const { orderId, date, supplier, items = [], total, notes } = orderData;
+    const settings = getPrintSettings();
+
+    const formatCurrency = (amount) => {
+      const val = Number(amount) || 0;
+      return `${val.toLocaleString('ar-LY', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${settings.currencySymbol || 'د.ل'}`;
+    };
+
+    const orderHtml = `
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { size: A4; margin: 15mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #111827;
+      background: #fff;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #fbbf24;
+      padding-bottom: 8mm;
+      margin-bottom: 8mm;
+    }
+    .logo-area { display: flex; align-items: center; gap: 12px; }
+    .logo-img { max-height: 45px; object-fit: contain; }
+    .logo-text { font-size: 24px; font-weight: bold; color: #92400e; }
+    .company-info { text-align: left; font-size: 11px; color: #4b5563; }
+    .title {
+      text-align: center;
+      font-size: 22px;
+      font-weight: bold;
+      margin-bottom: 6mm;
+      color: #1f2937;
+    }
+    table { width: 100%; border-collapse: collapse; margin: 4mm 0; }
+    th, td { padding: 8px 10px; text-align: right; border: 1px solid #e5e7eb; }
+    th { background: #f3f4f6; font-weight: bold; }
+    .total-row { font-weight: bold; background: #fffbeb; color: #92400e; }
+    .footer {
+      margin-top: 12mm;
+      padding-top: 4mm;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+      color: #6b7280;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-area">
+      ${settings.showLogo && settings.logoBase64 ? `<img src="${settings.logoBase64}" class="logo-img" alt="Logo" />` : ''}
+      <div>
+        <div class="logo-text">${settings.storeName}</div>
+        <div style="font-size: 11px; color: #6b7280;">${settings.storeSubtitle}</div>
+      </div>
+    </div>
+    <div class="company-info">
+      <div>📍 ${settings.storeAddress}</div>
+      <div>📱 ${settings.storePhone}</div>
+      <div>📅 ${date ? new Date(date).toLocaleDateString('ar-SD') : '—'}</div>
+    </div>
+  </div>
+
+  <div class="title">طلب شراء وتوريد - Purchase Order</div>
+
+  <table style="width: 55%; margin-bottom: 6mm;">
+    <tr>
+      <td style="width: 40%; font-weight: bold;">رقم الطلب:</td>
+      <td>#${orderId}</td>
+    </tr>
+    <tr>
+      <td style="font-weight: bold;">التاريخ:</td>
+      <td>${date ? new Date(date).toLocaleDateString('ar-SD') : '—'}</td>
+    </tr>
+    <tr>
+      <td style="font-weight: bold;">المورد:</td>
+      <td>${supplier || 'غير محدد'}</td>
+    </tr>
+  </table>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 5%;">#</th>
+        <th style="width: 45%;">المنتج</th>
+        <th style="width: 15%;">الكمية</th>
+        <th style="width: 17.5%;">سعر الوحدة</th>
+        <th style="width: 17.5%;">المجموع</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${items.map((item, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${item.name}</td>
+        <td>${item.quantity} ${item.unit || 'قطعة'}</td>
+        <td>${formatCurrency(item.cost_per_unit || item.cost)}</td>
+        <td>${formatCurrency(item.total_cost || (item.quantity * (item.cost_per_unit || item.cost)))}</td>
+      </tr>
+      `).join('')}
+      <tr class="total-row">
+        <td colspan="4" style="text-align: left;">الإجمالي الكلي:</td>
+        <td>${formatCurrency(total)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  ${notes ? `
+  <div style="margin-top: 6mm;">
+    <div style="font-weight: bold; margin-bottom: 2mm;">ملاحظات:</div>
+    <div style="border: 1px solid #e5e7eb; padding: 3mm; background: #f9fafb; border-radius: 4px;">
+      ${notes}
+    </div>
+  </div>
+  ` : ''}
+
+  <div style="margin-top: 15mm; display: flex; justify-content: space-between;">
+    <div style="text-align: center; width: 40%;">
+      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 12mm;">توقيع المورد</div>
+    </div>
+    <div style="text-align: center; width: 40%;">
+      <div style="border-top: 1px solid #000; padding-top: 2mm; margin-top: 12mm;">توقيع المسؤول المعتمد</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div>${settings.storeName} — شكراً لتعاونكم</div>
+  </div>
+</body>
+</html>`;
+
+    printWin = new BrowserWindow({
+      show: false,
+      webPreferences: { nodeIntegration: false }
+    });
+
+    await printWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(orderHtml));
+
+    const pdfBuffer = await printWin.webContents.printToPDF({
+      printBackground: true,
+      pageSize: 'A4',
+      margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 }
+    });
+
+    try { if (!printWin.isDestroyed()) printWin.destroy(); } catch (e) {}
+
+    const { filePath, canceled } = await dialog.showSaveDialog({
+      title: 'حفظ فاتورة طلب الشراء كملف PDF',
+      defaultPath: path.join(app.getPath('documents'), `فاتورة_شراء_${orderId || 'طلب'}_${new Date().toISOString().split('T')[0]}.pdf`),
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+    });
+
+    if (canceled || !filePath) {
+      return { success: false, canceled: true };
+    }
+
+    fs.writeFileSync(filePath, pdfBuffer);
+    return { success: true, filePath };
+  } catch (err) {
+    if (printWin && !printWin.isDestroyed()) {
+      try { printWin.destroy(); } catch (e) {}
+    }
+    console.error('export:purchase-order-pdf error:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+// Storage & Old Package Scanner Handler (Detection of old installer files to free space)
+ipcMain.handle('system:get-old-packages', async () => {
+  try {
+    const packages = [];
+    const currentVersion = app.getVersion();
+    const searchDirs = [
+      path.join(__dirname, 'release'),
+      path.join(os.homedir(), 'Downloads'),
+      '/tmp'
+    ];
+
+    for (const dir of searchDirs) {
+      if (fs.existsSync(dir)) {
+        try {
+          const files = fs.readdirSync(dir);
+          for (const file of files) {
+            if (file.startsWith('aldaffa-app-desktop') && file.endsWith('.deb')) {
+              const fullPath = path.join(dir, file);
+              const stats = fs.statSync(fullPath);
+              const isCurrent = file.includes(currentVersion);
+              packages.push({
+                name: file,
+                path: fullPath,
+                sizeBytes: stats.size,
+                sizeFormatted: `${(stats.size / (1024 * 1024)).toFixed(1)} MB`,
+                modifiedTime: stats.mtime.toLocaleString('ar-LY'),
+                isCurrentVersion: isCurrent
+              });
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    const totalOldBytes = packages.filter(p => !p.isCurrentVersion).reduce((acc, p) => acc + p.sizeBytes, 0);
+    return {
+      success: true,
+      currentVersion,
+      packages,
+      totalOldPackagesCount: packages.filter(p => !p.isCurrentVersion).length,
+      totalReclaimableSpace: `${(totalOldBytes / (1024 * 1024)).toFixed(1)} MB`
+    };
+  } catch (err) {
+    return { success: false, error: err.message, packages: [] };
+  }
+});
+
+// Clean and Delete Old Installer Packages Handler
+ipcMain.handle('system:clean-old-packages', async () => {
+  try {
+    const currentVersion = app.getVersion();
+    const searchDirs = [
+      path.join(__dirname, 'release'),
+      path.join(os.homedir(), 'Downloads'),
+      '/tmp'
+    ];
+
+    let deletedCount = 0;
+    let freedBytes = 0;
+
+    for (const dir of searchDirs) {
+      if (fs.existsSync(dir)) {
+        try {
+          const files = fs.readdirSync(dir);
+          for (const file of files) {
+            if (file.startsWith('aldaffa-app-desktop') && file.endsWith('.deb')) {
+              const isCurrent = file.includes(currentVersion);
+              if (!isCurrent) {
+                const fullPath = path.join(dir, file);
+                const stats = fs.statSync(fullPath);
+                freedBytes += stats.size;
+                fs.unlinkSync(fullPath);
+                deletedCount++;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    return {
+      success: true,
+      deletedCount,
+      freedSpace: `${(freedBytes / (1024 * 1024)).toFixed(1)} MB`
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // Hardware & USB Printer/Scanner Discovery Handler (Real Hardware Status Polling)
 ipcMain.handle('hardware:get-devices', async () => {
   const result = {

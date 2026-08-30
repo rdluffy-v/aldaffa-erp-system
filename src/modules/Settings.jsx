@@ -198,9 +198,13 @@ const GUIDE_STAGES = [
       {
         heading: '4. طباعة ملصقات الباركود للكميات المشتراة',
         text: 'اضغط على زر "🏷️ طباعة باركود الكميات" ليقوم النظام بتجهيز وطباعة ملصقات باركود حرارية بعدد القطع المشتراة فوراً للصقها على العبوات والزجاجات.'
+      },
+      {
+        heading: '5. الفرق الجوهري بين إدخال الأصناف من المخزون ومن المشتريات',
+        text: '• من المخزون: يُستخدم لتعريف بطاقة الصنف، تحديد الأسعار (قطاعي وجملة)، وحد النواقص، أو إدخال رصيد أول المدة بدون فاتورة مورد.\n• من المشتريات: يُستخدم لتوثيق فواتير الشراء والتوريد الفعلية باسم المورد وتاريخ الفاتورة (مع إمكانية تحديد أي تاريخ قديم للفاتورة)، مع حساب أوتوماتيكي لمتوسط التكلفة المرجح (WAC) وتوثيق حركة النقدية والديون للموردين، والتحكم بالطباعة أو الحفظ كـ PDF.'
       }
     ],
-    tips: '🤖 تلميح ذكي: يدعم قسم المشتريات ميزة قراءة الفواتير الورقية المصورة عبر الذكاء الاصطناعي (OCR) لاستخراج الأصناف والكميات والأسعار تلقائياً.'
+    tips: '🤖 تلميح ذكي: يدعم قسم المشتريات حفظ الفاتورة مباشرة، أو حفظها مع معاينة الطباعة، أو حفظها وتصديرها كملف PDF رسمي، بالإضافة إلى ميزة قراءة الفواتير الورقية عبر الذكاء الاصطناعي (OCR).'
   },
   {
     id: 4,
@@ -1243,6 +1247,51 @@ const SettingsModule = () => {
       showInfo('تم فتح صفحة تنزيل حزمة التحديث (.deb) المباشرة في المتصفح');
     } catch (e) {
       showError('فشل فتح الرابط: ' + e.message);
+    }
+  };
+
+  // ----------------------------------------------------
+  // SECTION: Old Package Scanner & Storage Cleanup
+  // ----------------------------------------------------
+  const [oldPackagesInfo, setOldPackagesInfo] = useState(null);
+  const [scanningPackages, setScanningPackages] = useState(false);
+  const [cleaningPackages, setCleaningPackages] = useState(false);
+
+  const handleScanOldPackages = async () => {
+    setScanningPackages(true);
+    try {
+      const res = await invokeIpc('system:get-old-packages');
+      if (res?.success) {
+        setOldPackagesInfo(res);
+        if (res.totalOldPackagesCount > 0) {
+          showSuccess(`✅ تم العثور على ${res.totalOldPackagesCount} حزمة قديمة (${res.totalReclaimableSpace})`);
+        } else {
+          showInfo('✅ لا توجد ملفات تثبيت قديمة، مساحة جهازك نظيفة تماماً');
+        }
+      } else {
+        showError('فشل فحص الحزم: ' + (res?.error || 'حدث خطأ غير معروف'));
+      }
+    } catch (err) {
+      showError('خطأ أثناء الفحص: ' + err.message);
+    } finally {
+      setScanningPackages(false);
+    }
+  };
+
+  const handleCleanOldPackages = async () => {
+    setCleaningPackages(true);
+    try {
+      const res = await invokeIpc('system:clean-old-packages');
+      if (res?.success) {
+        showSuccess(`🎉 تم تنظيف ${res.deletedCount} حزمة قديمة وتفريغ ${res.freedSpace} من مساحة القرص بنجاح!`);
+        await handleScanOldPackages();
+      } else {
+        showError('فشل التنظيف: ' + (res?.error || 'حدث خطأ'));
+      }
+    } catch (err) {
+      showError('خطأ أثناء التنظيف: ' + err.message);
+    } finally {
+      setCleaningPackages(false);
     }
   };
 
@@ -3232,6 +3281,81 @@ const SettingsModule = () => {
                     تنزيل حزمة (.deb) المباشرة
                   </button>
                 </div>
+              </div>
+
+              {/* Old Packages & Storage Cleanup Card */}
+              <div className="glass-card p-5 lg:col-span-2 flex flex-col gap-4 border border-amber-500/20 bg-[#161b22]/70">
+                <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                  <div className="flex items-center gap-2 text-sm font-bold text-[#fbbf24]">
+                    <HardDrive className="w-4 h-4" />
+                    إدارة الإصدارات وحزم التثبيت القديمة وتفريغ المساحة (.deb Clean-up)
+                  </div>
+                  <span className="text-[11px] text-gray-400">
+                    كشف ملفات التثبيت القديمة في التنزيلات والمجلدات المؤقتة
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-[#0d1117] border border-white/5 rounded-xl text-xs">
+                  <div>
+                    <div className="font-bold text-[#e6edf3]">فحص وتفريغ مساحة القرص من ملفات التثبيت السابقة</div>
+                    <div className="text-[11px] text-[#768390] mt-0.5">
+                      تتراكم ملفات التثبيت السابقة (.deb) عند التحديث، يمكنك فحصها وحذفها بنقرة واحدة لتوفير مئات الميغابايت.
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleScanOldPackages}
+                      disabled={scanningPackages}
+                      className="btn-secondary text-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 text-[#fbbf24] ${scanningPackages ? 'animate-spin' : ''}`} />
+                      <span>{scanningPackages ? 'جاري الفحص...' : 'فحص الحزم القديمة'}</span>
+                    </button>
+
+                    {oldPackagesInfo && oldPackagesInfo.totalOldPackagesCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleCleanOldPackages}
+                        disabled={cleaningPackages}
+                        className="btn-primary text-xs flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-md"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{cleaningPackages ? 'جاري التنظيف...' : `حذف ${oldPackagesInfo.totalOldPackagesCount} حزمة (${oldPackagesInfo.totalReclaimableSpace})`}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {oldPackagesInfo && oldPackagesInfo.packages && oldPackagesInfo.packages.length > 0 && (
+                  <div className="space-y-2 border border-white/5 rounded-xl p-3 bg-[#0d1117]/80 max-h-48 overflow-y-auto custom-scrollbar text-xs">
+                    <div className="font-bold text-[#adbac7] mb-1">ملفات التثبيت المكتشفة على الجهاز:</div>
+                    {oldPackagesInfo.packages.map((pkg, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex items-center justify-between p-2 rounded-lg border text-[11px] ${
+                          pkg.isCurrentVersion
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                            : 'bg-white/5 border-white/5 text-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="font-mono font-bold truncate">{pkg.name}</span>
+                          {pkg.isCurrentVersion && (
+                            <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-bold">
+                              (الإصدار الحالي النشط)
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="font-mono text-gray-400">{pkg.sizeFormatted}</span>
+                          <span className="text-[10px] text-gray-500">{pkg.modifiedTime}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
