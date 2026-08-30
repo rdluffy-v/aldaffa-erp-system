@@ -813,10 +813,131 @@ ipcMain.handle('db:transaction', async (event, { queries = [] }) => {
   }
 });
 
-// Thermal & A4 Receipt Printing
+// ----------------------------------------------------
+// CRASH-PROOF PRINT PREVIEW MODAL HELPER
+// ----------------------------------------------------
+function showPrintPreviewModal(htmlContent, title = 'معاينة المستند والطباعة', widthMm = null, heightMm = null) {
+  try {
+    const isThermal = widthMm && widthMm <= 100;
+    const winWidth = isThermal ? 560 : 920;
+    const winHeight = 900;
+
+    const previewWin = new BrowserWindow({
+      parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+      modal: true,
+      show: true,
+      width: winWidth,
+      height: winHeight,
+      backgroundColor: '#0d1117',
+      title: title,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true
+      }
+    });
+
+    const previewDocumentHtml = `
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>${title}</title>
+  <style>
+    @media screen {
+      body {
+        margin: 0;
+        padding: 0;
+        background: #0b0f19;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #e6edf3;
+      }
+      #ald-print-toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 99999;
+        background: #111827;
+        color: #e6edf3;
+        padding: 12px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid #f59e0b;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+      }
+      .ald-btn {
+        padding: 8px 18px;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 13px;
+        cursor: pointer;
+        border: none;
+        transition: all 0.15s ease;
+      }
+      .ald-btn-primary { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #0d1117; }
+      .ald-btn-primary:hover { filter: brightness(1.15); transform: scale(1.02); }
+      .ald-btn-sec { background: #374151; color: #e6edf3; margin-inline-start: 8px; }
+      .ald-btn-sec:hover { background: #4b5563; }
+      #print-content-wrapper {
+        padding: 24px 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: calc(100vh - 65px);
+        background: #0b0f19;
+      }
+      .page-sheet {
+        background: #ffffff;
+        color: #000000;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        border-radius: 4px;
+        width: ${widthMm ? `${widthMm}mm` : '210mm'};
+        min-height: ${heightMm ? `${heightMm}mm` : 'auto'};
+        padding: 0;
+        overflow: hidden;
+      }
+    }
+    @media print {
+      @page {
+        size: ${widthMm && heightMm ? `${widthMm}mm ${heightMm}mm` : widthMm ? `${widthMm}mm auto` : 'A4'};
+        margin: 0;
+      }
+      #ald-print-toolbar { display: none !important; }
+      #print-content-wrapper { padding: 0 !important; margin: 0 !important; background: #fff !important; }
+      .page-sheet { box-shadow: none !important; border-radius: 0 !important; width: 100% !important; min-height: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="ald-print-toolbar">
+    <div style="font-weight: bold; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+      <span>🖨️ ${title}</span>
+    </div>
+    <div>
+      <button class="ald-btn ald-btn-primary" onclick="window.print()">🖨️ إرسال للطباعة الآن</button>
+      <button class="ald-btn ald-btn-sec" onclick="window.close()">إلغاء وإغلاق</button>
+    </div>
+  </div>
+  <div id="print-content-wrapper">
+    <div class="page-sheet">
+      ${htmlContent}
+    </div>
+  </div>
+</body>
+</html>`;
+
+    previewWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(previewDocumentHtml));
+    return previewWin;
+  } catch (err) {
+    console.error('showPrintPreviewModal error:', err);
+    return null;
+  }
+}
+
+// Thermal & A4 Receipt Printing (Crash-Safe)
 ipcMain.handle('print:receipt', async (event, receiptData) => {
   try {
-    const { saleId, date, items, subtotal, discount, total, paymentMethod, customerName } = receiptData;
+    const { saleId, date, items, subtotal, discount, total, paymentMethod, customerName } = receiptData || {};
     const settings = getPrintSettings();
 
     const formatCurrency = (amount) => {
@@ -825,13 +946,17 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
     };
 
     const formatDate = (dateStr) => {
-      return new Intl.DateTimeFormat('ar-LY', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      }).format(new Date(dateStr));
+      try {
+        return new Intl.DateTimeFormat('ar-LY', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        }).format(new Date(dateStr));
+      } catch (e) {
+        return String(dateStr);
+      }
     };
 
     // Build HTML receipt for 80mm thermal printer
@@ -849,7 +974,7 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
 
     const receiptHtml = `
 <!DOCTYPE html>
-<html dir="rtl">
+<html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
   <style>
@@ -991,7 +1116,7 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
         </tr>
       </thead>
       <tbody>
-        ${items.map(item => `
+        ${(items || []).map(item => `
         <tr class="item-row">
           <td>${item.name}${item.portion_ml ? ` (${item.portion_ml}ml)` : ''}</td>
           <td class="center">${item.cart_qty}</td>
@@ -1024,7 +1149,7 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
     ${settings.showBarcode ? `
     <div class="barcode">
       <div>||| | ||||| ||| |||| |||| ||</div>
-      <div>*${saleId.toString().padStart(8, '0')}*</div>
+      <div>*${String(saleId || '0').padStart(8, '0')}*</div>
     </div>
     ` : ''}
 
@@ -1043,28 +1168,7 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
 </body>
 </html>`;
 
-    // Create hidden window for printing
-    const printWindow = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        nodeIntegration: false
-      }
-    });
-
-    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptHtml));
-
-    // Print silently to default printer
-    printWindow.webContents.print({
-      silent: true,
-      printBackground: true,
-      margins: { marginType: 'none' }
-    }, (success, errorType) => {
-      if (!success) {
-        console.error('Print failed:', errorType);
-      }
-      printWindow.close();
-    });
-
+    showPrintPreviewModal(receiptHtml, `فاتورة بيع #${saleId}`, 80, null);
     return { success: true };
   } catch (error) {
     console.error('Print receipt error:', error);
@@ -1072,10 +1176,10 @@ ipcMain.handle('print:receipt', async (event, receiptData) => {
   }
 });
 
-// A4 Purchase Order Printing
+// A4 Purchase Order Printing (Crash-Safe)
 ipcMain.handle('print:purchase-order', async (event, orderData) => {
   try {
-    const { orderId, date, supplier, items, total, notes } = orderData;
+    const { orderId, date, supplier, items = [], total, notes } = orderData || {};
     const settings = getPrintSettings();
 
     const formatCurrency = (amount) => {
@@ -1085,7 +1189,7 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
 
     const orderHtml = `
 <!DOCTYPE html>
-<html dir="rtl">
+<html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
   <style>
@@ -1143,7 +1247,7 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
     <div class="company-info">
       <div>📍 ${settings.storeAddress}</div>
       <div>📱 ${settings.storePhone}</div>
-      <div>📅 ${new Date(date).toLocaleDateString('ar-SD')}</div>
+      <div>📅 ${date ? new Date(date).toLocaleDateString('ar-SD') : '—'}</div>
     </div>
   </div>
 
@@ -1156,7 +1260,7 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
     </tr>
     <tr>
       <td style="font-weight: bold;">التاريخ:</td>
-      <td>${new Date(date).toLocaleDateString('ar-SD')}</td>
+      <td>${date ? new Date(date).toLocaleDateString('ar-SD') : '—'}</td>
     </tr>
     <tr>
       <td style="font-weight: bold;">المورد:</td>
@@ -1179,9 +1283,9 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
       <tr>
         <td>${index + 1}</td>
         <td>${item.name}</td>
-        <td>${item.quantity} ${item.unit}</td>
-        <td>${formatCurrency(item.cost_per_unit)}</td>
-        <td>${formatCurrency(item.total_cost)}</td>
+        <td>${item.quantity} ${item.unit || 'قطعة'}</td>
+        <td>${formatCurrency(item.cost_per_unit || item.cost)}</td>
+        <td>${formatCurrency(item.total_cost || (item.quantity * (item.cost_per_unit || item.cost)))}</td>
       </tr>
       `).join('')}
       <tr class="total-row">
@@ -1215,25 +1319,7 @@ ipcMain.handle('print:purchase-order', async (event, orderData) => {
 </body>
 </html>`;
 
-    const printWindow = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        nodeIntegration: false
-      }
-    });
-
-    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(orderHtml));
-
-    printWindow.webContents.print({
-      silent: false,
-      printBackground: true
-    }, (success, errorType) => {
-      if (!success) {
-        console.error('Print failed:', errorType);
-      }
-      printWindow.close();
-    });
-
+    showPrintPreviewModal(orderHtml, `طلب شراء وتوريد #${orderId}`, null, null);
     return { success: true };
   } catch (error) {
     console.error('Print purchase order error:', error);
@@ -1558,53 +1644,24 @@ ipcMain.handle('export:shift-pdf', async (event, reportData) => {
   }
 });
 
-// Shift Report Printing (Crash-Safe)
+// Shift Report Printing (Crash-Proof)
 ipcMain.handle('print:shift-report', async (event, reportData) => {
-  let printWindow = null;
   try {
     const settings = getPrintSettings();
     const html = generateShiftReportHtml(reportData, settings);
 
-    printWindow = new BrowserWindow({
-      show: false,
-      parent: mainWindow || undefined,
-      webPreferences: {
-        nodeIntegration: false
-      }
-    });
-
-    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-
-    printWindow.webContents.print({
-      silent: false,
-      printBackground: true
-    }, (success, errorType) => {
-      if (!success) {
-        console.warn('Print shift report status:', errorType);
-      }
-      setTimeout(() => {
-        try {
-          if (printWindow && !printWindow.isDestroyed()) {
-            printWindow.destroy();
-          }
-        } catch (e) {}
-      }, 1000);
-    });
-
+    showPrintPreviewModal(html, 'تقرير إغلاق الوردية والحسابات', null, null);
     return { success: true };
   } catch (error) {
-    if (printWindow && !printWindow.isDestroyed()) {
-      try { printWindow.destroy(); } catch (e) {}
-    }
     console.error('Print shift report error:', error);
     return { success: false, error: error.message };
   }
 });
 
-// A4 Stock / Inventory Report Printing
+// A4 Stock / Inventory Report Printing (Crash-Proof)
 ipcMain.handle('print:inventory-report', async (event, inventoryData) => {
   try {
-    const { products = [], totalCost = 0, totalRetail = 0, lowStockCount = 0 } = inventoryData;
+    const { products = [], totalCost = 0, totalRetail = 0, lowStockCount = 0 } = inventoryData || {};
     const settings = getPrintSettings();
 
     const formatCurrency = (amount) => {
@@ -1614,7 +1671,7 @@ ipcMain.handle('print:inventory-report', async (event, inventoryData) => {
 
     const reportHtml = `
 <!DOCTYPE html>
-<html dir="rtl">
+<html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
   <style>
@@ -1749,25 +1806,7 @@ ipcMain.handle('print:inventory-report', async (event, inventoryData) => {
 </body>
 </html>`;
 
-    const printWindow = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        nodeIntegration: false
-      }
-    });
-
-    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(reportHtml));
-
-    printWindow.webContents.print({
-      silent: false,
-      printBackground: true
-    }, (success, errorType) => {
-      if (!success) {
-        console.error('Print inventory report failed:', errorType);
-      }
-      printWindow.close();
-    });
-
+    showPrintPreviewModal(reportHtml, 'كشف جرد المخزون العام والتقييم المالي', null, null);
     return { success: true };
   } catch (error) {
     console.error('Print inventory report error:', error);
@@ -1775,7 +1814,7 @@ ipcMain.handle('print:inventory-report', async (event, inventoryData) => {
   }
 });
 
-// Test Thermal Receipt Print (80mm)
+// Test Thermal Receipt Print (80mm) (Crash-Proof)
 ipcMain.handle('print:test-thermal', async (event, templateConfig = {}) => {
   try {
     const {
@@ -1794,7 +1833,7 @@ ipcMain.handle('print:test-thermal', async (event, templateConfig = {}) => {
 
     const receiptHtml = `
 <!DOCTYPE html>
-<html dir="rtl">
+<html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
   <style>
@@ -1946,24 +1985,7 @@ ipcMain.handle('print:test-thermal', async (event, templateConfig = {}) => {
 </body>
 </html>`;
 
-    const printWindow = new BrowserWindow({
-      show: false,
-      webPreferences: { nodeIntegration: false }
-    });
-
-    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptHtml));
-
-    printWindow.webContents.print({
-      silent: false,
-      printBackground: true,
-      margins: { marginType: 'none' }
-    }, (success, errorType) => {
-      if (!success) {
-        console.error('Test thermal print failed:', errorType);
-      }
-      printWindow.close();
-    });
-
+    showPrintPreviewModal(receiptHtml, 'فاتورة تجريبية (طباعة حرارية 80mm)', 80, null);
     return { success: true };
   } catch (error) {
     console.error('Test thermal print error:', error);
@@ -1971,7 +1993,7 @@ ipcMain.handle('print:test-thermal', async (event, templateConfig = {}) => {
   }
 });
 
-// Test A4 Document / PDF Print
+// Test A4 Document / PDF Print (Crash-Proof)
 ipcMain.handle('print:test-pdf', async (event, templateConfig = {}) => {
   try {
     const {
@@ -1987,7 +2009,7 @@ ipcMain.handle('print:test-pdf', async (event, templateConfig = {}) => {
 
     const reportHtml = `
 <!DOCTYPE html>
-<html dir="rtl">
+<html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
   <style>
@@ -2119,23 +2141,7 @@ ipcMain.handle('print:test-pdf', async (event, templateConfig = {}) => {
 </body>
 </html>`;
 
-    const printWindow = new BrowserWindow({
-      show: false,
-      webPreferences: { nodeIntegration: false }
-    });
-
-    await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(reportHtml));
-
-    printWindow.webContents.print({
-      silent: false,
-      printBackground: true
-    }, (success, errorType) => {
-      if (!success) {
-        console.error('Test PDF print failed:', errorType);
-      }
-      printWindow.close();
-    });
-
+    showPrintPreviewModal(reportHtml, 'تقرير تجريبي معتمد A4 (PDF & Print)', null, null);
     return { success: true };
   } catch (error) {
     console.error('Test PDF print error:', error);

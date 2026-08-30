@@ -190,14 +190,15 @@ const InventoryFullModule = () => {
 
   const handlePrintStockSheet = async () => {
     try {
-      if (window.electronAPI) {
-        await window.electronAPI.invoke('print:inventory-report', {
+      const electron = window.require ? window.require('electron') : window.electronAPI ? { ipcRenderer: window.electronAPI } : null;
+      if (electron && electron.ipcRenderer) {
+        await electron.ipcRenderer.invoke('print:inventory-report', {
           products: filtered,
           totalCost: stats.totalStockValue,
           totalRetail: stats.totalRetailValue,
           lowStockCount: stats.lowStockCount
         });
-        showSuccess('تم إرسال كشف الجرد إلى الطباعة');
+        showSuccess('تم فتح كشف الجرد للمعاينة والطباعة');
       } else {
         window.print();
       }
