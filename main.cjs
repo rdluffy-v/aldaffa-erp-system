@@ -10,7 +10,20 @@ const rm = promisify(fs.rm);
 
 let mainWindow;
 let db;
-const { startMobileBridgeServer, getMobileServerInfo, stopMobileBridgeServer, generatePairingToken } = require('./server/mobileBridgeServer.cjs');
+let startMobileBridgeServer, getMobileServerInfo, stopMobileBridgeServer, generatePairingToken;
+try {
+  const mobileBridge = require('./server/mobileBridgeServer.cjs');
+  startMobileBridgeServer = mobileBridge.startMobileBridgeServer;
+  getMobileServerInfo = mobileBridge.getMobileServerInfo;
+  stopMobileBridgeServer = mobileBridge.stopMobileBridgeServer;
+  generatePairingToken = mobileBridge.generatePairingToken;
+} catch (e) {
+  console.warn('MobileBridgeServer module not found, mobile companion disabled:', e.message);
+  startMobileBridgeServer = () => {};
+  getMobileServerInfo = () => ({ running: false, port: null, token: null, url: null });
+  stopMobileBridgeServer = () => {};
+  generatePairingToken = () => 'unavailable';
+}
 
 
 // Database initialization

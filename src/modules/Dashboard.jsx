@@ -77,6 +77,14 @@ const inventoryRepo = new InventoryRepository();
  * HELPERS
  * ==========================================================================*/
 
+/** Render a percentage-change delta indicator (▲ positive / ▼ negative / — zero). */
+const renderDelta = (pct) => {
+  const val = Number(pct) || 0;
+  if (val > 0) return <span className="text-emerald-500 font-bold">▲ {val.toFixed(1)}%</span>;
+  if (val < 0) return <span className="text-red-500 font-bold">▼ {Math.abs(val).toFixed(1)}%</span>;
+  return <span className="text-gray-400">—</span>;
+};
+
 /** Local-timezone YYYY-MM-DD key so UTC ISO dates align with local day boundaries. */
 const toLocalDateKey = (date) => {
   const y = date.getFullYear();
