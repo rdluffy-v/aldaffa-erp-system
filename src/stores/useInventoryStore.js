@@ -17,17 +17,9 @@ export const useInventoryStore = create((set, get) => ({
   categoryFilter: 'all',
   lowStockFilter: false,
   lastFetch: null,
-  cacheTimeout: 30000, // 30 seconds
 
   // Actions
-  loadProducts: async (force = false) => {
-    const state = get();
-
-    // Use cache if fresh
-    if (!force && state.lastFetch && Date.now() - state.lastFetch < state.cacheTimeout) {
-      return;
-    }
-
+  loadProducts: async (_force = true) => {
     set({ loading: true, error: null });
 
     try {

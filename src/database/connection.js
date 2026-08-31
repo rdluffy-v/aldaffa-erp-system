@@ -17,36 +17,16 @@ const getIpcRenderer = () => {
 class DatabaseConnection {
   constructor() {
     this.queryCache = new Map();
-    this.cacheTimeout = 5000; // 5 seconds cache for read queries
+    this.cacheTimeout = 0; // Disabled: zero delay, direct SQLite reads
     this.retryAttempts = 3;
-    this.retryDelay = 1000;
+    this.retryDelay = 500;
   }
 
   /**
-   * Execute SELECT query with caching
+   * Execute SELECT query directly
    */
   async query(sql, params = []) {
-    const cacheKey = `${sql}:${JSON.stringify(params)}`;
-
-    // Check cache for read queries
-    if (sql.trim().toUpperCase().startsWith('SELECT')) {
-      const cached = this.queryCache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
-        return cached.data;
-      }
-    }
-
-    const result = await this._executeWithRetry('db:query', { sql, params });
-
-    // Cache SELECT results
-    if (sql.trim().toUpperCase().startsWith('SELECT')) {
-      this.queryCache.set(cacheKey, {
-        data: result,
-        timestamp: Date.now()
-      });
-    }
-
-    return result;
+    return await this._executeWithRetry('db:query', { sql, params });
   }
 
   /**

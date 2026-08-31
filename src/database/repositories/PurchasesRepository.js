@@ -36,20 +36,29 @@ export class PurchasesRepository extends BaseRepository {
 
     // Update inventory with WAC for each item
     for (const item of items) {
+      const q = Number(item.quantity) || 0;
+      const c = Number(item.cost_per_unit) || 0;
+      const pId = item.product_id;
       queries.push({
         sql: `
           UPDATE inventory
           SET
-            qty = qty + ?,
-            cost = (qty * cost + ? * ?) / (qty + ?)
-          WHERE id = ?
+            cost = CASE
+              WHEN (qty + ?) <= 0 THEN ?
+              ELSE (qty * cost + ? * ?) / (qty + ?)
+            END,
+            qty = qty + ?
+          WHERE id = ? OR CAST(id AS TEXT) = ?
         `,
         params: [
-          item.quantity,
-          item.quantity,
-          item.cost_per_unit,
-          item.quantity,
-          item.product_id
+          q,
+          c,
+          q,
+          c,
+          q,
+          q,
+          pId,
+          String(pId)
         ]
       });
     }

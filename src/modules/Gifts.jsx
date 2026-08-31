@@ -175,6 +175,9 @@ const GiftsModule = () => {
       setShowAddModal(false);
       await loadGifts();
       await refreshProducts();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
 
       showSuccess(
         `✅ تم تسجيل الهدية بنجاح\nالمنتج: ${product.name}\nالكمية: ${qty}\nالتكلفة: ${formatCurrency(costValue)}`
@@ -196,6 +199,9 @@ const GiftsModule = () => {
           setConfirmDelete(null);
           await loadGifts();
           await refreshProducts();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+          }
           showSuccess('✅ تم حذف الهدية وإرجاع الكمية للمخزون');
         } catch (error) {
           setConfirmDelete(null);

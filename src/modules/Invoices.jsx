@@ -158,7 +158,10 @@ const InvoicesModule = () => {
 
       // Reload global stock and invoice data
       await loadData();
-      await loadProducts();
+      await loadProducts(true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
 
       // If this invoice is currently open in preview, close it
       if (selectedInvoice && selectedInvoice.id === invoice.id) {

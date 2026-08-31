@@ -147,6 +147,9 @@ const CapitalInjectionsModule = () => {
       setShowAddModal(false);
       await loadInjections();
       await loadDonors();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
 
       showSuccess(`✅ تم تسجيل الضخ الرأسمالي بنجاح\nالمبلغ: ${formatCurrency(amt)}`);
     } catch (error) {
@@ -166,6 +169,9 @@ const CapitalInjectionsModule = () => {
           setConfirmDelete(null);
           await loadInjections();
           await loadDonors();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+          }
           showSuccess('✅ تم حذف الضخ');
         } catch (error) {
           setConfirmDelete(null);

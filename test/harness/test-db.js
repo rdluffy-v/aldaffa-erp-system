@@ -147,8 +147,12 @@ export function createTestDb() {
       id TEXT PRIMARY KEY,
       date TEXT NOT NULL,
       supplier_name TEXT,
+      invoice_ref TEXT,
+      payment_type TEXT DEFAULT 'cash',
       total REAL DEFAULT 0,
-      items_json TEXT
+      notes TEXT,
+      items_json TEXT,
+      is_demo INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS archives (

@@ -129,6 +129,9 @@ const WithdrawalsModule = () => {
       setReason('');
       setShowAddModal(false);
       await loadWithdrawals();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
 
       showSuccess(`✅ تم تسجيل السحب بنجاح\nالمبلغ: ${formatCurrency(amt)}`);
     } catch (error) {
@@ -147,6 +150,9 @@ const WithdrawalsModule = () => {
           await withdrawalsRepo.delete(withdrawal.id);
           setConfirmDelete(null);
           await loadWithdrawals();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+          }
           showSuccess('✅ تم حذف السحب');
         } catch (error) {
           setConfirmDelete(null);

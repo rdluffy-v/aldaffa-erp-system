@@ -85,6 +85,9 @@ const CategoriesModule = () => {
 
       resetForm();
       await loadCategories();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
     } catch (error) {
       if (error.message.includes('UNIQUE')) {
         showWarning('هذا التصنيف موجود بالفعل');
@@ -112,6 +115,9 @@ const CategoriesModule = () => {
 
       await categoriesRepo.delete(category.id);
       await loadCategories();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
       showSuccess('✅ تم حذف التصنيف');
     } catch (error) {
       showError('خطأ في حذف التصنيف: ' + error.message);

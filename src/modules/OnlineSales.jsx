@@ -149,8 +149,11 @@ const OnlineSalesModule = () => {
       setCustomerPhone('');
       setCustomerAddress('');
       setNotes('');
-      loadProducts(true);
-      loadRecentOrders();
+      await loadProducts(true);
+      await loadRecentOrders();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
 
       showSuccess(`✅ تم تسجيل الطلب بنجاح\nرقم الطلب: #${saleId}\nالعميل: ${customerName || customerPhone}`);
     } catch (error) {

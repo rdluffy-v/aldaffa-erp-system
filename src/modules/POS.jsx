@@ -280,17 +280,19 @@ const POSModule = () => {
 
       // Print receipt (optional - check if IPC is available)
       try {
-        const electron = window.require('electron');
-        await electron.ipcRenderer.invoke('print:receipt', {
-          saleId,
-          date: saleDate,
-          items: cartItems,
-          subtotal,
-          discount,
-          total,
-          paymentMethod,
-          customerName
-        });
+        const electron = window.require ? window.require('electron') : null;
+        if (electron) {
+          await electron.ipcRenderer.invoke('print:receipt', {
+            saleId,
+            date: saleDate,
+            items: cartItems,
+            subtotal,
+            discount,
+            total,
+            paymentMethod,
+            customerName
+          });
+        }
       } catch (printError) {
         console.warn('Print receipt failed:', printError);
       }
@@ -300,7 +302,10 @@ const POSModule = () => {
 
       // Reset cart and reload products
       clearCart();
-      loadProducts(true); // Force refresh to update stock quantities
+      await loadProducts(true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
 
     } catch (error) {
       console.error('Sale error:', error);

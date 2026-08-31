@@ -134,6 +134,9 @@ const DebtorsModule = () => {
       setNewDebtorPhone('');
       setShowAddDebtor(false);
       await loadDebtors();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
 
       showSuccess('✅ تم إضافة العميل بنجاح');
     } catch (error) {
@@ -172,6 +175,9 @@ const DebtorsModule = () => {
       setSelectedDebtor(updatedDebtor);
       await loadDebtorHistory(selectedDebtor.id);
       await loadPaymentSummary(selectedDebtor.id);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
 
       showSuccess(
         `✅ تم ${transactionType === 'debt' ? 'تسجيل الدين' : 'تسجيل الدفعة'} بنجاح`
@@ -187,7 +193,7 @@ const DebtorsModule = () => {
     const handleRefresh = () => {
       loadDebtors();
       if (selectedDebtor) {
-        loadDebtHistory(selectedDebtor.id);
+        loadDebtorHistory(selectedDebtor.id);
         loadPaymentSummary(selectedDebtor.id);
       }
     };
@@ -218,6 +224,9 @@ const DebtorsModule = () => {
             setSelectedDebtor(null);
             setDebtHistory([]);
             setPaymentSummary([]);
+          }
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
           }
           showSuccess('✅ تم حذف العميل وسجلاته بنجاح');
         } catch (error) {

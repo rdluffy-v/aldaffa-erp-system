@@ -126,6 +126,9 @@ const LossesModule = () => {
       setNotes('');
       setShowAddModal(false);
       await Promise.all([loadLosses(), loadProducts()]);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
 
       showSuccess(`✅ تم تسجيل الفاقد والتالف بنجاح: ${product.name} (الكمية: ${actualQty} ${product.unit || 'قطعة'})`);
     } catch (error) {
@@ -184,6 +187,9 @@ const LossesModule = () => {
     try {
       await lossesRepo.delete(loss.id);
       await loadLosses();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
       showSuccess('✅ تم حذف سجل التالف بنجاح');
     } catch (error) {
       showError('خطأ في حذف السجل: ' + error.message);

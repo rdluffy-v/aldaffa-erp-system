@@ -661,7 +661,9 @@ const PurchasesModule = () => {
           if (!barcode) {
             barcode = generateValidBarcode('628');
           }
-          const insertRes = await inventoryRepo.create({
+          const newProductId = item.product_id || generateId();
+          await inventoryRepo.create({
+            id: newProductId,
             name: item.name.trim(),
             category: item.category || 'عطور شرقية',
             cost: item.cost_per_unit,
@@ -672,7 +674,7 @@ const PurchasesModule = () => {
             min_qty: 5,
             notes: item.batch_number || batchNumber ? `رقم التشغيلة: ${item.batch_number || batchNumber}` : null
           });
-          pId = insertRes.lastInsertRowid;
+          pId = newProductId;
         }
 
         finalItems.push({
@@ -754,6 +756,9 @@ const PurchasesModule = () => {
       resetForm();
       await loadPurchases();
       await loadProducts(true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
 
       showSuccess(`✅ تم حفظ واعتماد الفاتورة بنجاح! الإجمالي: ${formatCurrency(total)}`);
     } catch (error) {

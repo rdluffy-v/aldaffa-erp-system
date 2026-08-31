@@ -373,8 +373,8 @@ const PerfumeMixLabModule = () => {
       // 2. Deduct raw materials from inventory
       if (wizardData.bottleId) {
         queries.push({
-          sql: 'UPDATE inventory SET qty = qty - ? WHERE id = ?',
-          params: [batchQty, wizardData.bottleId]
+          sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ? OR CAST(id AS TEXT) = ?',
+          params: [batchQty, wizardData.bottleId, String(wizardData.bottleId)]
         });
       }
 
@@ -382,8 +382,8 @@ const PerfumeMixLabModule = () => {
         if (oil.oilId) {
           const totalOilMl = safeParseFloat(oil.mlPerBottle, 0) * batchQty;
           queries.push({
-            sql: 'UPDATE inventory SET qty = qty - ? WHERE id = ?',
-            params: [totalOilMl, oil.oilId]
+            sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ? OR CAST(id AS TEXT) = ?',
+            params: [totalOilMl, oil.oilId, String(oil.oilId)]
           });
         }
       }
@@ -391,8 +391,8 @@ const PerfumeMixLabModule = () => {
       if (wizardData.alcoholId) {
         const totalAlcMl = safeParseFloat(wizardData.alcoholMlPerBottle, 0) * batchQty;
         queries.push({
-          sql: 'UPDATE inventory SET qty = qty - ? WHERE id = ?',
-          params: [totalAlcMl, wizardData.alcoholId]
+          sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ? OR CAST(id AS TEXT) = ?',
+          params: [totalAlcMl, wizardData.alcoholId, String(wizardData.alcoholId)]
         });
       }
 
@@ -436,12 +436,16 @@ const PerfumeMixLabModule = () => {
       await db.transaction(queries);
       db.invalidateCache();
 
+      setWizardOpen(false);
+      await loadData();
+      await loadProducts(true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
+
       showSuccess(
         `✅ تم اعتماد الخلطة بنجاح!\n\nتمت إضافة "${wizardData.perfumeName}" إلى المخزون (${wizardData.batchQuantity} زجاجة) وتحديث المواد الخام.`
       );
-
-      setWizardOpen(false);
-      await loadData();
     } catch (err) {
       showError('خطأ أثناء حفظ واعتماد الخلطة: ' + err.message);
     } finally {

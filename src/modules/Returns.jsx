@@ -192,8 +192,8 @@ const ReturnsModule = () => {
           : item.return_qty;
 
         queries.push({
-          sql: 'UPDATE inventory SET qty = qty + ? WHERE id = ?',
-          params: [qtyToRestore, item.product_id]
+          sql: 'UPDATE inventory SET qty = qty + ? WHERE id = ? OR CAST(id AS TEXT) = ?',
+          params: [qtyToRestore, item.product_id, String(item.product_id)]
         });
 
         // Update sale item quantity (or delete if fully returned)
@@ -242,14 +242,17 @@ const ReturnsModule = () => {
       await db.transaction(queries);
       db.invalidateCache();
 
-      showSuccess(`✅ تم معالجة المرتجع بنجاح\nالمبلغ المسترجع: ${formatCurrency(totalReturnAmount)}`);
-
       // Reset state and refresh the recent sales list
       setSelectedSale(null);
       setSaleItems([]);
       setReturnItems([]);
       setReason('');
       await loadRecentSales();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
+
+      showSuccess(`✅ تم معالجة المرتجع بنجاح\nالمبلغ المسترجع: ${formatCurrency(totalReturnAmount)}`);
     } catch (error) {
       showError(`خطأ في معالجة المرتجع: ${error.message}`);
     } finally {

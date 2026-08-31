@@ -81,6 +81,9 @@ const NotesModule = () => {
 
       resetForm();
       await loadNotes();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
     } catch (error) {
       showError('خطأ في حفظ الملاحظة: ' + error.message);
     } finally {
@@ -96,6 +99,9 @@ const NotesModule = () => {
     try {
       await notesRepo.delete(note.id);
       await loadNotes();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
+      }
       showSuccess('✅ تم حذف الملاحظة');
     } catch (error) {
       showError('خطأ في حذف الملاحظة: ' + error.message);
