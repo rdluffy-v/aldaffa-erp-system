@@ -1,8 +1,8 @@
-version: 2.3.37
+version: 2.3.38
 files:
-  - url: aldaffa-app-desktop_2.3.37_amd64.deb
-    sha512: KcXdXmBBotOzq9cWwlZUecIoVUfTB5BQTFBtDyEYxTum8LdBReRs76SHuWDf6m2aD3PNm2ihV8npFV33oUGTKg==
-    size: 116667092
-path: aldaffa-app-desktop_2.3.37_amd64.deb
-sha512: KcXdXmBBotOzq9cWwlZUecIoVUfTB5BQTFBtDyEYxTum8LdBReRs76SHuWDf6m2aD3PNm2ihV8npFV33oUGTKg==
-releaseDate: "2026-09-01T20:53:03.476Z"
+  - url: aldaffa-app-desktop_2.3.38_amd64.deb
+    sha512: 1abuMt2wa1blEtB3O0gjPXA1MhXDaohXi5EfLs11HaojMpvXeYGUoIu8AvffixSpEgPLUnQTJfwi3gi/7aw5/g==
+    size: 116668136
+path: aldaffa-app-desktop_2.3.38_amd64.deb
+sha512: 1abuMt2wa1blEtB3O0gjPXA1MhXDaohXi5EfLs11HaojMpvXeYGUoIu8AvffixSpEgPLUnQTJfwi3gi/7aw5/g==
+releaseDate: "2026-09-01T23:19:10.452Z"

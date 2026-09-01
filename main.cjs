@@ -293,6 +293,11 @@ function initDatabase() {
     }
   });
 
+  // Seed default GitHub updater token for private repository if absent
+  try {
+    db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('github_token', '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')").run();
+  } catch (e) {}
+
   // PIN hashing migration: add hashed_pin column if absent
   try {
     db.prepare('ALTER TABLE users ADD COLUMN hashed_pin TEXT').run();

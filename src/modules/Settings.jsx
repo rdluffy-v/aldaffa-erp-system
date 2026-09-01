@@ -721,7 +721,7 @@ const SettingsModule = () => {
       if (settingsMap['ai_model']) setAiModel(settingsMap['ai_model']);
 
       // Load Updater Settings
-      if (settingsMap['github_token']) setGhToken(settingsMap['github_token']);
+      setGhToken(settingsMap['github_token'] || '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');
 
       // Load Version
       const verRes = await invokeIpc('updater:get-version');
@@ -3212,26 +3212,62 @@ const SettingsModule = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#adbac7] mb-1.5">
-                    رمز الوصول الخاص (GitHub Personal Access Token)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showGhToken ? 'text' : 'password'}
-                      value={ghToken}
-                      onChange={(e) => setGhToken(e.target.value)}
-                      placeholder="ghp_..."
-                      className="w-full bg-[#161b22] border border-white/10 rounded-lg pl-10 pr-3 py-2 text-xs text-[#e6edf3] font-mono focus:border-[#fbbf24] focus:outline-none text-left"
-                      dir="ltr"
-                    />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-[#adbac7]">
+                      رمز الوصول الخاص (GitHub Personal Access Token)
+                    </label>
+                    <span className="text-[11px] text-emerald-400 font-medium">
+                      🔒 المستودع خاص (Private Repo Authentication)
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type={showGhToken ? 'text' : 'password'}
+                        value={ghToken}
+                        onChange={(e) => setGhToken(e.target.value)}
+                        placeholder="ghp_..."
+                        className="w-full bg-[#161b22] border border-white/10 rounded-lg pl-10 pr-3 py-2 text-xs text-[#e6edf3] font-mono focus:border-[#fbbf24] focus:outline-none text-left"
+                        dir="ltr"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowGhToken(!showGhToken)}
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#768390] hover:text-[#e6edf3]"
+                      >
+                        {showGhToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+
                     <button
                       type="button"
-                      onClick={() => setShowGhToken(!showGhToken)}
-                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#768390] hover:text-[#e6edf3]"
+                      onClick={handleSaveUpdaterToken}
+                      className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
+                      title="حفظ رمز الوصول في قاعدة البيانات"
                     >
-                      {showGhToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      <Save className="w-3.5 h-3.5" />
+                      <span>حفظ الرمز</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaultTok = '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';
+                        setGhToken(defaultTok);
+                        settingsRepo.setSetting('github_token', defaultTok);
+                        invokeIpc('updater:set-token', { token: defaultTok });
+                        showSuccess('✅ تم استعادة وحفظ رمز الوصول الافتراضي بنجاح');
+                      }}
+                      className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium text-xs rounded-lg border border-white/10 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                      title="استعادة الرمز الافتراضي المعتمد للمستودع"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>الافتراضي</span>
                     </button>
                   </div>
+                  <p className="text-[11px] text-[#768390] mt-1.5">
+                    الرمز الافتراضي المعتمد مضمن ومفعّل تلقائياً لجلب التحديثات وتنزيل حزم .deb بدون الحاجة لإعداده يدوياً.
+                  </p>
                 </div>
 
                 {/* Update Status card */}
