@@ -1,8 +1,8 @@
 version: 2.3.36
 files:
   - url: aldaffa-app-desktop_2.3.36_amd64.deb
-    sha512: 3eqBDBgtO7iguLDj4qUhayTKbaJadiV+vso5CypGEzAK7Z7zEOPMhz1/0x/Sg5B2oFxfjc7Uyvz6ay8Zs+M8zQ==
-    size: 116665432
+    sha512: VPnH6JBLY//dY/brWILlhVl4W7YRFey5L+oD8qtNB1snTB0u6EuhWiI9psoeZ0eAV++qdicyC/b53E3uVRJXUQ==
+    size: 116665728
 path: aldaffa-app-desktop_2.3.36_amd64.deb
-sha512: 3eqBDBgtO7iguLDj4qUhayTKbaJadiV+vso5CypGEzAK7Z7zEOPMhz1/0x/Sg5B2oFxfjc7Uyvz6ay8Zs+M8zQ==
-releaseDate: "2026-09-01T19:10:45.638Z"
+sha512: VPnH6JBLY//dY/brWILlhVl4W7YRFey5L+oD8qtNB1snTB0u6EuhWiI9psoeZ0eAV++qdicyC/b53E3uVRJXUQ==
+releaseDate: "2026-09-01T19:48:05.958Z"

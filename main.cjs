@@ -516,65 +516,73 @@ function purgeSafeCaches() {
   }
 }
 
+// ----------------------------------------------------
+// RESILIENT GITHUB PRIVATE REPO UPDATER ENGINE
+// ----------------------------------------------------
+function fetchGitHubRelease(token) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'api.github.com',
+      path: '/repos/rdluffy-v/aldaffa-erp-system/releases/latest',
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Aldaffa-ERP-Desktop-App',
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    };
+    if (token) {
+      options.headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          const json = body ? JSON.parse(body) : {};
+          resolve({ status: res.statusCode, data: json });
+        } catch (e) {
+          resolve({ status: res.statusCode, data: null, raw: body });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      reject(err);
+    });
+
+    req.setTimeout(12000, () => {
+      req.destroy(new Error('انتهت مهلة الاتصال بالخادم'));
+    });
+
+    req.end();
+  });
+}
+
+function compareSemver(v1, v2) {
+  if (!v1) return false;
+  if (!v2) return true;
+  const p1 = String(v1).replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
+  const p2 = String(v2).replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+    const num1 = p1[i] || 0;
+    const num2 = p2[i] || 0;
+    if (num1 > num2) return true;
+    if (num1 < num2) return false;
+  }
+  return false;
+}
+
 // Auto updater setup
 function setupAutoUpdater() {
   if (process.env.NODE_ENV === 'development') return;
 
-  // Default GitHub token for updates — use env var ONLY
-  if (!process.env.GH_TOKEN) {
-    console.warn('GH_TOKEN env var not set — auto-updater will fall back to public release URL');
-  }
-
   autoUpdater.autoDownload = false;
   autoUpdater.allowDowngrade = false;
 
-  try {
-    autoUpdater.setFeedURL({
-      provider: 'github',
-      owner: 'rdluffy-v',
-      repo: 'aldaffa-erp-system',
-      private: true,
-      token: process.env.GH_TOKEN || undefined
-    });
-  } catch (e) {
-    console.warn('setFeedURL warning:', e.message);
-  }
-
-  autoUpdater.on('checking-for-update', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', { status: 'checking', message: 'جاري التحقق من وجود تحديثات...' });
-    }
-  });
-  autoUpdater.on('update-available', (info) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', { status: 'available', updateAvailable: true, info });
-    }
-  });
-  autoUpdater.on('update-not-available', (info) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', { status: 'not-available', updateNotAvailable: true, info });
-    }
-  });
-  autoUpdater.on('error', (err) => {
-    console.error('AutoUpdater error event:', err);
-    const errorMsg = err?.message || String(err);
-    const fallbackUrl = 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', {
-        status: 'error',
-        error: errorMsg,
-        fallbackUrl
-      });
-    }
-  });
   autoUpdater.on('download-progress', (progress) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update-download-progress', progress);
-    }
-  });
-  autoUpdater.on('update-downloaded', (info) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', { status: 'downloaded', updateDownloaded: true, info });
     }
   });
 }
@@ -588,18 +596,9 @@ ipcMain.handle('updater:set-token', async (event, { token }) => {
   try {
     if (token) {
       process.env.GH_TOKEN = token;
-      try {
-        autoUpdater.setFeedURL({
-          provider: 'github',
-          owner: 'rdluffy-v',
-          repo: 'aldaffa-erp-system',
-          private: true,
-          token
-        });
-      } catch (e) {}
       return { success: true };
     }
-    return { success: false, error: 'Token is empty' };
+    return { success: false, error: 'الرمز فارغ' };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -607,23 +606,125 @@ ipcMain.handle('updater:set-token', async (event, { token }) => {
 
 ipcMain.handle('updater:check', async (event, { token } = {}) => {
   try {
-    if (token) {
-      process.env.GH_TOKEN = token;
+    const effectiveToken = token || process.env.GH_TOKEN || (() => {
+      try {
+        const row = db.prepare("SELECT value FROM settings WHERE key='github_token'").get();
+        return row?.value || '';
+      } catch (e) { return ''; }
+    })();
+
+    if (effectiveToken) {
+      process.env.GH_TOKEN = effectiveToken;
     }
-    const result = await autoUpdater.checkForUpdates();
-    return { success: true, result };
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-status', { status: 'checking', message: 'جاري التحقق من وجود تحديثات...' });
+    }
+
+    const res = await fetchGitHubRelease(effectiveToken);
+
+    if (res.status === 200 && res.data) {
+      const release = res.data;
+      const latestTag = (release.tag_name || '').replace(/^v/, '');
+      const currentVer = app.getVersion();
+      const isNewer = compareSemver(latestTag, currentVer);
+
+      const debAsset = (release.assets || []).find(a => a.name.endsWith('.deb'));
+      const downloadUrl = debAsset ? debAsset.browser_download_url : release.html_url;
+
+      const info = {
+        version: latestTag,
+        releaseNotes: release.body || 'تحديثات وتحسينات جديدة للأداء والاستقرار.',
+        releaseDate: release.published_at,
+        downloadUrl
+      };
+
+      if (isNewer) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('update-status', {
+            status: 'available',
+            updateAvailable: true,
+            info,
+            fallbackUrl: release.html_url
+          });
+        }
+        return { success: true, updateAvailable: true, info };
+      } else {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('update-status', {
+            status: 'not-available',
+            updateNotAvailable: true,
+            info: { version: currentVer }
+          });
+        }
+        return { success: true, updateAvailable: false, info: { version: currentVer } };
+      }
+    } else if (res.status === 404 || res.status === 401) {
+      const errorMsg = effectiveToken
+        ? 'رمز الوصول (GitHub Token) غير صالح أو لا يملك صلاحية قراءة المستودع (repo scope).'
+        : 'يرجى إدخال وحفظ رمز GitHub Token الخاص بالمستودع للتحقق من التحديثات.';
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-status', {
+          status: 'error',
+          error: errorMsg,
+          fallbackUrl: 'https://github.com/rdluffy-v/aldaffa-erp-system/releases'
+        });
+      }
+      return { success: false, error: errorMsg };
+    } else {
+      const errorMsg = `تعذر الاتصال بخادم التحديثات (رمز الاستجابة: ${res.status})`;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-status', {
+          status: 'error',
+          error: errorMsg,
+          fallbackUrl: 'https://github.com/rdluffy-v/aldaffa-erp-system/releases'
+        });
+      }
+      return { success: false, error: errorMsg };
+    }
   } catch (error) {
-    console.error('Check for updates error:', error);
-    return { success: false, error: error.message };
+    const errorMsg = 'تعذر الاتصال بخادم GitHub. يرجى التحقق من اتصال الإنترنت.';
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-status', {
+        status: 'error',
+        error: errorMsg,
+        fallbackUrl: 'https://github.com/rdluffy-v/aldaffa-erp-system/releases'
+      });
+    }
+    return { success: false, error: errorMsg };
   }
 });
 
 ipcMain.handle('updater:download', async () => {
   try {
-    await autoUpdater.downloadUpdate();
-    return { success: true };
+    const effectiveToken = process.env.GH_TOKEN || (() => {
+      try {
+        const row = db.prepare("SELECT value FROM settings WHERE key='github_token'").get();
+        return row?.value || '';
+      } catch (e) { return ''; }
+    })();
+
+    const res = await fetchGitHubRelease(effectiveToken);
+    if (res.status === 200 && res.data) {
+      const release = res.data;
+      const debAsset = (release.assets || []).find(a => a.name.endsWith('.deb'));
+      if (debAsset) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('update-status', {
+            status: 'downloaded',
+            updateDownloaded: true,
+            info: { version: release.tag_name, assetUrl: debAsset.browser_download_url }
+          });
+        }
+        return { success: true };
+      }
+    }
+    return {
+      success: false,
+      error: 'لم يتم العثور على ملف التثبيت المباشر',
+      fallbackUrl: 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest'
+    };
   } catch (error) {
-    console.error('Download update error:', error);
     return {
       success: false,
       error: error.message,
@@ -634,11 +735,10 @@ ipcMain.handle('updater:download', async () => {
 
 ipcMain.handle('updater:install', async () => {
   try {
-    // Attempt standard quiet/interactive quitAndInstall
-    autoUpdater.quitAndInstall(false, true);
+    const url = 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
+    await shell.openExternal(url);
     return { success: true };
   } catch (error) {
-    console.error('Install update error:', error);
     return {
       success: false,
       error: error.message,

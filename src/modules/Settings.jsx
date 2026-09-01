@@ -851,21 +851,36 @@ const SettingsModule = () => {
     const ipc = getIpcRenderer();
     if (!ipc) return;
     try {
-        const handleStatus = (event, data) => {
-          setUpdateStatus(data);
-          if (data.status === 'available') {
+        const sanitizeUpdaterError = (msg) => {
+          if (!msg) return 'حدث خطأ أثناء فحص التحديثات';
+          const str = String(msg);
+          if (str.includes('404') || str.includes('authentication token') || str.includes('401') || str.includes('Headers:') || str.includes('method: GET')) {
+            return 'رمز الوصول (GitHub Token) غير صالح أو غير محفوظ. يرجى إدخال وحفظ رمز Token صالح للمستودع.';
+          }
+          if (str.includes('ENOTFOUND') || str.includes('ETIMEDOUT') || str.includes('timed out')) {
+            return 'تعذر الاتصال بخادم GitHub. يرجى التحقق من اتصالك بالإنترنت.';
+          }
+          return str.length > 120 ? str.slice(0, 120) + '...' : str;
+        };
+
+        const handleStatus = (eventOrData, data) => {
+          const payload = (data !== undefined) ? data : eventOrData;
+          if (!payload) return;
+          setUpdateStatus(payload);
+          if (payload.status === 'available') {
             showInfo('يوجد تحديث جديد متاح للتحميل!');
-          } else if (data.status === 'downloaded') {
+          } else if (payload.status === 'downloaded') {
             showSuccess('تم تحميل التحديث بنجاح. جاهز للتثبيت.');
-          } else if (data.status === 'not-available') {
+          } else if (payload.status === 'not-available') {
             showSuccess('المنظومة محدثة إلى آخر إصدار.');
-          } else if (data.status === 'error') {
-            showError('خطأ في التحديث: ' + data.error);
+          } else if (payload.status === 'error') {
+            showError('خطأ في التحديث: ' + sanitizeUpdaterError(payload.error));
           }
         };
 
-        const handleProgress = (event, progress) => {
-          setDownloadProgress(progress);
+        const handleProgress = (eventOrProgress, progress) => {
+          const payload = (progress !== undefined) ? progress : eventOrProgress;
+          setDownloadProgress(payload);
         };
 
         ipc.on('update-status', handleStatus);
@@ -1205,10 +1220,14 @@ const SettingsModule = () => {
       if (res?.success) {
         // Status handled by update-status event
       } else {
-        showError('فشل التحقق من التحديثات: ' + (res?.error || ''));
+        const errorText = res?.error || '';
+        const cleanErr = errorText.includes('404') || errorText.includes('authentication token') || errorText.includes('401')
+          ? 'رمز الوصول (GitHub Token) غير صالح أو غير محفوظ. يرجى إدخال وحفظ رمز Token صالح للمستودع الخاص.'
+          : errorText.length > 120 ? errorText.slice(0, 120) + '...' : errorText;
+        showError('فشل التحقق من التحديثات: ' + cleanErr);
       }
     } catch (error) {
-      showError('خطأ في الاتصال: ' + error.message);
+      showError('خطأ في الاتصال: ' + (error.message.includes('404') ? 'تعذر الوصول للمستودع' : error.message));
     } finally {
       setCheckingUpdates(false);
     }
