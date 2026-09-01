@@ -119,6 +119,48 @@
           
           <div id="cameraStatus" class="absolute bottom-2 bg-black/80 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] text-amber-300 border border-white/10">جاري تشغيل الكاميرا...</div>
         </div>
+
+        <!-- Manual Barcode & Hardware Scanner Input Bar -->
+        <div class="space-y-1.5 pt-1">
+          <div class="flex items-center justify-between text-[11px]">
+            <span class="font-bold text-[#adbac7] flex items-center gap-1.5">
+              <i data-lucide="scan-line" class="w-3.5 h-3.5 text-[#fbbf24]"></i>
+              إدخال / مسح الباركود يدوياً أو بماسح الباركود:
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="relative flex-1">
+              <input
+                id="inputManualStockBarcode"
+                type="text"
+                placeholder="امسح بماسح الباركود أو اكتب الكود..."
+                class="w-full bg-[#0b101b] border border-white/20 rounded-xl px-3 py-2.5 text-xs text-[#f0f6fc] font-mono focus:border-[#fbbf24] focus:outline-none"
+              />
+            </div>
+            <button
+              id="btnSubmitManualStockBarcode"
+              type="button"
+              class="px-4 py-2.5 rounded-xl bg-[#fbbf24] text-[#070b14] font-bold text-xs hover:brightness-110 transition-all flex items-center gap-1 touch-press"
+            >
+              بحث
+            </button>
+          </div>
+        </div>
+
+        <!-- Insecure Context Camera Helper Notice (Shown if navigator.mediaDevices is undefined on plain HTTP) -->
+        <div id="cameraInsecureNotice" class="hidden p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-2 text-[11px] text-[#adbac7]">
+          <div class="font-bold text-amber-400 flex items-center gap-1.5">
+            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+            <span>تنبيه أمان المتصفح للكاميرا (HTTP vs HTTPS):</span>
+          </div>
+          <p class="leading-relaxed">
+            تمنع متصفحات الهواتف تشغيل الكاميرا عبر روابط الشبكة المحلية غير المشفرة (<span class="font-mono text-amber-300">http://</span>). يمكنك:
+          </p>
+          <ul class="list-disc list-inside space-y-1 text-[10px] text-[#8b949e]">
+            <li>استخدام <strong class="text-white">حقل إدخال الباركود السريع أعلاه</strong> (يعمل فوراً مع أي ماسح باركود لاسلكي أو يدوي).</li>
+            <li>أو تفعيل الكاميرا للشبكة في كروم عبر الذهاب إلى <span class="font-mono text-amber-300 select-all">chrome://flags/#unsafely-treat-insecure-origin-as-secure</span> وإضافة عنوان المنظومة.</li>
+          </ul>
+        </div>
       </div>
 
       <!-- Scanned Item Audit Card -->

@@ -792,10 +792,35 @@ function calculateChangeDue() {
 // ----------------------------------------------------------------------------
 // 11. CAMERA BARCODE SCANNER ENGINE (BARCODE DETECTOR / FALLBACK)
 // ----------------------------------------------------------------------------
+function getMediaDevices() {
+  if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
+    return navigator.mediaDevices;
+  }
+  if (typeof navigator !== 'undefined') {
+    const legacyGetUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+    if (legacyGetUserMedia) {
+      return {
+        getUserMedia: (constraints) => new Promise((resolve, reject) => {
+          legacyGetUserMedia.call(navigator, constraints, resolve, reject);
+        })
+      };
+    }
+  }
+  return null;
+}
+
 async function startCameraScanner() {
   const video = document.getElementById('cameraPreview');
   const statusEl = document.getElementById('cameraStatus');
+  const insecureNoticeEl = document.getElementById('cameraInsecureNotice');
   if (!video) return;
+
+  const mediaDevices = getMediaDevices();
+  if (!mediaDevices) {
+    if (statusEl) statusEl.textContent = 'الكاميرا غير متاحة في هذا الاتصال (HTTP) — يرجى استخدام حقل الإدخال والماسح أدناه';
+    if (insecureNoticeEl) insecureNoticeEl.classList.remove('hidden');
+    return;
+  }
 
   try {
     const constraints = {
@@ -806,13 +831,14 @@ async function startCameraScanner() {
       }
     };
 
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const stream = await mediaDevices.getUserMedia(constraints);
     state.cameraStream = stream;
     video.srcObject = stream;
     await video.play();
     state.isScanning = true;
 
     if (statusEl) statusEl.textContent = 'الكاميرا نشطة — وجه الباركود نحو الإطار';
+    if (insecureNoticeEl) insecureNoticeEl.classList.add('hidden');
 
     if ('BarcodeDetector' in window) {
       try {
@@ -830,6 +856,9 @@ async function startCameraScanner() {
     scanLoopFallback(video);
   } catch (err) {
     if (statusEl) statusEl.textContent = 'تعذر تشغيل الكاميرا: ' + err.message;
+    if (insecureNoticeEl && (err.name === 'NotAllowedError' || err.name === 'SecurityError' || !window.isSecureContext)) {
+      insecureNoticeEl.classList.remove('hidden');
+    }
   }
 }
 
@@ -871,16 +900,25 @@ function handleBarcodeDetected(barcode) {
   if (now - state.lastScanTimestamp < 600) return;
   state.lastScanTimestamp = now;
 
-  const prod = state.products.find(p => p.barcode === barcode);
+  const cleanCode = String(barcode).trim();
+  const prod = state.products.find(p => p.barcode === cleanCode || String(p.id) === cleanCode || (p.name && p.name.toLowerCase().includes(cleanCode.toLowerCase())));
+  const statusEl = document.getElementById('cameraStatus');
+
   if (prod) {
     playScanBeep(1800, 0.08);
     state.scannedProduct = prod;
     state.scannedCountedQty = Number(prod.stock_quantity ?? prod.qty ?? 0);
 
+    if (statusEl) {
+      statusEl.textContent = `✅ تم رصد: ${prod.name} (${prod.barcode || cleanCode})`;
+      statusEl.className = 'absolute bottom-2 bg-emerald-950/90 text-emerald-300 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] border border-emerald-500/30';
+    }
+
     const card = document.getElementById('scannedProductCard');
     if (card) {
       card.classList.remove('hidden');
-      document.getElementById('scannedBarcode').textContent = prod.barcode;
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      document.getElementById('scannedBarcode').textContent = prod.barcode || cleanCode;
       document.getElementById('scannedName').textContent = prod.name;
       document.getElementById('scannedPrice').textContent = `السعر: ${Number(prod.price).toFixed(2)} د.ل`;
       document.getElementById('scannedUnit').textContent = prod.unit || 'قطعة';
@@ -891,7 +929,10 @@ function handleBarcodeDetected(barcode) {
     }
   } else {
     playWarningTone();
-    console.log(`Barcode scanned (${barcode}) but not found in catalog`);
+    if (statusEl) {
+      statusEl.textContent = `⚠️ الباركود غير مسجل في المخزون (${cleanCode})`;
+      statusEl.className = 'absolute bottom-2 bg-rose-950/90 text-rose-300 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] border border-rose-500/30';
+    }
   }
 }
 
@@ -1317,6 +1358,24 @@ function setupEventListeners() {
     state.cameraFacing = state.cameraFacing === 'environment' ? 'user' : 'environment';
     stopCameraScanner();
     startCameraScanner();
+  });
+
+  // Manual Barcode & Hardware Laser Scanner Input Listener
+  const handleManualBarcodeSubmit = () => {
+    const input = document.getElementById('inputManualStockBarcode');
+    if (!input) return;
+    const barcode = input.value.trim();
+    if (!barcode) return;
+    handleBarcodeDetected(barcode);
+    input.value = '';
+  };
+
+  document.getElementById('btnSubmitManualStockBarcode')?.addEventListener('click', handleManualBarcodeSubmit);
+  document.getElementById('inputManualStockBarcode')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleManualBarcodeSubmit();
+    }
   });
 
   // Stock Adjustment Controls (-5, -1, +1, +5)
