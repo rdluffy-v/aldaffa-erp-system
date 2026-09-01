@@ -519,20 +519,32 @@ function purgeSafeCaches() {
 // ----------------------------------------------------
 // RESILIENT GITHUB PRIVATE REPO UPDATER ENGINE
 // ----------------------------------------------------
+const DEFAULT_GH_FALLBACK_TOKEN = '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';
+let latestDownloadedPackagePath = null;
+
+function getEffectiveGitHubToken(customToken) {
+  if (customToken && String(customToken).trim()) return String(customToken).trim();
+  if (process.env.GH_TOKEN && String(process.env.GH_TOKEN).trim()) return String(process.env.GH_TOKEN).trim();
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key='github_token'").get();
+    if (row && row.value && String(row.value).trim()) return String(row.value).trim();
+  } catch (e) {}
+  return DEFAULT_GH_FALLBACK_TOKEN;
+}
+
 function fetchGitHubRelease(token) {
   return new Promise((resolve, reject) => {
+    const effectiveToken = getEffectiveGitHubToken(token);
     const options = {
       hostname: 'api.github.com',
       path: '/repos/rdluffy-v/aldaffa-erp-system/releases/latest',
       method: 'GET',
       headers: {
         'User-Agent': 'Aldaffa-ERP-Desktop-App',
-        'Accept': 'application/vnd.github.v3+json'
+        'Accept': 'application/vnd.github.v3+json',
+        ...(effectiveToken ? { 'Authorization': `Bearer ${effectiveToken}` } : {})
       }
     };
-    if (token) {
-      options.headers['Authorization'] = `Bearer ${token}`;
-    }
 
     const req = https.request(options, (res) => {
       let body = '';
@@ -552,10 +564,85 @@ function fetchGitHubRelease(token) {
     });
 
     req.setTimeout(12000, () => {
-      req.destroy(new Error('انتهت مهلة الاتصال بالخادم'));
+      req.destroy(new Error('انتهت مهلة الاتصال بخادم GitHub'));
     });
 
     req.end();
+  });
+}
+
+function downloadGitHubAsset(assetId, destPath, token, onProgress) {
+  return new Promise((resolve, reject) => {
+    const effectiveToken = getEffectiveGitHubToken(token);
+    const assetUrl = `https://api.github.com/repos/rdluffy-v/aldaffa-erp-system/releases/assets/${assetId}`;
+
+    function makeRequest(url, isRedirect = false) {
+      try {
+        const parsedUrl = new URL(url);
+        const options = {
+          hostname: parsedUrl.hostname,
+          path: parsedUrl.pathname + parsedUrl.search,
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Aldaffa-ERP-Desktop-App'
+          }
+        };
+
+        if (!isRedirect && effectiveToken) {
+          options.headers['Authorization'] = `Bearer ${effectiveToken}`;
+          options.headers['Accept'] = 'application/octet-stream';
+        }
+
+        const req = https.request(options, (res) => {
+          // Handle 301, 302, 307 redirects to S3
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            return makeRequest(res.headers.location, true);
+          }
+
+          if (res.statusCode !== 200) {
+            return reject(new Error(`فشل التحميل من الخادم (رمز الاستجابة: ${res.statusCode})`));
+          }
+
+          const totalBytes = parseInt(res.headers['content-length'], 10) || 0;
+          let receivedBytes = 0;
+          const fileStream = fs.createWriteStream(destPath);
+
+          res.on('data', (chunk) => {
+            receivedBytes += chunk.length;
+            if (onProgress && totalBytes > 0) {
+              const percent = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
+              onProgress({ percent, transferred: receivedBytes, total: totalBytes });
+            }
+          });
+
+          res.pipe(fileStream);
+
+          fileStream.on('finish', () => {
+            fileStream.close(() => resolve(destPath));
+          });
+
+          fileStream.on('error', (err) => {
+            try { fs.unlinkSync(destPath); } catch (e) {}
+            reject(err);
+          });
+        });
+
+        req.on('error', (err) => {
+          try { fs.unlinkSync(destPath); } catch (e) {}
+          reject(err);
+        });
+
+        req.setTimeout(300000, () => {
+          req.destroy(new Error('انتهت مهلة تحميل حزمة التحديث (5 دقائق)'));
+        });
+
+        req.end();
+      } catch (err) {
+        reject(err);
+      }
+    }
+
+    makeRequest(assetUrl, false);
   });
 }
 
@@ -606,16 +693,8 @@ ipcMain.handle('updater:set-token', async (event, { token }) => {
 
 ipcMain.handle('updater:check', async (event, { token } = {}) => {
   try {
-    const effectiveToken = token || process.env.GH_TOKEN || (() => {
-      try {
-        const row = db.prepare("SELECT value FROM settings WHERE key='github_token'").get();
-        return row?.value || '';
-      } catch (e) { return ''; }
-    })();
-
-    if (effectiveToken) {
-      process.env.GH_TOKEN = effectiveToken;
-    }
+    const effectiveToken = getEffectiveGitHubToken(token);
+    process.env.GH_TOKEN = effectiveToken;
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update-status', { status: 'checking', message: 'جاري التحقق من وجود تحديثات...' });
@@ -634,6 +713,8 @@ ipcMain.handle('updater:check', async (event, { token } = {}) => {
 
       const info = {
         version: latestTag,
+        assetId: debAsset ? debAsset.id : null,
+        assetName: debAsset ? debAsset.name : null,
         releaseNotes: release.body || 'تحديثات وتحسينات جديدة للأداء والاستقرار.',
         releaseDate: release.published_at,
         downloadUrl
@@ -660,9 +741,7 @@ ipcMain.handle('updater:check', async (event, { token } = {}) => {
         return { success: true, updateAvailable: false, info: { version: currentVer } };
       }
     } else if (res.status === 404 || res.status === 401) {
-      const errorMsg = effectiveToken
-        ? 'رمز الوصول (GitHub Token) غير صالح أو لا يملك صلاحية قراءة المستودع (repo scope).'
-        : 'يرجى إدخال وحفظ رمز GitHub Token الخاص بالمستودع للتحقق من التحديثات.';
+      const errorMsg = 'رمز الوصول (GitHub Token) غير صالح أو لا يملك صلاحية قراءة المستودع (repo scope).';
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('update-status', {
           status: 'error',
@@ -697,34 +776,51 @@ ipcMain.handle('updater:check', async (event, { token } = {}) => {
 
 ipcMain.handle('updater:download', async () => {
   try {
-    const effectiveToken = process.env.GH_TOKEN || (() => {
-      try {
-        const row = db.prepare("SELECT value FROM settings WHERE key='github_token'").get();
-        return row?.value || '';
-      } catch (e) { return ''; }
-    })();
-
+    const effectiveToken = getEffectiveGitHubToken();
     const res = await fetchGitHubRelease(effectiveToken);
+
     if (res.status === 200 && res.data) {
       const release = res.data;
       const debAsset = (release.assets || []).find(a => a.name.endsWith('.deb'));
       if (debAsset) {
+        let downloadsDir = null;
+        try {
+          downloadsDir = app.getPath('downloads');
+        } catch (e) {
+          downloadsDir = os.tmpdir();
+        }
+
+        const destPath = path.join(downloadsDir, debAsset.name);
+
+        await downloadGitHubAsset(debAsset.id, destPath, effectiveToken, (progress) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-download-progress', progress);
+          }
+        });
+
+        latestDownloadedPackagePath = destPath;
+
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('update-status', {
             status: 'downloaded',
             updateDownloaded: true,
-            info: { version: release.tag_name, assetUrl: debAsset.browser_download_url }
+            info: {
+              version: release.tag_name,
+              filePath: destPath,
+              fileName: debAsset.name
+            }
           });
         }
-        return { success: true };
+        return { success: true, filePath: destPath };
       }
     }
     return {
       success: false,
-      error: 'لم يتم العثور على ملف التثبيت المباشر',
+      error: 'لم يتم العثور على ملف التثبيت (.deb) في هذا الإصدار',
       fallbackUrl: 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest'
     };
   } catch (error) {
+    console.error('Download update error:', error);
     return {
       success: false,
       error: error.message,
@@ -735,6 +831,19 @@ ipcMain.handle('updater:download', async () => {
 
 ipcMain.handle('updater:install', async () => {
   try {
+    if (latestDownloadedPackagePath && fs.existsSync(latestDownloadedPackagePath)) {
+      // Execute installation or launch system package installer
+      const { exec } = require('child_process');
+      exec(`pkexec dpkg -i "${latestDownloadedPackagePath}" || xdg-open "${latestDownloadedPackagePath}"`, (err) => {
+        if (err) {
+          try {
+            shell.showItemInFolder(latestDownloadedPackagePath);
+          } catch (e) {}
+        }
+      });
+      return { success: true, filePath: latestDownloadedPackagePath };
+    }
+
     const url = 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
     await shell.openExternal(url);
     return { success: true };
@@ -749,6 +858,10 @@ ipcMain.handle('updater:install', async () => {
 
 ipcMain.handle('updater:open-releases', async (event, { url } = {}) => {
   try {
+    if (latestDownloadedPackagePath && fs.existsSync(latestDownloadedPackagePath)) {
+      shell.showItemInFolder(latestDownloadedPackagePath);
+      return { success: true, openedFolder: true };
+    }
     const targetUrl = url || 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
     if (!isSafeExternalUrl(targetUrl)) {
       return { success: false, error: 'رابط غير آمن' };

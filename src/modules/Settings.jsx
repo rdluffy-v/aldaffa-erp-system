@@ -1236,23 +1236,28 @@ const SettingsModule = () => {
   const handleDownloadUpdate = async () => {
     setDownloadingUpdate(true);
     try {
-      showInfo('جاري بدء تحميل التحديث...');
+      showInfo('جاري بدء تحميل حزمة التحديث (.deb) إلى مجلد التنزيلات...');
       const res = await invokeIpc('updater:download');
-      if (!res?.success) {
+      if (res?.success) {
+        showSuccess(`✅ تم تنزيل حزمة التحديث بنجاح:\n${res.filePath || 'مجلد التنزيلات'}`);
+      } else {
         showError('فشل بدء التحميل: ' + (res?.error || ''));
-        setDownloadingUpdate(false);
       }
     } catch (error) {
       showError('خطأ أثناء التحميل: ' + error.message);
+    } finally {
       setDownloadingUpdate(false);
     }
   };
 
   const handleInstallUpdate = async () => {
     try {
+      showInfo('جاري تشغيل معالج تثبيت الحزمة...');
       const res = await invokeIpc('updater:install');
-      if (res && !res.success) {
-        showError('تعذر التثبيت التلقائي: ' + (res.error || 'يرجى تنزيل حزمة التثبيت المباشرة'));
+      if (res && res.success) {
+        showSuccess('✅ تم تشغيل معالج تثبيت الحزمة أو فتح المجلد بنجاح');
+      } else {
+        showError('تعذر التثبيت التلقائي: ' + (res?.error || 'يرجى فتح ملف الحزمة من التنزيلات'));
       }
     } catch (error) {
       showError('خطأ أثناء التثبيت: ' + error.message);
@@ -1261,9 +1266,12 @@ const SettingsModule = () => {
 
   const handleOpenDirectDownload = async () => {
     try {
-      const url = updateStatus?.fallbackUrl || 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
-      await invokeIpc('updater:open-releases', { url });
-      showInfo('تم فتح صفحة تنزيل حزمة التحديث (.deb) المباشرة في المتصفح');
+      if (updateStatus?.updateDownloaded && updateStatus?.info?.filePath) {
+        await invokeIpc('updater:open-releases');
+        showInfo('تم فتح مجلد التنزيلات الذي يحتوي على حزمة التحديث');
+        return;
+      }
+      handleDownloadUpdate();
     } catch (e) {
       showError('فشل فتح الرابط: ' + e.message);
     }
