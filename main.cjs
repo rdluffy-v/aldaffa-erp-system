@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const https = require('https');
+const http = require('http');
 const Database = require('better-sqlite3');
 const { autoUpdater } = require('electron-updater');
 const { promisify } = require('util');
@@ -767,7 +769,8 @@ ipcMain.handle('updater:check', async (event, { token } = {}) => {
       return { success: false, error: errorMsg };
     }
   } catch (error) {
-    const errorMsg = 'تعذر الاتصال بخادم GitHub. يرجى التحقق من اتصال الإنترنت.';
+    console.error('updater:check error:', error);
+    const errorMsg = 'تعذر الاتصال بخادم GitHub: ' + (error.message || 'يرجى التحقق من اتصال الإنترنت');
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update-status', {
         status: 'error',
