@@ -390,3 +390,20 @@ This causes immediate operation failure and blocks critical transactions.
    Verify every column against `PRAGMA table_info(<table>)` before constructing database seeder payloads.
 3. **Top-Center Floating Island Notification HUD**:
    Position all transient alerts in the horizontal top-center (`fixed top-3 left-1/2 -translate-x-1/2 z-[9999]`) using glassmorphism and spring drop animations to ensure zero interference with right/left UI controls.
+
+---
+
+## 18. POS Checkout Flow: Silent Direct Completion & Non-Intrusive A4/PDF Invoicing
+
+### Root Cause
+Triggering automatic modal popups or ESC/POS thermal receipt windows upon completing a sale disrupts cashier checkout speed, creates unorganized popup windows, and attempts thermal printing in environments where structured A4 or PDF archiving is desired.
+
+### Prevention & Guardrails
+1. **Zero-Popup Default Checkout**:
+   Upon pressing "إتمام البيع", execute all SQLite transactions, ledger updates, and store refreshes asynchronously and immediately clear the cart.
+2. **Non-Blocking Post-Sale Confirmation**:
+   Present an elegant, non-intrusive action bar or modal with two clear options:
+   - 📄 **طباعة / حفظ فاتورة PDF** (Generates structured A4 PDF document).
+   - ✖️ **متابعة البيع** (Clears immediately to receive the next customer).
+3. **No Unsolicited Thermal Triggers**:
+   Thermal hardware commands (`TSPL` / `ESC/POS`) must only be triggered when explicitly requested in dedicated modules (such as `BarcodeStudio` for label rolls), never forced upon checkout completion.

@@ -78,9 +78,54 @@ const POSModule = () => {
   const [showPortionModal, setShowPortionModal] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isProcessingSale, setIsProcessingSale] = useState(false);
+  const [completedSaleInfo, setCompletedSaleInfo] = useState(null);
   const [barcodeBuffer, setBarcodeBuffer] = useState('');
   const [barcodeTimeout, setBarcodeTimeout] = useState(null);
   const [showClearCartConfirm, setShowClearCartConfirm] = useState(false);
+
+  // Print or Export PDF Invoice for completed sale
+  const handlePrintSalePdf = async (saleData) => {
+    if (!saleData) return;
+    try {
+      const ipc = getIpcRenderer();
+      if (!ipc) {
+        window.print();
+        return;
+      }
+      const res = await ipc.invoke('export:purchase-order-pdf', {
+        orderId: `INV-${saleData.saleId}`,
+        date: saleData.date,
+        supplier: saleData.customerName || 'عميل المحل',
+        items: (saleData.items || []).map((it) => ({
+          name: it.name,
+          quantity: it.cart_qty,
+          unit: it.unit || 'قطعة',
+          cost_per_unit: it.final_price,
+          total: it.final_price * it.cart_qty
+        })),
+        total: saleData.total,
+        notes: `طريقة الدفع: ${
+          saleData.paymentMethod === 'cash'
+            ? 'نقدي'
+            : saleData.paymentMethod === 'card'
+            ? 'بطاقة'
+            : saleData.paymentMethod === 'debt'
+            ? 'آجل (دين)'
+            : 'تحويل'
+        }`
+      });
+
+      if (res?.success) {
+        showSuccess(`✅ تم تصدير وحفظ الفاتورة كملف PDF بنجاح:\n${res.filePath}`);
+      } else {
+        showSuccess('✅ تم فتح حوار طباعة الفاتورة');
+      }
+    } catch (err) {
+      showError(`فشل طباعة الفاتورة: ${err.message}`);
+    } finally {
+      setCompletedSaleInfo(null);
+    }
+  };
 
   // Load products on mount
   useEffect(() => {
@@ -278,29 +323,22 @@ const POSModule = () => {
         }
       }
 
-      // Print receipt (optional - check if IPC is available)
-      try {
-        const ipc = getIpcRenderer();
-        if (ipc) {
-          await ipc.invoke('print:receipt', {
-            saleId,
-            date: saleDate,
-            items: cartItems,
-            subtotal,
-            discount,
-            total,
-            paymentMethod,
-            customerName
-          });
-        }
-      } catch (printError) {
-        console.warn('Print receipt failed:', printError);
-      }
+      // Record completed sale info for optional PDF printing
+      setCompletedSaleInfo({
+        saleId,
+        date: saleDate,
+        items: [...cartItems],
+        subtotal,
+        discount,
+        total,
+        paymentMethod,
+        customerName
+      });
 
       // Success
-      showSuccess(`✅ تم إتمام البيع بنجاح - الإجمالي: ${formatCurrency(total)}`);
+      showSuccess(`✅ تم إتمام البيع بنجاح - الفاتورة #${saleId} (الإجمالي: ${formatCurrency(total)})`);
 
-      // Reset cart and reload products
+      // Reset cart and reload products immediately
       clearCart();
       await loadProducts(true);
       if (typeof window !== 'undefined') {
@@ -706,6 +744,47 @@ const POSModule = () => {
         onCancel={() => setShowClearCartConfirm(false)}
         onClose={() => setShowClearCartConfirm(false)}
       />
+
+      {/* Post-Sale Invoice PDF Prompt Modal */}
+      {completedSaleInfo && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-[#161b22] border border-amber-500/40 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center text-2xl">
+              ✅
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">تم إتمام عملية البيع بنجاح</h3>
+              <p className="text-xs text-gray-400 mt-1 font-mono">
+                فاتورة رقم #{completedSaleInfo.saleId} • الإجمالي: {formatCurrency(completedSaleInfo.total)}
+              </p>
+              {completedSaleInfo.customerName && (
+                <p className="text-xs text-amber-400 mt-0.5">العميل: {completedSaleInfo.customerName}</p>
+              )}
+            </div>
+
+            <div className="p-3 bg-black/30 rounded-xl border border-white/5 text-xs text-gray-300">
+              هل ترغب في حفظ أو طباعة فاتورة بيع A4 / PDF لهذا العميل؟
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handlePrintSalePdf(completedSaleInfo)}
+                className="flex-1 py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-lg"
+              >
+                <span>📄 حفظ أو طباعة فاتورة PDF</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCompletedSaleInfo(null)}
+                className="py-2.5 px-4 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs transition-all cursor-pointer"
+              >
+                <span>متابعة البيع (إغلاق)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
