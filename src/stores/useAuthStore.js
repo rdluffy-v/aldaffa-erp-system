@@ -12,7 +12,6 @@ export const DEFAULT_MANAGER = {
   id: 'admin_1',
   name: 'المدير العام',
   role: 'manager',
-  pin: '1234',
   permissions: ROLE_PRESETS.manager?.permissions || ROLE_PRESETS.manager
 };
 
@@ -112,22 +111,23 @@ export const useAuthStore = create((set, get) => ({
     set({ loading: true, pinError: null });
     try {
       const cleanPin = String(pin || '').trim();
-      if (targetUser && targetUser.pin === cleanPin) {
-        const fullUser = await usersRepo.authenticatePin(cleanPin);
-        if (fullUser) {
+      // If a specific target user is provided, verify the PIN against their hash first
+      if (targetUser) {
+        const target = await usersRepo.authenticatePin(cleanPin);
+        if (target && target.id === targetUser.id) {
           set({
-            currentUser: fullUser,
+            currentUser: target,
             isLocked: false,
             isSwitchModalOpen: false,
             isPinModalOpen: false,
             pinError: null,
             loading: false
           });
-          return { success: true, user: fullUser };
+          return { success: true, user: target };
         }
       }
 
-      // Try general PIN auth if user object wasn't supplied directly
+      // Fallback: any valid PIN login
       const user = await usersRepo.authenticatePin(cleanPin);
       if (user) {
         set({
@@ -140,8 +140,8 @@ export const useAuthStore = create((set, get) => ({
         });
         return { success: true, user };
       } else {
-        set({ pinError: 'رمز PIN غير صحيح للموظف المحدد', loading: false });
-        return { success: false, error: 'رمز PIN غير صحيح للموظف المحدد' };
+        set({ pinError: 'رمز PIN غير صحيح', loading: false });
+        return { success: false, error: 'رمز PIN غير صحيح' };
       }
     } catch (err) {
       set({ pinError: err.message, loading: false });

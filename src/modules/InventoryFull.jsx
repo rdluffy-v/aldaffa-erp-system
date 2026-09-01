@@ -5,6 +5,7 @@ import { useUIStore } from '../stores/useUIStore.js';
 import { useAuthStore } from '../stores/useAuthStore.js';
 import { CategoriesRepository } from '../database/repositories/CategoriesRepository.js';
 import useDebounce from '../hooks/useDebounce.js';
+import { getIpcRenderer } from '../utils/electronBridge.js';
 import usePagination from '../hooks/usePagination.js';
 import Modal from '../components/ui/Modal.jsx';
 import { generateId, formatCurrency, safeParseFloat } from '../utils/helpers.js';
@@ -245,9 +246,9 @@ const InventoryFullModule = () => {
 
   const handlePrintStockSheet = async () => {
     try {
-      const electron = window.require ? window.require('electron') : window.electronAPI ? { ipcRenderer: window.electronAPI } : null;
-      if (electron && electron.ipcRenderer) {
-        await electron.ipcRenderer.invoke('print:inventory-report', {
+      const ipc = getIpcRenderer();
+      if (ipc) {
+        await ipc.invoke('print:inventory-report', {
           products: filtered,
           totalCost: stats.totalStockValue,
           totalRetail: stats.totalRetailValue,

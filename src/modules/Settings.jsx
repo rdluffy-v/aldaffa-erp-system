@@ -69,6 +69,7 @@ import { useSettingsStore, DEFAULT_SETTINGS } from '../stores/useSettingsStore.j
 import { useAuthStore, PERMISSION_KEYS } from '../stores/useAuthStore.js';
 import { useUIStore } from '../stores/useUIStore.js';
 import { formatCurrency, formatDate } from '../utils/helpers.js';
+import { getIpcRenderer } from '../utils/electronBridge.js';
 import Modal from '../components/ui/Modal.jsx';
 import ConfirmModal from '../components/shared/ConfirmModal.jsx';
 
@@ -520,7 +521,7 @@ const SettingsModule = () => {
     setUserForm({
       name: u.name,
       role: u.role,
-      pin: u.pin,
+      pin: '',
       permissions: { ...getPresetPerms(u.role), ...(u.permissions || {}) }
     });
     setUserModalOpen(true);
@@ -667,14 +668,14 @@ const SettingsModule = () => {
   const [cloudflareUrl, setCloudflareUrl] = useState('');
   const [cloudflareKey, setCloudflareKey] = useState('');
 
-  // Safe IPC invoke helper
+  // Safe IPC invoke helper — uses the secure preload bridge (not window.require)
   const invokeIpc = useCallback(async (channel, payload) => {
-    try {
-      if (typeof window !== 'undefined' && window.require) {
-        const { ipcRenderer } = window.require('electron');
-        return await ipcRenderer.invoke(channel, payload);
-      }
+    const ipc = getIpcRenderer();
+    if (!ipc) {
       return { success: false, error: 'Electron IPC not available in this environment' };
+    }
+    try {
+      return await ipc.invoke(channel, payload);
     } catch (e) {
       console.error(`IPC error on ${channel}:`, e);
       return { success: false, error: e.message };
@@ -845,11 +846,11 @@ const SettingsModule = () => {
     setEditableLabels({ ...customLabels });
   }, [loadAllSettings, customLabels]);
 
-  // Setup updater event listeners
+  // Setup updater event listeners — uses secure preload bridge
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.require) {
-      try {
-        const { ipcRenderer } = window.require('electron');
+    const ipc = getIpcRenderer();
+    if (!ipc) return;
+    try {
         const handleStatus = (event, data) => {
           setUpdateStatus(data);
           if (data.status === 'available') {
@@ -867,17 +868,16 @@ const SettingsModule = () => {
           setDownloadProgress(progress);
         };
 
-        ipcRenderer.on('update-status', handleStatus);
-        ipcRenderer.on('update-download-progress', handleProgress);
+        ipc.on('update-status', handleStatus);
+        ipc.on('update-download-progress', handleProgress);
 
         return () => {
-          ipcRenderer.removeListener('update-status', handleStatus);
-          ipcRenderer.removeListener('update-download-progress', handleProgress);
+          ipc.removeListener('update-status', handleStatus);
+          ipc.removeListener('update-download-progress', handleProgress);
         };
       } catch (e) {
         console.warn('IPC listener error:', e);
       }
-    }
   }, [showInfo, showSuccess, showError]);
 
   // ----------------------------------------------------
@@ -1885,7 +1885,7 @@ const SettingsModule = () => {
                               </span>
                             </td>
                             <td className="p-3 text-center font-mono font-bold text-gray-400">
-                              •••• ({u.pin ? u.pin.length : 4} أرقام)
+                              •••• (4 أرقام مشفر)
                             </td>
                             <td className="p-3 text-center text-gray-400">
                               {u.created_at ? new Date(u.created_at).toLocaleDateString('ar-SD') : '—'}

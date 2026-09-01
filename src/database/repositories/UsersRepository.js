@@ -16,7 +16,10 @@ import { db } from '../connection.js';
 // renderer contexts regardless of nodeIntegration / contextIsolation)
 // ---------------------------------------------------------------------------
 
-async function hashPin(pin) {
+/** Length of a SHA-256 hex digest (64 characters). */
+const HASHED_PIN_LEN = 64;
+
+export async function hashPin(pin) {
   const encoder = new TextEncoder();
   const data = encoder.encode(pin);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -24,9 +27,14 @@ async function hashPin(pin) {
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Returns true when candidate looks like a plaintext PIN (4-8 digits), not a SHA-256 hex. */
 function isPlaintextPin(candidate) {
-  // Plaintext 4-digit PINs match exactly this pattern; any SHA-256 hex is 64 chars.
-  return /^\d{4,8}$/.test(candidate);
+  return /^\d{4,8}$/.test(String(candidate || ''));
+}
+
+/** Returns true when candidate looks like a SHA-256 hex digest. */
+function isHashedPin(candidate) {
+  return /^[a-f0-9]{64}$/.test(String(candidate || ''));
 }
 
 export const ROLE_PRESETS = {
@@ -135,9 +143,9 @@ export const ROLE_PRESETS = {
 };
 
 export const DEFAULT_USERS = [
-  { id: 'admin_1', name: 'المدير العام', pin: '1234', role: 'manager' },
-  { id: 'usr_accountant', name: 'المحاسب', pin: '5678', role: 'accountant' },
-  { id: 'usr_cashier', name: 'الكاشير المناوب', pin: '0000', role: 'cashier' }
+  { id: 'admin_1', name: 'المدير العام', pinHash: '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', role: 'manager' },
+  { id: 'usr_accountant', name: 'المحاسب', pinHash: 'f8638b979b2f4f793ddb6dbd197e0ee25a7a6ea32b0ae22f5e3c5d119d839e75', role: 'accountant' },
+  { id: 'usr_cashier', name: 'الكاشير المناوب', pinHash: '9af15b336e6a9619928537df30b2e6a2376569fcf9d7e773eccede65606529a0', role: 'cashier' }
 ];
 
 export class UsersRepository extends BaseRepository {
@@ -151,17 +159,21 @@ export class UsersRepository extends BaseRepository {
   async seedDefaultUsers() {
     try {
       for (const defUser of DEFAULT_USERS) {
-        const existing = await db.get(`SELECT id FROM ${this.tableName} WHERE id = ? OR pin = ?`, [defUser.id, defUser.pin]);
+        const existing = await db.get(
+          `SELECT id FROM ${this.tableName} WHERE id = ? OR pin = ? OR hashed_pin = ?`,
+          [defUser.id, defUser.pinHash, defUser.pinHash]
+        );
         if (!existing) {
           await this.create({
             id: defUser.id,
             name: defUser.name,
-            pin: defUser.pin,
+            pin: defUser.pinHash,
+            hashed_pin: defUser.pinHash,
             role: defUser.role,
             avatar: null,
             created_at: new Date().toISOString()
           });
-          const presetPerms = ROLE_PRESETS[defUser.role]?.permissions || ROLE_PRESETS[defUser.role] || {};
+          const presetPerms = ROLE_PRESETS[defUser.role]?.permissions || {};
           await this.setUserPermissions(defUser.id, presetPerms);
         }
       }
@@ -171,7 +183,10 @@ export class UsersRepository extends BaseRepository {
   }
 
   /**
-   * Verify PIN code and authenticate user
+   * Verify PIN code and authenticate user.
+   * Supports hashed PINs (SHA-256 in hashed_pin column) with automatic fallback to legacy
+   * plaintext pin column for DBs that have not yet been migrated by main.cjs.
+   * On legacy login, the row is atomically upgraded to hashed storage.
    */
   async authenticatePin(pin) {
     const cleanPin = String(pin || '').trim();
@@ -183,8 +198,29 @@ export class UsersRepository extends BaseRepository {
       await this.seedDefaultUsers();
     }
 
-    const sql = `SELECT * FROM ${this.tableName} WHERE pin = ? LIMIT 1`;
-    const user = await db.get(sql, [cleanPin]);
+    // Try modern hashed-pin column first
+    const hashed = await hashPin(cleanPin);
+    const sql = `SELECT * FROM ${this.tableName} WHERE hashed_pin = ? LIMIT 1`;
+    let user = await db.get(sql, [hashed]);
+
+    // Fallback: legacy plaintext pin match (pre-migration databases)
+    if (!user) {
+      const legacySql = `SELECT * FROM ${this.tableName} WHERE pin = ? LIMIT 1`;
+      user = await db.get(legacySql, [cleanPin]);
+      if (user && isPlaintextPin(user.pin)) {
+        // Auto-migrate this row: copy plaintext pin into hashed_pin
+        try {
+          await db.run(
+            `UPDATE ${this.tableName} SET hashed_pin = ? WHERE id = ?`,
+            [hashed, user.id]
+          );
+        } catch (migrateErr) {
+          // Column may not exist yet — migration deferred to main.cjs
+          console.warn('Auto-migrate hashed_pin column failed (deferred to main process):', migrateErr.message);
+        }
+      }
+    }
+
     if (!user) return null;
 
     const permissions = await this.getUserPermissions(user.id);
@@ -193,19 +229,31 @@ export class UsersRepository extends BaseRepository {
 
   /**
    * Check if a PIN code is available (not used by other users)
+   * Checks both hashed_pin and legacy pin columns.
    */
   async checkPinAvailability(pin, excludeUserId = null) {
     const cleanPin = String(pin || '').trim();
     if (!cleanPin) return false;
-    let sql = `SELECT id FROM ${this.tableName} WHERE pin = ?`;
-    const params = [cleanPin];
+    const hashed = await hashPin(cleanPin);
+    let sql = `SELECT id FROM ${this.tableName} WHERE hashed_pin = ?`;
+    const params = [hashed];
     if (excludeUserId) {
       sql += ' AND id != ?';
       params.push(excludeUserId);
     }
     sql += ' LIMIT 1';
     const existing = await db.get(sql, params);
-    return !existing;
+    if (existing) return false;
+    // Also check legacy plaintext pin column for safety
+    let legacySql = `SELECT id FROM ${this.tableName} WHERE pin = ?`;
+    const legacyParams = [cleanPin];
+    if (excludeUserId) {
+      legacySql += ' AND id != ?';
+      legacyParams.push(excludeUserId);
+    }
+    legacySql += ' LIMIT 1';
+    const legacyExisting = await db.get(legacySql, legacyParams);
+    return !legacyExisting;
   }
 
   /**
@@ -257,20 +305,30 @@ export class UsersRepository extends BaseRepository {
   }
 
   /**
-   * Create or Update User with PIN and Role
+   * Create or Update User with PIN and Role.
+   * Automatically hashes plaintext PINs before storage and upgrades existing
+   * rows that still hold a legacy plaintext value in the pin column.
    */
   async saveUser(userData, permissionsMap = {}) {
     const { id, name, pin, role, avatar } = userData;
-    const cleanPin = String(pin).trim();
+    const cleanPin = String(pin || '').trim();
+    if (!cleanPin) throw new Error('رمز PIN مطلوب');
 
-    // Check PIN availability
+    // Hash the PIN regardless of whether it arrives plaintext or already-hashed
+    const hashed = isHashedPin(cleanPin) ? cleanPin : await hashPin(cleanPin);
+
+    // Check PIN availability against both hashed and legacy plaintext columns
     const isAvailable = await this.checkPinAvailability(cleanPin, id);
     if (!isAvailable) {
       throw new Error(`رمز PIN (${cleanPin}) مستخدم بالفعل من قبل موظف آخر. يرجى اختيار رمز مختلف.`);
     }
 
     if (id) {
-      await this.update(id, { name, pin: cleanPin, role, avatar });
+      await this.update(id, { name, pin: hashed, hashed_pin: hashed, role, avatar });
+      // Also upgrade legacy plaintext pin in the old column if present
+      try {
+        await db.run(`UPDATE ${this.tableName} SET pin = ? WHERE id = ? AND pin != ?`, [hashed, id, hashed]);
+      } catch (e) { /* column may not exist; main.cjs handles schema migration */ }
       const permsToSave = (permissionsMap && Object.keys(permissionsMap).length > 0)
         ? permissionsMap
         : (ROLE_PRESETS[role] || {});
@@ -281,7 +339,8 @@ export class UsersRepository extends BaseRepository {
       await this.create({
         id: newId,
         name,
-        pin: cleanPin,
+        pin: hashed,
+        hashed_pin: hashed,
         role: role || 'cashier',
         avatar: avatar || null,
         created_at: new Date().toISOString()

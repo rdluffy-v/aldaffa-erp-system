@@ -25,6 +25,28 @@ try {
   generatePairingToken = () => 'unavailable';
 }
 
+// Allowlist of every valid database table name. Any identifier that gets
+// placed into a SQL string MUST be checked against this list first to prevent
+// SQL injection via table-name interpolation.
+const KNOWN_TABLES = [
+  'categories', 'inventory', 'sales', 'sale_items', 'returns',
+  'withdrawals', 'capital_injections', 'gifts', 'notes', 'debtors',
+  'debt_history', 'losses', 'purchases', 'archives', 'settings',
+  'users', 'user_permissions', 'shift_reports'
+];
+
+// Validate a table-name identifier against the allowlist before it is used
+// in any SQL statement. Returns the validated name on success, throws on any
+// mismatch (thrown values are always caught by the archive handlers).
+function validateTableName(table) {
+  if (typeof table !== 'string' || table.length === 0 || table.length > 64) {
+    throw new Error(`Invalid table name: ${String(table)}`);
+  }
+  if (!KNOWN_TABLES.includes(table)) {
+    throw new Error(`Unknown or unauthorized table name: ${table}`);
+  }
+  return table;
+}
 
 // Database initialization
 function initDatabase() {
@@ -194,6 +216,7 @@ function initDatabase() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       pin TEXT NOT NULL,
+      hashed_pin TEXT,
       role TEXT DEFAULT 'cashier',
       avatar TEXT,
       created_at TEXT
@@ -270,6 +293,42 @@ function initDatabase() {
     }
   });
 
+  // PIN hashing migration: add hashed_pin column if absent
+  try {
+    db.prepare('ALTER TABLE users ADD COLUMN hashed_pin TEXT').run();
+    console.log('[PIN] users.hashed_pin column added (or already exists)');
+  } catch (e) {
+    if (!e.message.includes('duplicate column')) {
+      console.error('[PIN] ALTER TABLE users ADD COLUMN hashed_pin failed:', e.message);
+    }
+  }
+
+  // Migrate legacy plaintext PINs to SHA-256 hashes (runs once per session)
+  try {
+    const rows = db.prepare(
+      'SELECT id, pin FROM users WHERE pin IS NOT NULL AND length(pin) <= 8'
+    ).all();
+    if (rows.length > 0) {
+      const crypto = require('crypto');
+      for (const { id, pin } of rows) {
+        const hashed = crypto.createHash('sha256').update(String(pin)).digest('hex');
+        db.prepare('UPDATE users SET hashed_pin = ? WHERE id = ?').run(hashed, id);
+      }
+      // Also backfill pin column with hash for uniform storage
+      for (const { id } of rows) {
+        const hashed = db.prepare('SELECT hashed_pin FROM users WHERE id = ?').get(id);
+        if (hashed && hashed.hashed_pin) {
+          db.prepare('UPDATE users SET pin = ? WHERE id = ? AND pin != ?').run(hashed.hashed_pin, id, hashed.hashed_pin);
+        }
+      }
+      console.log(`[PIN] Migrated ${rows.length} user(s) to SHA-256 hashed PINs`);
+    } else {
+      console.log('[PIN] No legacy plaintext PINs found — migration not needed');
+    }
+  } catch (e) {
+    console.warn('[PIN] PIN migration warning (may already be migrated):', e.message);
+  }
+
   // Performance Indexes for high traffic querying
   const indexes = `
     CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(date);
@@ -292,11 +351,13 @@ function initDatabase() {
   try {
     const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
     if (!userCount || userCount.count === 0) {
+      const crypto = require('crypto');
+      const adminHash = crypto.createHash('sha256').update('1234').digest('hex');
       db.prepare(`
-        INSERT INTO users (id, name, pin, role, created_at)
-        VALUES ('admin_1', 'المدير العام', '1234', 'manager', datetime('now'))
-      `).run();
-      console.log('Default Manager user created (PIN: 1234)');
+        INSERT INTO users (id, name, pin, hashed_pin, role, created_at)
+        VALUES ('admin_1', 'المدير العام', ?, ?, 'manager', datetime('now'))
+      `).run(adminHash, adminHash);
+      console.log('Default Manager user created (PIN: 1234, SHA-256 hashed)');
     }
   } catch (seedErr) {
     console.warn('User seed warning:', seedErr);
@@ -640,10 +701,11 @@ ipcMain.handle('archive:create', async (event, { name } = {}) => {
     // Quick full tables snapshot
     const tables = ['products', 'categories', 'sales', 'sale_items', 'purchases', 'purchase_items', 'debtors', 'losses', 'withdrawals', 'capital_injections', 'gifts', 'notes', 'discounts', 'settings'];
     const snapshot = { createdAt: new Date().toISOString(), name: name || 'نسخة احتياطية يدوية', data: {} };
-    
+
     for (const table of tables) {
       try {
-        snapshot.data[table] = db.prepare(`SELECT * FROM ${table}`).all();
+        const safeTable = validateTableName(table);
+        snapshot.data[safeTable] = db.prepare(`SELECT * FROM ${safeTable}`).all();
       } catch (e) {
         snapshot.data[table] = [];
       }
@@ -659,6 +721,13 @@ ipcMain.handle('archive:create', async (event, { name } = {}) => {
 
 ipcMain.handle('archive:export', async (event, { cutoffYear, cutoffDate: customCutoff }) => {
   try {
+    // All table names below are literal constants; validation is applied for
+    // completeness and to catch any future dynamic-table changes early.
+    validateTableName('sales');
+    validateTableName('sale_items');
+    validateTableName('losses');
+    validateTableName('notes');
+    validateTableName('archives');
     const cutoffDate = customCutoff || (cutoffYear ? `${cutoffYear}-01-01` : '2024-01-01');
     const archivesDir = path.join(app.getPath('userData'), 'archives');
     await fs.promises.mkdir(archivesDir, { recursive: true });
@@ -724,6 +793,12 @@ ipcMain.handle('archive:export', async (event, { cutoffYear, cutoffDate: customC
 
 ipcMain.handle('archive:shrink', async (event, { cutoffYear, cutoffDate: customCutoff }) => {
   try {
+    // All table names below are literal constants; validation is applied for
+    // completeness and to catch any future dynamic-table changes early.
+    validateTableName('sale_items');
+    validateTableName('sales');
+    validateTableName('losses');
+    validateTableName('notes');
     const cutoffDate = customCutoff || (cutoffYear ? `${cutoffYear}-01-01` : '2024-01-01');
 
     // Find sales to remove

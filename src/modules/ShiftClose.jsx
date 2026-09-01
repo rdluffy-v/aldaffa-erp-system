@@ -17,6 +17,7 @@ import { db } from '../database/connection.js';
 import { useUIStore } from '../stores/useUIStore.js';
 import { useAuthStore } from '../stores/useAuthStore.js';
 import { formatCurrency, formatDate, generateId, safeParseFloat } from '../utils/helpers.js';
+import { getIpcRenderer } from '../utils/electronBridge.js';
 import ConfirmModal from '../components/shared/ConfirmModal.jsx';
 import {
   Lock,
@@ -276,9 +277,9 @@ const ShiftCloseModule = () => {
     if (!reportData) return;
     setIsExportingPDF(true);
     try {
-      const electron = window.require ? window.require('electron') : null;
-      if (electron) {
-        const res = await electron.ipcRenderer.invoke('export:shift-pdf', reportData);
+      const ipc = getIpcRenderer();
+      if (ipc) {
+        const res = await ipc.invoke('export:shift-pdf', reportData);
         if (res && res.success) {
           if (res.saved) {
             showSuccess(`✅ تم تصدير تقرير الوردية بنجاح إلى:\n${res.filePath}`);
@@ -300,9 +301,9 @@ const ShiftCloseModule = () => {
     if (!reportData) return;
     setIsPrinting(true);
     try {
-      const electron = window.require ? window.require('electron') : null;
-      if (electron) {
-        const res = await electron.ipcRenderer.invoke('print:shift-report', reportData);
+      const ipc = getIpcRenderer();
+      if (ipc) {
+        const res = await ipc.invoke('print:shift-report', reportData);
         if (res && res.success) {
           showSuccess('✅ تم إرسال تقرير الوردية للطباعة');
         } else if (res && res.error) {

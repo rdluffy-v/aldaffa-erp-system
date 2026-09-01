@@ -22,6 +22,7 @@ import { useUIStore } from '../stores/useUIStore.js';
 import { formatCurrency, generateValidBarcode } from '../utils/helpers.js';
 import { BarcodeSVG, generateBarcodeSvgString } from '../utils/barcodeGenerator.jsx';
 import useDebounce from '../hooks/useDebounce.js';
+import { getIpcRenderer } from '../utils/electronBridge.js';
 import {
   QrCode,
   Printer,
@@ -126,9 +127,9 @@ const BarcodeStudioModule = () => {
   const loadHardwareInfo = useCallback(async () => {
     setCheckingHardware(true);
     try {
-      if (typeof window !== 'undefined' && window.require) {
-        const { ipcRenderer } = window.require('electron');
-        const res = await ipcRenderer.invoke('hardware:get-devices');
+      const ipc = getIpcRenderer();
+      if (ipc) {
+        const res = await ipc.invoke('hardware:get-devices');
         if (res && res.success) {
           setHardwareInfo(res);
           if (res.systemPrinters && res.systemPrinters.length > 0 && !selectedPrinter) {
@@ -148,10 +149,10 @@ const BarcodeStudioModule = () => {
   const handleAutoCalibrateSensor = async () => {
     setCalibrating(true);
     try {
-      if (typeof window !== 'undefined' && window.require) {
-        const { ipcRenderer } = window.require('electron');
+      const ipc = getIpcRenderer();
+      if (ipc) {
         const [w, h] = selectedSize.split('x').map(Number);
-        const res = await ipcRenderer.invoke('printer:calibrate-sensor', {
+        const res = await ipc.invoke('printer:calibrate-sensor', {
           printerName: selectedPrinter || undefined,
           widthMm: w || 50,
           heightMm: h || 30
@@ -598,9 +599,9 @@ const BarcodeStudioModule = () => {
 </html>
       `;
 
-      if (typeof window !== 'undefined' && window.require) {
-        const { ipcRenderer } = window.require('electron');
-        const res = await ipcRenderer.invoke('print:barcodes-direct', {
+      const ipc = getIpcRenderer();
+      if (ipc) {
+        const res = await ipc.invoke('print:barcodes-direct', {
           html: printHtmlDocument,
           labels: rawLabelsList,
           printerName: selectedPrinter || undefined,

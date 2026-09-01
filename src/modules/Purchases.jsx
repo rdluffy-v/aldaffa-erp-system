@@ -17,6 +17,7 @@ import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { formatCurrency, formatDate, generateId, safeParseFloat, generateValidBarcode } from '../utils/helpers.js';
 import { BarcodeSVG, generateBarcodeSvgString } from '../utils/barcodeGenerator.jsx';
 import useDebounce from '../hooks/useDebounce.js';
+import { getIpcRenderer } from '../utils/electronBridge.js';
 import {
   ShoppingBag,
   Plus,
@@ -295,9 +296,9 @@ const PurchasesModule = () => {
   const loadHardwareInfo = useCallback(async () => {
     setCheckingHardware(true);
     try {
-      if (typeof window !== 'undefined' && window.require) {
-        const { ipcRenderer } = window.require('electron');
-        const res = await ipcRenderer.invoke('hardware:get-devices');
+      const ipc = getIpcRenderer();
+      if (ipc) {
+        const res = await ipc.invoke('hardware:get-devices');
         if (res && res.success) {
           setHardwareInfo(res);
           if (res.systemPrinters && res.systemPrinters.length > 0 && !selectedPrinter) {
@@ -465,9 +466,9 @@ const PurchasesModule = () => {
 </html>
       `;
 
-      if (typeof window !== 'undefined' && window.require) {
-        const { ipcRenderer } = window.require('electron');
-        const res = await ipcRenderer.invoke('print:barcodes-direct', {
+      const ipc = getIpcRenderer();
+      if (ipc) {
+        const res = await ipc.invoke('print:barcodes-direct', {
           html: fullHtml,
           labels: rawLabelsList,
           printerName: selectedPrinter || undefined,
@@ -715,9 +716,9 @@ const PurchasesModule = () => {
       // Optional action: Print preview or PDF export if explicitly requested
       if (actionType === 'print') {
         try {
-          const electron = window.require ? window.require('electron') : null;
-          if (electron) {
-            await electron.ipcRenderer.invoke('print:purchase-order', {
+          const ipc = getIpcRenderer();
+          if (ipc) {
+            await ipc.invoke('print:purchase-order', {
               orderId: id,
               date: purchaseData.date,
               supplier: supplierName.trim() || 'غير محدد',
@@ -731,9 +732,9 @@ const PurchasesModule = () => {
         }
       } else if (actionType === 'pdf') {
         try {
-          const electron = window.require ? window.require('electron') : null;
-          if (electron) {
-            const pdfRes = await electron.ipcRenderer.invoke('export:purchase-order-pdf', {
+          const ipc = getIpcRenderer();
+          if (ipc) {
+            const pdfRes = await ipc.invoke('export:purchase-order-pdf', {
               orderId: id,
               date: purchaseData.date,
               supplier: supplierName.trim() || 'غير محدد',
@@ -772,9 +773,9 @@ const PurchasesModule = () => {
   const handlePrintExistingPurchase = async (purchase) => {
     try {
       const items = JSON.parse(purchase.items_json || '[]');
-      const electron = window.require ? window.require('electron') : null;
-      if (electron) {
-        await electron.ipcRenderer.invoke('print:purchase-order', {
+      const ipc = getIpcRenderer();
+      if (ipc) {
+        await ipc.invoke('print:purchase-order', {
           orderId: purchase.id,
           date: purchase.date,
           supplier: purchase.supplier_name || 'غير محدد',
@@ -792,9 +793,9 @@ const PurchasesModule = () => {
   const handleExportPdfExistingPurchase = async (purchase) => {
     try {
       const items = JSON.parse(purchase.items_json || '[]');
-      const electron = window.require ? window.require('electron') : null;
-      if (electron) {
-        const res = await electron.ipcRenderer.invoke('export:purchase-order-pdf', {
+      const ipc = getIpcRenderer();
+      if (ipc) {
+        const res = await ipc.invoke('export:purchase-order-pdf', {
           orderId: purchase.id,
           date: purchase.date,
           supplier: purchase.supplier_name || 'غير محدد',

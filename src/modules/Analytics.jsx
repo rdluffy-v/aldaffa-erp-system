@@ -59,6 +59,7 @@ import { useUIStore } from '../stores/useUIStore.js';
 import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { useAuthStore } from '../stores/useAuthStore.js';
 import { formatCurrency, formatDate, safeParseFloat } from '../utils/helpers.js';
+import { getIpcRenderer } from '../utils/electronBridge.js';
 
 const salesRepo = new SalesRepository();
 const purchasesRepo = new PurchasesRepository();
@@ -357,9 +358,9 @@ const AnalyticsModule = () => {
   const handleExportPDF = async () => {
     try {
       const { startStr, endStr } = calculateDateBounds();
-      const electron = window.require ? window.require('electron') : null;
+      const ipc = getIpcRenderer();
 
-      if (electron?.ipcRenderer) {
+      if (ipc) {
         showSuccess('جاري إعداد ومعالجة تقرير PDF المالي الشامل...');
         const payload = {
           reportData: {

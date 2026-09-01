@@ -6,6 +6,7 @@ import { useUIStore } from '../stores/useUIStore.js';
 import { useAuthStore } from '../stores/useAuthStore.js';
 import { useInventoryStore } from '../stores/useInventoryStore.js';
 import { formatCurrency, formatDate } from '../utils/helpers.js';
+import { getIpcRenderer } from '../utils/electronBridge.js';
 import ConfirmModal from '../components/shared/ConfirmModal.jsx';
 import {
   FileText,
@@ -179,15 +180,15 @@ const InvoicesModule = () => {
   // Thermal Reprint
   const handleThermalPrint = async (invoice) => {
     try {
-      const electron = window.require ? window.require('electron') : null;
-      if (!electron) {
+      const ipc = getIpcRenderer();
+      if (!ipc) {
         window.print();
         return;
       }
 
       if (activeTab === 'purchases') {
         const items = JSON.parse(invoice.items_json || '[]');
-        await electron.ipcRenderer.invoke('print:purchase-order', {
+        await ipc.invoke('print:purchase-order', {
           orderId: invoice.id,
           date: invoice.date,
           supplier: invoice.supplier_name || 'غير محدد',
@@ -217,15 +218,15 @@ const InvoicesModule = () => {
   // PDF Export
   const handleExportPdf = async (invoice) => {
     try {
-      const electron = window.require ? window.require('electron') : null;
-      if (!electron) {
+      const ipc = getIpcRenderer();
+      if (!ipc) {
         window.print();
         return;
       }
 
       if (activeTab === 'purchases') {
         const items = JSON.parse(invoice.items_json || '[]');
-        const res = await electron.ipcRenderer.invoke('export:purchase-order-pdf', {
+        const res = await ipc.invoke('export:purchase-order-pdf', {
           orderId: invoice.id,
           date: invoice.date,
           supplier: invoice.supplier_name || 'غير محدد',
