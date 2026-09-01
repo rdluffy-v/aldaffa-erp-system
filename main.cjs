@@ -383,11 +383,38 @@ function createWindow() {
     width: 1400,
     height: 900,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false, // preload.cjs uses require('electron') — sandbox would block it
+      preload: path.join(__dirname, 'preload.cjs'),
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      spellcheck: false
     },
     title: 'الدفة للعطور - Aldaffa ERP',
     backgroundColor: '#030712'
+  });
+
+  // Harden navigation: block external navigations and new-window links to unknown origins
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const currentUrl = mainWindow.webContents.getURL();
+    const allowed = url.startsWith('file://') || url.startsWith('http://localhost:5173');
+    if (url !== currentUrl && !allowed) {
+      event.preventDefault();
+      console.warn('Blocked navigation to external URL:', url);
+    }
+  });
+
+  mainWindow.webContents.on('will-attach-webview', (event) => {
+    event.preventDefault();
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // Open only https external links in the OS browser; block everything else
+    if (url.startsWith('https://')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
   });
 
   // Load app
@@ -432,9 +459,9 @@ function purgeSafeCaches() {
 function setupAutoUpdater() {
   if (process.env.NODE_ENV === 'development') return;
 
-  // Default GitHub token for updates
+  // Default GitHub token for updates — use env var ONLY
   if (!process.env.GH_TOKEN) {
-    process.env.GH_TOKEN = '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';
+    console.warn('GH_TOKEN env var not set — auto-updater will fall back to public release URL');
   }
 
   autoUpdater.autoDownload = false;
@@ -446,7 +473,7 @@ function setupAutoUpdater() {
       owner: 'rdluffy-v',
       repo: 'aldaffa-erp-system',
       private: true,
-      token: process.env.GH_TOKEN || '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'
+      token: process.env.GH_TOKEN || undefined
     });
   } catch (e) {
     console.warn('setFeedURL warning:', e.message);
@@ -562,6 +589,9 @@ ipcMain.handle('updater:install', async () => {
 ipcMain.handle('updater:open-releases', async (event, { url } = {}) => {
   try {
     const targetUrl = url || 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
+    if (!isSafeExternalUrl(targetUrl)) {
+      return { success: false, error: 'رابط غير آمن' };
+    }
     await shell.openExternal(targetUrl);
     return { success: true };
   } catch (error) {
@@ -569,13 +599,27 @@ ipcMain.handle('updater:open-releases', async (event, { url } = {}) => {
   }
 });
 
+// Protocol allowlist for opening external URLs — only https/web URLs ever reach the shell.
+const EXTERNAL_URL_ALLOWLIST = ['https:', 'http:'];
+
+function isSafeExternalUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0 || rawUrl.length > 2048) return false;
+  try {
+    const parsed = new URL(rawUrl);
+    return EXTERNAL_URL_ALLOWLIST.includes(parsed.protocol);
+  } catch (e) {
+    return false;
+  }
+}
+
 ipcMain.handle('system:open-external', async (event, { url } = {}) => {
   try {
-    if (url) {
-      await shell.openExternal(url);
-      return { success: true };
+    if (!isSafeExternalUrl(url)) {
+      console.warn('Blocked open-external for unsafe URL:', url);
+      return { success: false, error: 'URL غير آمنة (يسمح فقط ببروتوكول https/http)' };
     }
-    return { success: false, error: 'URL is required' };
+    await shell.openExternal(url);
+    return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -753,13 +797,47 @@ ipcMain.handle('archive:view', async (event, { archiveFile }) => {
   }
 });
 
-// IPC handlers for database operations and update actions
+// ----------------------------------------------------
+// SECURE DB IPC LAYER — parameterized, single-statement, length-capped
+// ----------------------------------------------------
+const MAX_SQL_LENGTH = 20000;
+
+function isChannelAuthorized(event, channelPrefix) {
+  return Boolean(event && event.sender && channelPrefix && typeof channelPrefix === 'string');
+}
+
+function sanitizeSqlInput(sql, params) {
+  if (typeof sql !== 'string' || sql.length === 0 || sql.length > MAX_SQL_LENGTH) {
+    throw new Error('Invalid SQL statement (empty or too long)');
+  }
+  // Enforce single-statement execution — block multi-statement injection chains
+  const stripped = sql.replace(/\/\*[\s\S]*?\*\//g, '').trim();
+  if (stripped.includes(';')) {
+    throw new Error('Multiple SQL statements are not allowed');
+  }
+  if (params !== undefined && !Array.isArray(params)) {
+    throw new Error('SQL params must be an array');
+  }
+  const safeParams = Array.isArray(params) ? params : [];
+  // All params must be JSON-ish scalar values — block objects/arrays/functions
+  for (const p of safeParams) {
+    if (p !== null && typeof p === 'object') {
+      throw new Error('SQL params must be scalar values');
+    }
+  }
+  return [stripped, safeParams];
+}
 
 // IPC handlers for database operations and update actions
-ipcMain.handle('db:query', async (event, { sql, params = [] }) => {
+ipcMain.handle('db:query', async (event, { sql, params = [] } = {}) => {
   try {
-    const stmt = db.prepare(sql);
-    const result = stmt.all(...params);
+    const [cleanSql, safeParams] = sanitizeSqlInput(sql, params);
+    // Read-only queries: only allow SELECT and PRAGMA (info read only)
+    if (!/^(SELECT|PRAGMA|EXPLAIN)\b/i.test(cleanSql.trim())) {
+      throw new Error('db:query only allows SELECT/PRAGMA/EXPLAIN statements');
+    }
+    const stmt = db.prepare(cleanSql);
+    const result = stmt.all(...safeParams);
     return { success: true, data: result };
   } catch (error) {
     console.error('Database query error:', error);
@@ -767,10 +845,11 @@ ipcMain.handle('db:query', async (event, { sql, params = [] }) => {
   }
 });
 
-ipcMain.handle('db:run', async (event, { sql, params = [] }) => {
+ipcMain.handle('db:run', async (event, { sql, params = [] } = {}) => {
   try {
-    const stmt = db.prepare(sql);
-    const result = stmt.run(...params);
+    const [cleanSql, safeParams] = sanitizeSqlInput(sql, params);
+    const stmt = db.prepare(cleanSql);
+    const result = stmt.run(...safeParams);
     return { success: true, data: result };
   } catch (error) {
     if (!error.message || !error.message.includes('duplicate column name')) {
@@ -780,10 +859,11 @@ ipcMain.handle('db:run', async (event, { sql, params = [] }) => {
   }
 });
 
-ipcMain.handle('db:get', async (event, { sql, params = [] }) => {
+ipcMain.handle('db:get', async (event, { sql, params = [] } = {}) => {
   try {
-    const stmt = db.prepare(sql);
-    const result = stmt.get(...params);
+    const [cleanSql, safeParams] = sanitizeSqlInput(sql, params);
+    const stmt = db.prepare(cleanSql);
+    const result = stmt.get(...safeParams);
     return { success: true, data: result };
   } catch (error) {
     console.error('Database get error:', error);
@@ -791,9 +871,18 @@ ipcMain.handle('db:get', async (event, { sql, params = [] }) => {
   }
 });
 
-// Atomic Transaction Handler (Synchronous SQLite Transaction)
-ipcMain.handle('db:transaction', async (event, { queries = [] }) => {
+// Atomic Transaction Handler (Single-Statement per query, Synchronous SQLite Transaction)
+ipcMain.handle('db:transaction', async (event, { queries = [] } = {}) => {
   try {
+    if (!Array.isArray(queries)) {
+      throw new Error('Transaction queries must be an array');
+    }
+    const cleaned = queries.map((q) => {
+      if (!q || typeof q.sql !== 'string') throw new Error('Invalid transaction query');
+      const [cleanSql, safeParams] = sanitizeSqlInput(q.sql, q.params);
+      return { sql: cleanSql, params: safeParams };
+    });
+
     const runAtomicTx = db.transaction((queriesList) => {
       const results = [];
       for (const q of queriesList) {
@@ -805,7 +894,7 @@ ipcMain.handle('db:transaction', async (event, { queries = [] }) => {
       return results;
     });
 
-    const results = runAtomicTx(queries);
+    const results = runAtomicTx(cleaned);
     return { success: true, data: results };
   } catch (error) {
     console.error('Database atomic transaction error:', error);

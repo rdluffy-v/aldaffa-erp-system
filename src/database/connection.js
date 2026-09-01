@@ -3,16 +3,7 @@
  * Provides enhanced IPC bridge with error handling, retry logic, and connection pooling simulation
  */
 
-const getIpcRenderer = () => {
-  if (typeof window !== 'undefined' && window.require) {
-    try {
-      return window.require('electron').ipcRenderer;
-    } catch (e) {
-      return null;
-    }
-  }
-  return null;
-};
+import { getIpcRenderer } from '../utils/electronBridge.js';
 
 class DatabaseConnection {
   constructor() {

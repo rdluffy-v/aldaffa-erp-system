@@ -639,7 +639,7 @@ const PurchasesModule = () => {
     setWizardStep((prev) => Math.max(1, prev - 1));
   };
 
-  const savePurchase = async () => {
+  const savePurchase = async (actionType = 'save') => {
     if (purchaseItems.length === 0) {
       showError('يرجى إضافة صنف واحد على الأقل لفاتورة الشراء');
       return;

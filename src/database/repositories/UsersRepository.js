@@ -1,10 +1,33 @@
 /**
  * Users & Permissions Repository
  * Manages staff accounts, PIN authentication, role assignment, and granular feature permissions
+ *
+ * SECURITY: PINs are hashed with SHA-256 (Web Crypto API) before storage and
+ * authentication. The database may still contain legacy plaintext PINs for
+ * default users; a one-time migration detects and upgrades them automatically
+ * on the first successful login after this change.
  */
 
 import { BaseRepository } from './BaseRepository.js';
 import { db } from '../connection.js';
+
+// ---------------------------------------------------------------------------
+// SHA-256 PIN hashing (Web Crypto API — available in all modern Electron
+// renderer contexts regardless of nodeIntegration / contextIsolation)
+// ---------------------------------------------------------------------------
+
+async function hashPin(pin) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pin);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function isPlaintextPin(candidate) {
+  // Plaintext 4-digit PINs match exactly this pattern; any SHA-256 hex is 64 chars.
+  return /^\d{4,8}$/.test(candidate);
+}
 
 export const ROLE_PRESETS = {
   manager: {

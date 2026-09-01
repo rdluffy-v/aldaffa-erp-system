@@ -1,13 +1,29 @@
 /**
  * Base Repository Pattern
  * Provides common CRUD operations and query building
+ *
+ * SECURITY: All table names are validated against a static allowlist to
+ * prevent SQL injection via untrusted tableName values.
  */
 
 import { db } from '../connection.js';
 
+// Whitelisted table names — any repo must use one of these or be rejected at construction.
+// This prevents attacker-controlled table name interpolation in all CRUD operations.
+const ALLOWED_TABLES = new Set([
+  'inventory', 'sales', 'sale_items', 'returns', 'withdrawals', 'capital_injections',
+  'gifts', 'notes', 'debtors', 'debt_history', 'losses', 'purchases',
+  'archives', 'settings', 'users', 'user_permissions', 'categories',
+  'shift_reports'
+]);
+
 export class BaseRepository {
   constructor(tableName) {
-    this.tableName = tableName;
+    const normalized = String(tableName || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!ALLOWED_TABLES.has(normalized)) {
+      throw new Error(`BaseRepository: table "${tableName}" is not in the allowlist`);
+    }
+    this.tableName = normalized;
   }
 
   /**

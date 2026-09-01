@@ -22,8 +22,10 @@ import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { SalesRepository } from '../database/repositories/SalesRepository.js';
 import { DebtorsRepository } from '../database/repositories/DebtorsRepository.js';
 import { formatCurrency, generateId } from '../utils/helpers.js';
+import { getIpcRenderer, isElectronRuntime } from '../utils/electronBridge.js';
 import PortionModal from '../components/PortionModal.jsx';
 import DateTimePicker from '../components/DateTimePicker.jsx';
+import ConfirmModal from '../components/shared/ConfirmModal.jsx';
 
 const salesRepo = new SalesRepository();
 const debtorsRepo = new DebtorsRepository();
@@ -78,6 +80,7 @@ const POSModule = () => {
   const [isProcessingSale, setIsProcessingSale] = useState(false);
   const [barcodeBuffer, setBarcodeBuffer] = useState('');
   const [barcodeTimeout, setBarcodeTimeout] = useState(null);
+  const [showClearCartConfirm, setShowClearCartConfirm] = useState(false);
 
   // Load products on mount
   useEffect(() => {
@@ -96,10 +99,7 @@ const POSModule = () => {
       if (e.key === 'F2') {
         e.preventDefault();
         if (cartItems.length > 0) {
-          if (window.confirm('هل تريد مسح السلة؟')) {
-            clearCart();
-            showInfo('تم مسح السلة');
-          }
+          setShowClearCartConfirm(true);
         }
       }
       // F3: Checkout
@@ -280,9 +280,9 @@ const POSModule = () => {
 
       // Print receipt (optional - check if IPC is available)
       try {
-        const electron = window.require ? window.require('electron') : null;
-        if (electron) {
-          await electron.ipcRenderer.invoke('print:receipt', {
+        const ipc = getIpcRenderer();
+        if (ipc) {
+          await ipc.invoke('print:receipt', {
             saleId,
             date: saleDate,
             items: cartItems,
@@ -688,6 +688,24 @@ const POSModule = () => {
           onClose={() => setShowDatePicker(false)}
         />
       )}
+
+      {/* Clear Cart Confirmation */}
+      <ConfirmModal
+        open={showClearCartConfirm}
+        title="مسح السلة"
+        message="هل تريد مسح جميع الأصناف من سلة المشتريات؟ لا يمكن التراجع عن هذا الإجراء."
+        icon="🗑️"
+        danger
+        confirmText="نعم، مسح السلة"
+        cancelText="إلغاء"
+        onConfirm={() => {
+          setShowClearCartConfirm(false);
+          clearCart();
+          showInfo('تم مسح السلة');
+        }}
+        onCancel={() => setShowClearCartConfirm(false)}
+        onClose={() => setShowClearCartConfirm(false)}
+      />
     </div>
   );
 };
