@@ -12,19 +12,25 @@ const rm = promisify(fs.rm);
 
 let mainWindow;
 let db;
-let startMobileBridgeServer, getMobileServerInfo, stopMobileBridgeServer, generatePairingToken;
+let startMobileBridgeServer, getMobileServerInfo, stopMobileBridgeServer, generatePairingToken, startCloudflareTunnel, stopCloudflareTunnel, getCloudflareTunnelStatus;
 try {
   const mobileBridge = require('./server/mobileBridgeServer.cjs');
   startMobileBridgeServer = mobileBridge.startMobileBridgeServer;
   getMobileServerInfo = mobileBridge.getMobileServerInfo;
   stopMobileBridgeServer = mobileBridge.stopMobileBridgeServer;
   generatePairingToken = mobileBridge.generatePairingToken;
+  startCloudflareTunnel = mobileBridge.startCloudflareTunnel;
+  stopCloudflareTunnel = mobileBridge.stopCloudflareTunnel;
+  getCloudflareTunnelStatus = mobileBridge.getCloudflareTunnelStatus;
 } catch (e) {
   console.warn('MobileBridgeServer module not found, mobile companion disabled:', e.message);
   startMobileBridgeServer = () => {};
   getMobileServerInfo = () => ({ running: false, port: null, token: null, url: null });
   stopMobileBridgeServer = () => {};
   generatePairingToken = () => 'unavailable';
+  startCloudflareTunnel = async () => ({ success: false, error: 'Tunnel unavailable' });
+  stopCloudflareTunnel = () => ({ success: true });
+  getCloudflareTunnelStatus = () => ({ running: false, url: null });
 }
 
 // Allowlist of every valid database table name. Any identifier that gets
@@ -542,114 +548,147 @@ function getEffectiveGitHubToken(customToken) {
 function fetchGitHubRelease(token) {
   return new Promise((resolve, reject) => {
     const effectiveToken = getEffectiveGitHubToken(token);
-    const options = {
-      hostname: 'api.github.com',
-      path: '/repos/rdluffy-v/aldaffa-erp-system/releases/latest',
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Aldaffa-ERP-Desktop-App',
-        'Accept': 'application/vnd.github.v3+json',
-        ...(effectiveToken ? { 'Authorization': `Bearer ${effectiveToken}` } : {})
-      }
-    };
 
-    const req = https.request(options, (res) => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
-        try {
-          const json = body ? JSON.parse(body) : {};
-          resolve({ status: res.statusCode, data: json });
-        } catch (e) {
-          resolve({ status: res.statusCode, data: null, raw: body });
+    function attemptFetch(useToken) {
+      const options = {
+        hostname: 'api.github.com',
+        path: '/repos/rdluffy-v/aldaffa-erp-system/releases/latest',
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Aldaffa-ERP-Desktop-App',
+          'Accept': 'application/vnd.github.v3+json',
+          ...(useToken && effectiveToken ? { 'Authorization': `Bearer ${effectiveToken}` } : {})
         }
+      };
+
+      const req = https.request(options, (res) => {
+        // If token fails with 401/404, fallback to unauthenticated request
+        if (useToken && (res.statusCode === 401 || res.statusCode === 404)) {
+          return attemptFetch(false);
+        }
+
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          try {
+            const json = body ? JSON.parse(body) : {};
+            resolve({ status: res.statusCode, data: json });
+          } catch (e) {
+            resolve({ status: res.statusCode, data: null, raw: body });
+          }
+        });
       });
-    });
 
-    req.on('error', (err) => {
-      reject(err);
-    });
+      req.on('error', (err) => {
+        if (useToken) {
+          return attemptFetch(false);
+        }
+        reject(err);
+      });
 
-    req.setTimeout(12000, () => {
-      req.destroy(new Error('انتهت مهلة الاتصال بخادم GitHub'));
-    });
+      req.setTimeout(12000, () => {
+        req.destroy(new Error('انتهت مهلة الاتصال بخادم GitHub'));
+      });
 
-    req.end();
+      req.end();
+    }
+
+    attemptFetch(Boolean(effectiveToken));
   });
 }
 
-function downloadGitHubAsset(assetId, destPath, token, onProgress) {
+function downloadGitHubAsset(asset, destPath, token, onProgress) {
   return new Promise((resolve, reject) => {
     const effectiveToken = getEffectiveGitHubToken(token);
-    const assetUrl = `https://api.github.com/repos/rdluffy-v/aldaffa-erp-system/releases/assets/${assetId}`;
 
-    function makeRequest(url, isRedirect = false) {
+    function attemptDownload(useAuth) {
       try {
-        const parsedUrl = new URL(url);
-        const options = {
-          hostname: parsedUrl.hostname,
-          path: parsedUrl.pathname + parsedUrl.search,
-          method: 'GET',
-          headers: {
-            'User-Agent': 'Aldaffa-ERP-Desktop-App'
-          }
-        };
+        const url = useAuth && effectiveToken && asset.id
+          ? `https://api.github.com/repos/rdluffy-v/aldaffa-erp-system/releases/assets/${asset.id}`
+          : (asset.browser_download_url || `https://github.com/rdluffy-v/aldaffa-erp-system/releases/download/${asset.version || 'latest'}/${asset.name}`);
 
-        if (!isRedirect && effectiveToken) {
-          options.headers['Authorization'] = `Bearer ${effectiveToken}`;
-          options.headers['Accept'] = 'application/octet-stream';
-        }
-
-        const req = https.request(options, (res) => {
-          // Handle 301, 302, 307 redirects to S3
-          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            return makeRequest(res.headers.location, true);
-          }
-
-          if (res.statusCode !== 200) {
-            return reject(new Error(`فشل التحميل من الخادم (رمز الاستجابة: ${res.statusCode})`));
-          }
-
-          const totalBytes = parseInt(res.headers['content-length'], 10) || 0;
-          let receivedBytes = 0;
-          const fileStream = fs.createWriteStream(destPath);
-
-          res.on('data', (chunk) => {
-            receivedBytes += chunk.length;
-            if (onProgress && totalBytes > 0) {
-              const percent = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
-              onProgress({ percent, transferred: receivedBytes, total: totalBytes });
+        function makeRequest(targetUrl, isRedirect = false) {
+          const parsedUrl = new URL(targetUrl);
+          const options = {
+            hostname: parsedUrl.hostname,
+            path: parsedUrl.pathname + parsedUrl.search,
+            method: 'GET',
+            headers: {
+              'User-Agent': 'Aldaffa-ERP-Desktop-App'
             }
+          };
+
+          if (useAuth && !isRedirect && effectiveToken) {
+            options.headers['Authorization'] = `Bearer ${effectiveToken}`;
+            options.headers['Accept'] = 'application/octet-stream';
+          }
+
+          const req = https.request(options, (res) => {
+            if (useAuth && (res.statusCode === 401 || res.statusCode === 404)) {
+              return attemptDownload(false);
+            }
+
+            // Handle redirects to S3
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              return makeRequest(res.headers.location, true);
+            }
+
+            if (res.statusCode !== 200) {
+              if (useAuth) {
+                return attemptDownload(false);
+              }
+              return reject(new Error(`فشل التحميل من الخادم (رمز الاستجابة: ${res.statusCode})`));
+            }
+
+            const totalBytes = parseInt(res.headers['content-length'], 10) || 0;
+            let receivedBytes = 0;
+            const fileStream = fs.createWriteStream(destPath);
+
+            res.on('data', (chunk) => {
+              receivedBytes += chunk.length;
+              if (onProgress && totalBytes > 0) {
+                const percent = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
+                onProgress({ percent, transferred: receivedBytes, total: totalBytes });
+              }
+            });
+
+            res.pipe(fileStream);
+
+            fileStream.on('finish', () => {
+              fileStream.close(() => resolve(destPath));
+            });
+
+            fileStream.on('error', (err) => {
+              try { fs.unlinkSync(destPath); } catch (e) {}
+              reject(err);
+            });
           });
 
-          res.pipe(fileStream);
-
-          fileStream.on('finish', () => {
-            fileStream.close(() => resolve(destPath));
-          });
-
-          fileStream.on('error', (err) => {
+          req.on('error', (err) => {
+            if (useAuth) {
+              return attemptDownload(false);
+            }
             try { fs.unlinkSync(destPath); } catch (e) {}
             reject(err);
           });
-        });
 
-        req.on('error', (err) => {
-          try { fs.unlinkSync(destPath); } catch (e) {}
-          reject(err);
-        });
+          req.setTimeout(300000, () => {
+            req.destroy(new Error('انتهت مهلة تحميل حزمة التحديث (5 دقائق)'));
+          });
 
-        req.setTimeout(300000, () => {
-          req.destroy(new Error('انتهت مهلة تحميل حزمة التحديث (5 دقائق)'));
-        });
+          req.end();
+        }
 
-        req.end();
+        makeRequest(url, false);
       } catch (err) {
+        if (useAuth) {
+          return attemptDownload(false);
+        }
         reject(err);
       }
     }
 
-    makeRequest(assetUrl, false);
+    attemptDownload(Boolean(effectiveToken));
   });
 }
 
@@ -800,7 +839,7 @@ ipcMain.handle('updater:download', async () => {
 
         const destPath = path.join(downloadsDir, debAsset.name);
 
-        await downloadGitHubAsset(debAsset.id, destPath, effectiveToken, (progress) => {
+        await downloadGitHubAsset(debAsset, destPath, effectiveToken, (progress) => {
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('update-download-progress', progress);
           }
@@ -874,6 +913,16 @@ ipcMain.handle('updater:open-releases', async (event, { url } = {}) => {
     if (!isSafeExternalUrl(targetUrl)) {
       return { success: false, error: 'رابط غير آمن' };
     }
+    await shell.openExternal(targetUrl);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('updater:open-browser-download', async (event, { url } = {}) => {
+  try {
+    const targetUrl = url || 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
     await shell.openExternal(targetUrl);
     return { success: true };
   } catch (error) {
@@ -3637,6 +3686,32 @@ ipcMain.handle('mobile:regenerate-token', async () => {
   }
 });
 
+ipcMain.handle('mobile:start-tunnel', async () => {
+  try {
+    const res = await startCloudflareTunnel();
+    return { ...res, info: getMobileServerInfo() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('mobile:stop-tunnel', async () => {
+  try {
+    const res = stopCloudflareTunnel();
+    return { ...res, info: getMobileServerInfo() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('mobile:get-tunnel-status', async () => {
+  try {
+    return { success: true, ...getCloudflareTunnelStatus(), info: getMobileServerInfo() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('mobile:get-telemetry', async () => {
   try {
     const serverInfo = getMobileServerInfo();
@@ -3774,6 +3849,8 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  try { stopCloudflareTunnel(); } catch (e) {}
+  try { stopMobileBridgeServer(); } catch (e) {}
   safeFlushAndBackup();
   if (db) {
     try {

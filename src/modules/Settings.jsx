@@ -57,7 +57,8 @@ import {
   Radio,
   Zap,
   Activity,
-  Server
+  Server,
+  Globe
 } from 'lucide-react';
 import { BarcodeSVG } from '../utils/barcodeGenerator.jsx';
 
@@ -660,10 +661,17 @@ const SettingsModule = () => {
   const [mobileInfo, setMobileInfo] = useState({
     isRunning: true,
     port: 4848,
-    localIp: '192.168.110.240',
+    httpsPort: 4849,
+    localIp: '127.0.0.1',
     pairingToken: '',
-    mobileUrl: 'http://192.168.110.240:4848/mobile'
+    mobileUrl: '',
+    httpUrl: '',
+    httpsUrl: '',
+    cloudflareUrl: null,
+    tunnelRunning: false
   });
+  const [mobileUrlMode, setMobileUrlMode] = useState('cloudflare');
+  const [tunnelToggling, setTunnelToggling] = useState(false);
   const [mobilePortInput, setMobilePortInput] = useState(4848);
   const [cloudflareUrl, setCloudflareUrl] = useState('');
   const [cloudflareKey, setCloudflareKey] = useState('');
@@ -757,6 +765,11 @@ const SettingsModule = () => {
       if (res && res.success && res.info) {
         setMobileInfo(res.info);
         if (res.info.port) setMobilePortInput(res.info.port);
+        if (res.info.tunnelRunning) {
+          setMobileUrlMode('cloudflare');
+        } else if (res.info.httpsPort) {
+          setMobileUrlMode('lan_https');
+        }
       }
       const telemRes = await invokeIpc('mobile:get-telemetry');
       if (telemRes && telemRes.success && telemRes.telemetry) {
@@ -769,6 +782,34 @@ const SettingsModule = () => {
       console.warn('loadMobileInfo error:', e);
     }
   }, [invokeIpc, cloudflareUrl]);
+
+  const handleToggleCloudflareTunnel = async () => {
+    setTunnelToggling(true);
+    try {
+      if (mobileInfo?.tunnelRunning) {
+        showInfo('جاري إيقاف الرابط السحابي...');
+        const res = await invokeIpc('mobile:stop-tunnel');
+        if (res && res.success && res.info) {
+          setMobileInfo(res.info);
+          showSuccess('تم إيقاف الرابط السحابي بنجاح');
+        }
+      } else {
+        showInfo('جاري تشغيل الرابط السحابي الموثوق (Cloudflare HTTPS)...');
+        const res = await invokeIpc('mobile:start-tunnel');
+        if (res && res.success && res.info) {
+          setMobileInfo(res.info);
+          setMobileUrlMode('cloudflare');
+          showSuccess('✅ تم تشغيل الرابط السحابي الآمن بنجاح (HTTPS موثوق معتمد)');
+        } else {
+          showError('فشل تشغيل الرابط السحابي: ' + (res?.error || 'يرجى التحقق من اتصال الإنترنت'));
+        }
+      }
+    } catch (e) {
+      showError('خطأ أثناء تشغيل الرابط السحابي: ' + e.message);
+    } finally {
+      setTunnelToggling(false);
+    }
+  };
 
   const handleRegenerateMobileToken = async () => {
     try {
@@ -1266,12 +1307,10 @@ const SettingsModule = () => {
 
   const handleOpenDirectDownload = async () => {
     try {
-      if (updateStatus?.updateDownloaded && updateStatus?.info?.filePath) {
-        await invokeIpc('updater:open-releases');
-        showInfo('تم فتح مجلد التنزيلات الذي يحتوي على حزمة التحديث');
-        return;
-      }
-      handleDownloadUpdate();
+      showInfo('جاري فتح صفحة تنزيل حزمة التحديث (.deb) في المتصفح...');
+      await invokeIpc('updater:open-browser-download', {
+        url: 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest'
+      });
     } catch (e) {
       showError('فشل فتح الرابط: ' + e.message);
     }
@@ -2561,7 +2600,7 @@ const SettingsModule = () => {
                   <div className="flex items-center justify-between border-b border-white/10 pb-3">
                     <h3 className="text-xs font-bold text-[#fbbf24] flex items-center gap-1.5">
                       <Smartphone className="w-4 h-4" />
-                      الاقتران السريع برمز QR
+                      الاقتران السريع وتطبيق الجوال
                     </h3>
                     <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -2569,67 +2608,154 @@ const SettingsModule = () => {
                     </span>
                   </div>
 
+                  {/* Connection Protocol Selector */}
+                  <div className="space-y-2 text-right">
+                    <div className="flex items-center justify-between text-xs font-bold text-[#adbac7]">
+                      <span>نوع الرابط وبروتوكول الاتصال:</span>
+                      <span className="text-[10px] text-[#fbbf24]">
+                        {mobileUrlMode === 'cloudflare' && '⚡ سحابي آمن (موصى به)'}
+                        {mobileUrlMode === 'lan_https' && '🔒 محلي مشفر (HTTPS)'}
+                        {mobileUrlMode === 'lan_http' && '🌐 محلي عادي (HTTP)'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#0d1117] border border-white/5 rounded-xl text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setMobileUrlMode('cloudflare')}
+                        className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1 transition-all ${
+                          mobileUrlMode === 'cloudflare'
+                            ? 'bg-amber-500 text-black shadow'
+                            : 'text-[#8b949e] hover:text-white'
+                        }`}
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        سحابي HTTPS
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMobileUrlMode('lan_https')}
+                        className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1 transition-all ${
+                          mobileUrlMode === 'lan_https'
+                            ? 'bg-sky-500 text-white shadow'
+                            : 'text-[#8b949e] hover:text-white'
+                        }`}
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                        محلي HTTPS
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMobileUrlMode('lan_http')}
+                        className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1 transition-all ${
+                          mobileUrlMode === 'lan_http'
+                            ? 'bg-[#21262d] text-white shadow'
+                            : 'text-[#8b949e] hover:text-white'
+                        }`}
+                      >
+                        <Globe className="w-3.5 h-3.5" />
+                        محلي HTTP
+                      </button>
+                    </div>
+
+                    {mobileUrlMode === 'cloudflare' && (
+                      <div className="p-3 bg-[#111726] border border-amber-500/20 rounded-xl space-y-2 text-right">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-[#adbac7]">نفق Cloudflare السحابي الموثوق:</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            mobileInfo?.tunnelRunning
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}>
+                            {mobileInfo?.tunnelRunning ? '🟢 نفق HTTPS نشط' : '⚪ غير مفعل'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={tunnelToggling}
+                          onClick={handleToggleCloudflareTunnel}
+                          className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                            mobileInfo?.tunnelRunning
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
+                              : 'bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] text-black hover:brightness-110'
+                          }`}
+                        >
+                          <Zap className={`w-3.5 h-3.5 ${tunnelToggling ? 'animate-spin' : ''}`} />
+                          {mobileInfo?.tunnelRunning ? 'إيقاف النفق السحابي' : 'تشغيل الرابط السحابي الآمن (HTTPS)'}
+                        </button>
+                        <p className="text-[10px] text-[#768390] leading-relaxed">
+                          ⚡ يمنحك رابط HTTPS عالمي موثوق، يتيح كاميرا الهاتف ومسح الباركود فوراً بدون قيود المتصفح.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                   <p className="text-xs text-[#adbac7] text-right leading-relaxed">
-                    امسح رمز الاستجابة السريعة (QR Code) بكاميرا هاتفك المحمول (iOS أو Android) للاقتران الفوري بنقطة البيع والجرد المخزني عبر السحابة والشبكة المحلية:
+                    امسح رمز الاستجابة السريعة (QR Code) بكاميرا هاتفك المحمول (iOS أو Android) لفتح التطبيق ومسح الباركود بالكاميرا مباشرة:
                   </p>
 
-                  {/* QR Code Frame */}
-                  <div className="p-4 bg-white rounded-2xl inline-block shadow-2xl mx-auto border-4 border-[#fbbf24]/40 gold-glow">
-                    {(() => {
-                      const qrPayload = JSON.stringify({
-                        storeId: 'aldaffa_store_main',
-                        storeName: printSettings.storeName || 'الدفة للعطور',
-                        token: mobileInfo.pairingToken || 'pair_aldaffa',
-                        lanUrl: `http://${mobileInfo.localIp}:${mobileInfo.port}/mobile`,
-                        cloudUrl: cloudflareUrl || 'https://sync.aldaffa.com',
-                        expiresAt: Date.now() + 600000
-                      });
-                      return (
-                        <img
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrPayload)}`}
-                          alt="Mobile Pairing QR"
-                          className="w-48 h-48 object-contain rounded-lg"
-                        />
-                      );
-                    })()}
-                  </div>
+                  {/* Dynamic Active URL Calculation */}
+                  {(() => {
+                    const activeMobileUrl = (() => {
+                      if (mobileUrlMode === 'cloudflare' && mobileInfo?.cloudflareUrl) {
+                        return mobileInfo.cloudflareUrl;
+                      }
+                      if (mobileUrlMode === 'lan_https' && mobileInfo?.httpsUrl) {
+                        return mobileInfo.httpsUrl;
+                      }
+                      return mobileInfo?.httpUrl || mobileInfo?.mobileUrl || `http://${mobileInfo?.localIp || '127.0.0.1'}:${mobileInfo?.port || 4848}/mobile?token=${mobileInfo?.pairingToken || ''}`;
+                    })();
 
-                  {/* Direct Link & Actions */}
-                  <div className="space-y-2 pt-2">
-                    <div className="p-2.5 bg-[#0d1117] border border-white/10 rounded-xl flex items-center justify-between gap-2 text-xs font-mono text-[#768390] text-left" dir="ltr">
-                      <span className="truncate flex-1">{mobileInfo.mobileUrl}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(mobileInfo.mobileUrl);
-                          showSuccess('تم نسخ رابط تطبيق الجوال إلى الحافظة');
-                        }}
-                        className="px-2.5 py-1 rounded bg-[#161b22] text-[#fbbf24] hover:bg-[#fbbf24]/10 text-[11px] font-bold shrink-0"
-                      >
-                        نسخ
-                      </button>
-                    </div>
+                    return (
+                      <>
+                        {/* QR Code Frame */}
+                        <div className="p-4 bg-white rounded-2xl inline-block shadow-2xl mx-auto border-4 border-[#fbbf24]/40 gold-glow">
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(activeMobileUrl)}`}
+                            alt="Mobile Pairing QR"
+                            className="w-48 h-48 object-contain rounded-lg"
+                          />
+                        </div>
 
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => invokeIpc('system:open-external', { url: mobileInfo.mobileUrl })}
-                        className="flex-1 btn-secondary text-xs flex items-center justify-center gap-1.5"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-[#fbbf24]" />
-                        فتح في المتصفح
-                      </button>
+                        {/* Direct Link & Actions */}
+                        <div className="space-y-2 pt-2">
+                          <div className="p-2.5 bg-[#0d1117] border border-white/10 rounded-xl flex items-center justify-between gap-2 text-xs font-mono text-[#768390] text-left" dir="ltr">
+                            <span className="truncate flex-1 text-amber-300">{activeMobileUrl}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(activeMobileUrl);
+                                showSuccess('تم نسخ رابط تطبيق الجوال إلى الحافظة');
+                              }}
+                              className="px-2.5 py-1 rounded bg-[#161b22] text-[#fbbf24] hover:bg-[#fbbf24]/10 text-[11px] font-bold shrink-0"
+                            >
+                              نسخ
+                            </button>
+                          </div>
 
-                      <button
-                        type="button"
-                        onClick={handleRegenerateMobileToken}
-                        className="btn-secondary text-xs flex items-center justify-center gap-1.5 text-[#adbac7] hover:text-[#fbbf24]"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        تجديد الرمز
-                      </button>
-                    </div>
-                  </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => invokeIpc('system:open-external', { url: activeMobileUrl })}
+                              className="flex-1 btn-secondary text-xs flex items-center justify-center gap-1.5"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-[#fbbf24]" />
+                              فتح في المتصفح
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleRegenerateMobileToken}
+                              className="btn-secondary text-xs flex items-center justify-center gap-1.5 text-[#adbac7] hover:text-[#fbbf24]"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              تجديد الرمز
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Local Server Settings */}

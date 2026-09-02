@@ -2,12 +2,17 @@
 // ALDAFFA PERFUMES ERP — MOBILE COMPANION & CLOUDFLARE SYNC BRIDGE SERVER
 // ============================================================================
 const http = require('http');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
+const { execSync, spawn } = require('child_process');
 
 let serverInstance = null;
+let httpsServerInstance = null;
+let tunnelProcess = null;
+let tunnelUrl = null;
 let currentPort = 4848;
 let pairingToken = '';
 let activeSessions = new Map();
@@ -18,15 +23,142 @@ let boundDb = null;
 function getLocalIpAddress() {
   try {
     const interfaces = os.networkInterfaces();
+    const priorityOrder = ['wlan', 'wl', 'eth', 'enp', 'eno', 'en'];
+    const candidates = [];
+
     for (const name of Object.keys(interfaces)) {
+      // Ignore virtual, container, bridge, and tunnel interfaces
+      if (
+        name.startsWith('br-') ||
+        name.startsWith('docker') ||
+        name.startsWith('veth') ||
+        name.startsWith('virbr') ||
+        name.startsWith('tailscale') ||
+        name.startsWith('tun') ||
+        name.startsWith('tap')
+      ) {
+        continue;
+      }
       for (const iface of interfaces[name]) {
         if (iface.family === 'IPv4' && !iface.internal) {
-          return iface.address;
+          candidates.push({ name, address: iface.address });
         }
       }
     }
+
+    for (const prefix of priorityOrder) {
+      const match = candidates.find(c => c.name.startsWith(prefix));
+      if (match) return match.address;
+    }
+
+    if (candidates.length > 0) return candidates[0].address;
   } catch (e) {}
   return '127.0.0.1';
+}
+
+function ensureSslCertificates() {
+  try {
+    const sslDir = path.join(os.homedir(), '.config', 'aldaffa-app-desktop', 'ssl');
+    if (!fs.existsSync(sslDir)) {
+      fs.mkdirSync(sslDir, { recursive: true });
+    }
+    const keyPath = path.join(sslDir, 'server.key');
+    const certPath = path.join(sslDir, 'server.cert');
+
+    if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+      return {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath)
+      };
+    }
+
+    const localIp = getLocalIpAddress();
+    execSync(
+      `openssl req -x509 -newkey rsa:2048 -nodes -sha256 -subj "/CN=aldaffa-erp.local" -keyout "${keyPath}" -out "${certPath}" -days 3650 -addext "subjectAltName = IP:127.0.0.1,IP:${localIp},DNS:localhost"`,
+      { stdio: 'ignore' }
+    );
+
+    if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+      return {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath)
+      };
+    }
+  } catch (e) {
+    console.warn('[MobileBridgeServer] Self-signed SSL generation skipped:', e.message);
+  }
+  return null;
+}
+
+function startCloudflareTunnel(port = currentPort) {
+  return new Promise((resolve) => {
+    if (tunnelProcess && tunnelUrl) {
+      return resolve({ success: true, url: tunnelUrl });
+    }
+    try {
+      tunnelProcess = spawn('cloudflared', ['tunnel', '--url', `http://127.0.0.1:${port}`]);
+      let resolved = false;
+
+      const handleOutput = (data) => {
+        const str = data.toString();
+        const match = str.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
+        if (match && !resolved) {
+          resolved = true;
+          tunnelUrl = match[0];
+          console.log(`[CloudflareTunnel] Live on ${tunnelUrl}`);
+          resolve({ success: true, url: tunnelUrl });
+        }
+      };
+
+      tunnelProcess.stdout.on('data', handleOutput);
+      tunnelProcess.stderr.on('data', handleOutput);
+
+      tunnelProcess.on('close', () => {
+        tunnelProcess = null;
+        tunnelUrl = null;
+      });
+
+      tunnelProcess.on('error', (err) => {
+        console.warn('[CloudflareTunnel Error]:', err.message);
+        if (!resolved) {
+          resolved = true;
+          resolve({ success: false, error: err.message });
+        }
+      });
+
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          resolve({ success: Boolean(tunnelUrl), url: tunnelUrl, timeout: true });
+        }
+      }, 15000);
+    } catch (err) {
+      resolve({ success: false, error: err.message });
+    }
+  });
+}
+
+function stopCloudflareTunnel() {
+  if (tunnelProcess) {
+    try {
+      tunnelProcess.kill('SIGTERM');
+      setTimeout(() => {
+        if (tunnelProcess) {
+          try { tunnelProcess.kill('SIGKILL'); } catch (e) {}
+        }
+      }, 2000);
+    } catch (e) {}
+    tunnelProcess = null;
+    tunnelUrl = null;
+  }
+  return { success: true };
+}
+
+function getCloudflareTunnelStatus() {
+  return {
+    running: Boolean(tunnelProcess && tunnelUrl),
+    url: tunnelUrl
+  };
 }
 
 function generatePairingToken() {
@@ -86,7 +218,7 @@ function startMobileBridgeServer(db, port = 4848) {
   serverStartTime = Date.now();
   if (!pairingToken) generatePairingToken();
 
-  serverInstance = http.createServer(async (req, res) => {
+  const appHandler = async (req, res) => {
     // Standard CORS Headers for Mobile PWA and Web Clients
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -792,29 +924,65 @@ function startMobileBridgeServer(db, port = 4848) {
       console.error('[MobileBridgeServer Error]:', err);
       return sendJson(500, { success: false, error: err.message });
     }
-  });
+  };
+
+  serverInstance = http.createServer(appHandler);
 
   serverInstance.listen(currentPort, '0.0.0.0', () => {
     const localIp = getLocalIpAddress();
-    console.log(`[MobileBridgeServer] Live on http://${localIp}:${currentPort}/mobile (Pairing Token: ${pairingToken})`);
+    console.log(`[MobileBridgeServer HTTP] Live on http://${localIp}:${currentPort}/mobile (Pairing Token: ${pairingToken})`);
   });
 
+  // Attempt starting local HTTPS listener on (currentPort + 1)
+  const ssl = ensureSslCertificates();
+  if (ssl) {
+    try {
+      httpsServerInstance = https.createServer(ssl, appHandler);
+      const httpsPort = currentPort + 1;
+      httpsServerInstance.listen(httpsPort, '0.0.0.0', () => {
+        const localIp = getLocalIpAddress();
+        console.log(`[MobileBridgeServer HTTPS] Live on https://${localIp}:${httpsPort}/mobile (Pairing Token: ${pairingToken})`);
+      });
+      httpsServerInstance.on('error', (err) => {
+        console.warn('[MobileBridgeServer HTTPS Warning]:', err.message);
+        httpsServerInstance = null;
+      });
+    } catch (e) {
+      console.warn('[MobileBridgeServer HTTPS] Start failed:', e.message);
+      httpsServerInstance = null;
+    }
+  }
+
+  const localIp = getLocalIpAddress();
   return {
     port: currentPort,
-    localIp: getLocalIpAddress(),
+    httpsPort: httpsServerInstance ? currentPort + 1 : null,
+    localIp,
     pairingToken,
-    url: `http://${getLocalIpAddress()}:${currentPort}/mobile`
+    url: `http://${localIp}:${currentPort}/mobile`,
+    httpsUrl: `https://${localIp}:${currentPort + 1}/mobile`
   };
 }
 
 function getMobileServerInfo() {
   const localIp = getLocalIpAddress();
+  const httpsPort = currentPort + 1;
+  const httpUrl = `http://${localIp}:${currentPort}/mobile?token=${pairingToken}`;
+  const httpsUrl = `https://${localIp}:${httpsPort}/mobile?token=${pairingToken}`;
+  const cfUrl = tunnelUrl ? `${tunnelUrl}/mobile?token=${pairingToken}` : null;
+  const preferredUrl = cfUrl || (httpsServerInstance ? httpsUrl : httpUrl);
+
   return {
-    isRunning: Boolean(serverInstance),
+    isRunning: Boolean(serverInstance || httpsServerInstance),
     port: currentPort,
+    httpsPort: httpsServerInstance ? httpsPort : null,
     localIp,
     pairingToken,
-    mobileUrl: `http://${localIp}:${currentPort}/mobile?token=${pairingToken}`,
+    mobileUrl: preferredUrl,
+    httpUrl,
+    httpsUrl,
+    cloudflareUrl: cfUrl,
+    tunnelRunning: Boolean(tunnelProcess && tunnelUrl),
     uptimeSeconds: Math.floor((Date.now() - serverStartTime) / 1000),
     activeSessionsCount: activeSessions.size,
     lastSyncTimestamp
@@ -826,6 +994,11 @@ function stopMobileBridgeServer() {
     try { serverInstance.close(); } catch (e) {}
     serverInstance = null;
   }
+  if (httpsServerInstance) {
+    try { httpsServerInstance.close(); } catch (e) {}
+    httpsServerInstance = null;
+  }
+  stopCloudflareTunnel();
   return { success: true };
 }
 
@@ -834,5 +1007,8 @@ module.exports = {
   getMobileServerInfo,
   stopMobileBridgeServer,
   generatePairingToken,
-  getLocalIpAddress
+  getLocalIpAddress,
+  startCloudflareTunnel,
+  stopCloudflareTunnel,
+  getCloudflareTunnelStatus
 };
