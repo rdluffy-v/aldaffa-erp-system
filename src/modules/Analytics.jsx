@@ -396,7 +396,7 @@ const AnalyticsModule = () => {
           }
         };
 
-        const res = await electron.ipcRenderer.invoke('export:financial-pdf', payload);
+        const res = await ipc.invoke('export:financial-pdf', payload);
         if (res?.success) {
           showSuccess(`✅ تم حفظ تقرير PDF بنجاح في:\n${res.filePath}`);
         } else if (!res?.canceled) {

@@ -16,6 +16,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { db } from '../database/connection.js';
 import { DebtorsRepository } from '../database/repositories/DebtorsRepository.js';
 import { useUIStore } from '../stores/useUIStore.js';
 import { useAuthStore } from '../stores/useAuthStore.js';
@@ -255,7 +256,7 @@ const DebtorsModule = () => {
           await db.run('UPDATE debtors SET total_debt = MAX(0, total_debt + ?) WHERE id = ?', [delta, selectedDebtor.id]);
           setConfirmDelete(null);
           await loadDebtors();
-          await loadDebtHistory(selectedDebtor.id);
+          await loadDebtorHistory(selectedDebtor.id);
           await loadPaymentSummary(selectedDebtor.id);
           showSuccess('✅ تم حذف الحركة وتحديث رصيد العميل');
         } catch (err) {

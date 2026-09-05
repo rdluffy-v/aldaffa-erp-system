@@ -198,7 +198,7 @@ const InvoicesModule = () => {
         });
       } else {
         const items = await saleItemsRepo.findAll({ sale_id: invoice.id });
-        await electron.ipcRenderer.invoke('print:receipt', {
+        await ipc.invoke('print:receipt', {
           saleId: invoice.id,
           date: invoice.date,
           items,
@@ -239,7 +239,7 @@ const InvoicesModule = () => {
         }
       } else {
         const items = await saleItemsRepo.findAll({ sale_id: invoice.id });
-        const res = await electron.ipcRenderer.invoke('export:purchase-order-pdf', {
+        const res = await ipc.invoke('export:purchase-order-pdf', {
           orderId: `SALE-${invoice.id}`,
           date: invoice.date,
           supplier: invoice.customer_name || 'عميل المحل',

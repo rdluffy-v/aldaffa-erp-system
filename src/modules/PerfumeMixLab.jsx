@@ -438,7 +438,7 @@ const PerfumeMixLabModule = () => {
 
       setWizardOpen(false);
       await loadData();
-      await loadProducts(true);
+      if (typeof loadIngredients === 'function') await loadIngredients();
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
       }
