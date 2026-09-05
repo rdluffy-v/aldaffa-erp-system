@@ -37,6 +37,7 @@ const InvoicesModule = () => {
   const [purchases, setPurchases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [dateFilter, setDateFilter] = useState(-1); // -1: All, 0: Today, 7, 30, 90, 365
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [invoiceItems, setInvoiceItems] = useState([]);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -71,13 +72,29 @@ const InvoicesModule = () => {
     return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
   }, [loadData]);
 
-  // Filter lists based on active tab & search
+  // Date matcher helper
+  const isDateMatch = (itemDate) => {
+    if (dateFilter === -1) return true;
+    if (!itemDate) return false;
+    const d = new Date(itemDate);
+    if (isNaN(d.getTime())) return true;
+    if (dateFilter === 0) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      return String(itemDate).startsWith(todayStr);
+    }
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - dateFilter);
+    return d >= cutoff;
+  };
+
+  // Filter lists based on active tab, date & search
   const filteredList = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
 
     if (activeTab === 'pos') {
       return sales
         .filter((s) => s.type !== 'online')
+        .filter((s) => isDateMatch(s.date))
         .filter((s) => {
           if (!term) return true;
           return (
@@ -91,6 +108,7 @@ const InvoicesModule = () => {
     if (activeTab === 'online') {
       return sales
         .filter((s) => s.type === 'online')
+        .filter((s) => isDateMatch(s.date))
         .filter((s) => {
           if (!term) return true;
           return (
@@ -102,15 +120,17 @@ const InvoicesModule = () => {
     }
 
     // Purchases
-    return purchases.filter((p) => {
-      if (!term) return true;
-      return (
-        String(p.id).toLowerCase().includes(term) ||
-        (p.supplier_name && p.supplier_name.toLowerCase().includes(term)) ||
-        (p.invoice_ref && p.invoice_ref.toLowerCase().includes(term))
-      );
-    });
-  }, [sales, purchases, activeTab, searchTerm]);
+    return purchases
+      .filter((p) => isDateMatch(p.date))
+      .filter((p) => {
+        if (!term) return true;
+        return (
+          String(p.id).toLowerCase().includes(term) ||
+          (p.supplier_name && p.supplier_name.toLowerCase().includes(term)) ||
+          (p.invoice_ref && p.invoice_ref.toLowerCase().includes(term))
+        );
+      });
+  }, [sales, purchases, activeTab, searchTerm, dateFilter]);
 
   // View invoice details
   const handleViewInvoice = async (invoice) => {
@@ -316,8 +336,21 @@ const InvoicesModule = () => {
           </button>
         </div>
 
-        {/* Search & Refresh */}
-        <div className="flex items-center gap-2">
+        {/* Search, Filter & Refresh */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={dateFilter}
+            onChange={(e) => setDateFilter(parseInt(e.target.value, 10))}
+            className="input-atelier py-1.5 px-3 text-xs font-bold bg-white dark:bg-slate-900 border border-amber-500/30 rounded-full text-[#2D2424] dark:text-white"
+          >
+            <option value={-1}>🌟 عرض جميع الفواتير (الكل)</option>
+            <option value={0}>📅 فواتير اليوم</option>
+            <option value={7}>آخر 7 أيام</option>
+            <option value={30}>آخر 30 يوم</option>
+            <option value={90}>آخر 90 يوم</option>
+            <option value={365}>السنة كاملة / الماضية</option>
+          </select>
+
           <div className="relative">
             <Search className="w-4 h-4 absolute right-3 top-2.5 text-gray-400" />
             <input
@@ -325,7 +358,7 @@ const InvoicesModule = () => {
               placeholder="بحث برقم الفاتورة أو الاسم..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-white dark:bg-slate-900 border border-amber-500/30 rounded-full pr-9 pl-4 py-1.5 text-xs text-[#2D2424] dark:text-white focus:outline-none focus:border-amber-500 w-64"
+              className="bg-white dark:bg-slate-900 border border-amber-500/30 rounded-full pr-9 pl-4 py-1.5 text-xs text-[#2D2424] dark:text-white focus:outline-none focus:border-amber-500 w-60"
             />
           </div>
           <button

@@ -215,13 +215,26 @@ const PurchasesModule = () => {
   const loadPurchases = useCallback(async () => {
     setLoading(true);
     try {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - filterDays);
-      const data = await purchasesRepo.getPurchasesInRange(
-        cutoffDate.toISOString(),
-        new Date(Date.now() + 86400000).toISOString()
-      );
-      setPurchases(data || []);
+      if (filterDays === -1) {
+        // All time - show all purchases regardless of date or when it entered the system
+        const data = await purchasesRepo.findAll({}, 'date DESC');
+        setPurchases(data || []);
+      } else if (filterDays === 0) {
+        // Today's purchases
+        const todayStr = new Date().toISOString().split('T')[0];
+        const startOfDay = `${todayStr}T00:00:00.000Z`;
+        const endOfDay = `${todayStr}T23:59:59.999Z`;
+        const data = await purchasesRepo.getPurchasesInRange(startOfDay, endOfDay);
+        setPurchases(data || []);
+      } else {
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - filterDays);
+        const data = await purchasesRepo.getPurchasesInRange(
+          cutoffDate.toISOString(),
+          new Date(Date.now() + 86400000).toISOString()
+        );
+        setPurchases(data || []);
+      }
     } catch (error) {
       showError(`خطأ في تحميل المشتريات: ${error.message}`);
     } finally {
@@ -1008,13 +1021,15 @@ No additional text, only JSON.`
         <div className="flex items-center gap-2 flex-wrap">
           <select
             value={filterDays}
-            onChange={(e) => setFilterDays(parseInt(e.target.value))}
+            onChange={(e) => setFilterDays(parseInt(e.target.value, 10))}
             className="input-atelier py-1 px-3 text-xs font-bold"
           >
+            <option value={0}>📅 فواتير اليوم</option>
             <option value={7}>آخر 7 أيام</option>
             <option value={30}>آخر 30 يوم</option>
             <option value={90}>آخر 90 يوم</option>
-            <option value={365}>السنة كاملة</option>
+            <option value={365}>السنة كاملة / الماضية</option>
+            <option value={-1}>🌟 عرض جميع الفواتير (الكل بلا استثناء)</option>
           </select>
 
           <button
