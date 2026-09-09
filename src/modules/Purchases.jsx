@@ -8,6 +8,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { PurchasesRepository } from '../database/repositories/PurchasesRepository.js';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
 import { CategoriesRepository } from '../database/repositories/CategoriesRepository.js';
+import { SuppliersRepository } from '../database/repositories/SuppliersRepository.js';
 import { BaseRepository } from '../database/repositories/BaseRepository.js';
 import { db } from '../database/connection.js';
 import { useInventoryStore } from '../stores/useInventoryStore.js';
@@ -52,7 +53,9 @@ import {
   Usb,
   RefreshCw,
   Terminal,
-  HardDrive
+  HardDrive,
+  Edit3,
+  ArrowUpDown
 } from 'lucide-react';
 
 import ConfirmModal from '../components/shared/ConfirmModal.jsx';
@@ -60,6 +63,7 @@ import ConfirmModal from '../components/shared/ConfirmModal.jsx';
 const purchasesRepo = new PurchasesRepository();
 const inventoryRepo = new InventoryRepository();
 const categoriesRepo = new CategoriesRepository();
+const suppliersRepo = new SuppliersRepository();
 
 const DEFAULT_UNITS = [
   { value: 'قطعة', label: 'قطعة / عبوة قياسية' },
@@ -121,8 +125,25 @@ const PurchasesModule = () => {
 
   // Filters
   const [filterDays, setFilterDays] = useState(30);
+  const [sortBy, setSortBy] = useState('date_desc');
+  const [supplierFilter, setSupplierFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 300);
+
+  // Suppliers Management State
+  const [suppliers, setSuppliers] = useState([]);
+  const [showSuppliersModal, setShowSuppliersModal] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState(null);
+  const [supplierForm, setSupplierForm] = useState({
+    name: '',
+    phone: '',
+    company: '',
+    address: '',
+    notes: ''
+  });
+
+  // Edit Purchase Invoice State
+  const [editingPurchaseId, setEditingPurchaseId] = useState(null);
 
   // Modal & Wizard State
   const [showWizardModal, setShowWizardModal] = useState(false);
@@ -242,17 +263,158 @@ const PurchasesModule = () => {
     }
   }, [filterDays, showError]);
 
+  const loadSuppliers = useCallback(async () => {
+    try {
+      const data = await suppliersRepo.findAll({}, 'name ASC');
+      setSuppliers(data || []);
+    } catch (e) {
+      console.warn('Failed to load suppliers:', e);
+    }
+  }, []);
+
   useEffect(() => {
     loadPurchases();
     loadCategories();
+    loadSuppliers();
 
     const handleRefresh = () => {
       loadPurchases();
       loadCategories();
+      loadSuppliers();
     };
     window.addEventListener('aldaffa:data-refresh', handleRefresh);
     return () => window.removeEventListener('aldaffa:data-refresh', handleRefresh);
-  }, [loadPurchases, loadCategories]);
+  }, [loadPurchases, loadCategories, loadSuppliers]);
+
+  const handleSaveSupplier = async (e) => {
+    if (e) e.preventDefault();
+    const name = (supplierForm.name || '').trim();
+    if (!name) {
+      showWarning('يرجى إدخال اسم المورد');
+      return;
+    }
+    try {
+      if (editingSupplier) {
+        await suppliersRepo.update(editingSupplier.id, {
+          name,
+          phone: supplierForm.phone.trim() || null,
+          company: supplierForm.company.trim() || null,
+          address: supplierForm.address.trim() || null,
+          notes: supplierForm.notes.trim() || null
+        });
+        showSuccess(`✅ تم تعديل بيانات المورد "${name}"`);
+      } else {
+        await suppliersRepo.create({
+          id: generateId(),
+          name,
+          phone: supplierForm.phone.trim() || null,
+          company: supplierForm.company.trim() || null,
+          address: supplierForm.address.trim() || null,
+          notes: supplierForm.notes.trim() || null,
+          created_at: new Date().toISOString(),
+          is_demo: 0
+        });
+        showSuccess(`✅ تم إضافة المورد "${name}" بنجاح`);
+      }
+      setSupplierForm({ name: '', phone: '', company: '', address: '', notes: '' });
+      setEditingSupplier(null);
+      await loadSuppliers();
+    } catch (err) {
+      showError('خطأ أثناء حفظ المورد: ' + err.message);
+    }
+  };
+
+  const handleEditSupplierClick = (sup) => {
+    setEditingSupplier(sup);
+    setSupplierForm({
+      name: sup.name || '',
+      phone: sup.phone || '',
+      company: sup.company || '',
+      address: sup.address || '',
+      notes: sup.notes || ''
+    });
+  };
+
+  const handleDeleteSupplier = async (id, name) => {
+    try {
+      await suppliersRepo.delete(id);
+      showSuccess(`✅ تم حذف المورد "${name}"`);
+      if (editingSupplier?.id === id) {
+        setEditingSupplier(null);
+        setSupplierForm({ name: '', phone: '', company: '', address: '', notes: '' });
+      }
+      await loadSuppliers();
+    } catch (err) {
+      showError('فشل حذف المورد: ' + err.message);
+    }
+  };
+
+  const openEditPurchase = (purchase) => {
+    try {
+      const items = JSON.parse(purchase.items_json || '[]');
+      setEditingPurchaseId(purchase.id);
+      setSupplierName(purchase.supplier_name || '');
+      let pPhone = '';
+      let pBatch = '';
+      let pLoc = '';
+      let pExp = '';
+      let rawNotes = purchase.notes || '';
+      if (rawNotes) {
+        const parts = rawNotes.split(' | ');
+        const leftover = [];
+        for (const pt of parts) {
+          if (pt.startsWith('هاتف المورد: ')) pPhone = pt.replace('هاتف المورد: ', '');
+          else if (pt.startsWith('رقم الدفعة: ')) pBatch = pt.replace('رقم الدفعة: ', '');
+          else if (pt.startsWith('الموقع: ')) pLoc = pt.replace('الموقع: ', '');
+          else if (pt.startsWith('الصلاحية: ')) pExp = pt.replace('الصلاحية: ', '');
+          else leftover.push(pt);
+        }
+        rawNotes = leftover.join(' | ');
+      }
+      setSupplierPhone(pPhone);
+      setBatchNumber(pBatch);
+      setStorageLocation(pLoc);
+      setExpiryDate(pExp);
+      setNotes(rawNotes);
+      setInvoiceRef(purchase.invoice_ref || '');
+      setPaymentType(purchase.payment_type || 'cash');
+      setInvoiceDate(purchase.date ? purchase.date.split('T')[0] : new Date().toISOString().split('T')[0]);
+      setPurchaseItems(
+        items.map((it) => ({
+          ...it,
+          id: it.id || generateId(),
+          is_new: false,
+          quantity: it.quantity || 1,
+          cost_per_unit: it.cost_per_unit || 0,
+          sell_price: it.sell_price || 0,
+          wholesale_price: it.wholesale_price || 0,
+          total_cost: it.total_cost || ((it.quantity || 1) * (it.cost_per_unit || 0))
+        }))
+      );
+      setWizardStep(1);
+      setShowWizardModal(true);
+    } catch (e) {
+      showError('خطأ في تحميل بيانات الفاتورة للتعديل: ' + e.message);
+    }
+  };
+
+  const getExistingProductForItem = (item) => {
+    if (!item) return null;
+    if (item.product_id) {
+      return products.find((p) => String(p.id) === String(item.product_id)) || null;
+    }
+    const cleanName = (item.name || '').trim().toLowerCase();
+    const cleanBarcode = (item.barcode || '').trim();
+    if (!cleanName && !cleanBarcode) return null;
+
+    return (
+      products.find((p) => {
+        if (cleanBarcode && p.barcode && String(p.barcode).trim() === cleanBarcode) return true;
+        if (cleanName && p.name && p.name.trim().toLowerCase() === cleanName) return true;
+        return false;
+      }) || null
+    );
+  };
 
   const handleDeletePurchase = async () => {
     if (!deleteTarget) return;
@@ -547,6 +709,7 @@ const PurchasesModule = () => {
         quantity: 1,
         cost_per_unit: 0,
         sell_price: 0,
+        wholesale_price: 0,
         total_cost: 0,
         barcode: '',
         batch_number: '',
@@ -569,6 +732,7 @@ const PurchasesModule = () => {
         quantity: 1,
         cost_per_unit: 0,
         sell_price: 0,
+        wholesale_price: 0,
         total_cost: 0,
         barcode: '',
         batch_number: '',
@@ -595,9 +759,27 @@ const PurchasesModule = () => {
           currentItem.name = product.name;
           currentItem.cost_per_unit = product.cost || 0;
           currentItem.sell_price = product.price || 0;
+          currentItem.wholesale_price = product.wholesale_price || 0;
           currentItem.category = product.category || 'عطور شرقية';
           currentItem.unit = product.unit || 'قطعة';
           currentItem.barcode = product.barcode || '';
+        }
+      }
+
+      // Auto-detect existing perfume by name or barcode if adding new item
+      if ((field === 'name' || field === 'barcode') && currentItem.is_new) {
+        const searchName = field === 'name' ? (value || '').trim().toLowerCase() : (currentItem.name || '').trim().toLowerCase();
+        const searchBarcode = field === 'barcode' ? (value || '').trim() : (currentItem.barcode || '').trim();
+        const matched = products.find((p) => {
+          if (searchBarcode && p.barcode && String(p.barcode).trim() === searchBarcode) return true;
+          if (searchName && p.name && p.name.trim().toLowerCase() === searchName) return true;
+          return false;
+        });
+        if (matched) {
+          if (!currentItem.sell_price && matched.price) currentItem.sell_price = matched.price;
+          if (!currentItem.wholesale_price && matched.wholesale_price) currentItem.wholesale_price = matched.wholesale_price;
+          if (!currentItem.category && matched.category) currentItem.category = matched.category;
+          if (!currentItem.barcode && matched.barcode) currentItem.barcode = matched.barcode;
         }
       }
 
@@ -661,7 +843,7 @@ const PurchasesModule = () => {
 
     setSaving(true);
     try {
-      const id = generateId();
+      const id = editingPurchaseId || generateId();
       const total = purchaseItems.reduce((sum, item) => sum + (item.total_cost || 0), 0);
 
       const finalItems = [];
@@ -671,7 +853,12 @@ const PurchasesModule = () => {
         let pId = item.product_id;
         let barcode = (item.barcode || '').trim();
 
-        if (item.is_new || !pId) {
+        // Check if an existing product already matches this item (by ID, or by exact name/barcode)
+        const matched = getExistingProductForItem(item);
+        if (matched) {
+          pId = matched.id;
+          if (!barcode) barcode = matched.barcode || '';
+        } else if (item.is_new || !pId) {
           if (!barcode) {
             barcode = generateValidBarcode('628');
           }
@@ -682,6 +869,7 @@ const PurchasesModule = () => {
             category: item.category || 'عطور شرقية',
             cost: item.cost_per_unit,
             price: item.sell_price || item.cost_per_unit * 1.35,
+            wholesale_price: item.wholesale_price || 0,
             qty: 0,
             unit: item.unit || 'قطعة',
             barcode,
@@ -700,7 +888,9 @@ const PurchasesModule = () => {
         inventoryUpdates.push({
           product_id: pId,
           quantity: item.quantity,
-          cost_per_unit: item.cost_per_unit
+          cost_per_unit: item.cost_per_unit,
+          sell_price: item.sell_price || 0,
+          wholesale_price: item.wholesale_price || 0
         });
       }
 
@@ -723,8 +913,15 @@ const PurchasesModule = () => {
         items_json: JSON.stringify(finalItems)
       };
 
-      // Transactional commit with WAC calculation
-      await purchasesRepo.createPurchaseWithInventoryUpdate(purchaseData, inventoryUpdates, inventoryRepo);
+      if (editingPurchaseId) {
+        // Atomic rollback of old items and re-application of new items with WAC
+        await purchasesRepo.updatePurchaseWithInventoryAdjustment(editingPurchaseId, purchaseData, inventoryUpdates);
+        showSuccess(`✅ تم تعديل الفاتورة وتحديث المخزون بنجاح! الإجمالي: ${formatCurrency(total)}`);
+      } else {
+        // Transactional commit with WAC calculation
+        await purchasesRepo.createPurchaseWithInventoryUpdate(purchaseData, inventoryUpdates, inventoryRepo);
+        showSuccess(`✅ تم حفظ واعتماد الفاتورة بنجاح! الإجمالي: ${formatCurrency(total)}`);
+      }
 
       // Optional action: Print preview or PDF export if explicitly requested
       if (actionType === 'print') {
@@ -773,8 +970,6 @@ const PurchasesModule = () => {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('aldaffa:data-refresh'));
       }
-
-      showSuccess(`✅ تم حفظ واعتماد الفاتورة بنجاح! الإجمالي: ${formatCurrency(total)}`);
     } catch (error) {
       showError(`خطأ في حفظ طلب الشراء: ${error.message}`);
     } finally {
@@ -828,6 +1023,7 @@ const PurchasesModule = () => {
   };
 
   const resetForm = () => {
+    setEditingPurchaseId(null);
     setSupplierName('');
     setSupplierPhone('');
     setInvoiceRef('');
@@ -988,17 +1184,42 @@ No additional text, only JSON.`
   };
 
   const filteredPurchases = useMemo(() => {
-    if (!debouncedSearch) return purchases;
-    const term = debouncedSearch.toLowerCase();
-    return purchases.filter((p) => {
-      const items = JSON.parse(p.items_json || '[]');
-      return (
-        (p.supplier_name || '').toLowerCase().includes(term) ||
-        (p.invoice_ref || '').toLowerCase().includes(term) ||
-        items.some((it) => (it.name || '').toLowerCase().includes(term))
-      );
+    let list = [...purchases];
+
+    if (supplierFilter !== 'all') {
+      list = list.filter((p) => (p.supplier_name || '').trim() === supplierFilter);
+    }
+
+    if (debouncedSearch) {
+      const term = debouncedSearch.toLowerCase();
+      list = list.filter((p) => {
+        const items = JSON.parse(p.items_json || '[]');
+        return (
+          (p.supplier_name || '').toLowerCase().includes(term) ||
+          (p.invoice_ref || '').toLowerCase().includes(term) ||
+          items.some((it) => (it.name || '').toLowerCase().includes(term))
+        );
+      });
+    }
+
+    list.sort((a, b) => {
+      switch (sortBy) {
+        case 'date_asc':
+          return new Date(a.date || 0) - new Date(b.date || 0);
+        case 'total_desc':
+          return (b.total || 0) - (a.total || 0);
+        case 'total_asc':
+          return (a.total || 0) - (b.total || 0);
+        case 'supplier_asc':
+          return (a.supplier_name || '').localeCompare(b.supplier_name || '', 'ar');
+        case 'date_desc':
+        default:
+          return new Date(b.date || 0) - new Date(a.date || 0);
+      }
     });
-  }, [purchases, debouncedSearch]);
+
+    return list;
+  }, [purchases, debouncedSearch, supplierFilter, sortBy]);
 
   const totalPurchases = purchases.reduce((sum, p) => sum + (p.total || 0), 0);
 
@@ -1031,6 +1252,43 @@ No additional text, only JSON.`
             <option value={365}>السنة كاملة / الماضية</option>
             <option value={-1}>🌟 عرض جميع الفواتير (الكل بلا استثناء)</option>
           </select>
+
+          <div className="flex items-center gap-1 bg-black/5 dark:bg-slate-800 rounded-xl px-2 py-0.5 border border-white/5">
+            <ArrowUpDown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="bg-transparent border-0 text-xs font-bold focus:outline-none cursor-pointer py-1"
+            >
+              <option value="date_desc">الأحدث أولاً</option>
+              <option value="date_asc">الأقدم أولاً</option>
+              <option value="total_desc">الأعلى قيمة</option>
+              <option value="total_asc">الأقل قيمة</option>
+              <option value="supplier_asc">المورد (أ - ي)</option>
+            </select>
+          </div>
+
+          <select
+            value={supplierFilter}
+            onChange={(e) => setSupplierFilter(e.target.value)}
+            className="input-atelier py-1 px-2.5 text-xs font-bold max-w-[150px]"
+          >
+            <option value="all">🏢 كل الموردين</option>
+            {Array.from(new Set(purchases.map((p) => (p.supplier_name || '').trim()).filter(Boolean))).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => setShowSuppliersModal(true)}
+            className="btn-atelier-secondary py-1.5 px-3 text-xs flex items-center gap-1.5 font-bold cursor-pointer"
+            title="إدارة قائمة الموردين والشركات الموردة"
+          >
+            <Building2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <span>👥 الموردين المعتمدين</span>
+          </button>
 
           <button
             onClick={() => setShowOCRModal(true)}
@@ -1185,6 +1443,15 @@ No additional text, only JSON.`
                     </button>
 
                     <button
+                      onClick={() => openEditPurchase(purchase)}
+                      className="btn-atelier-secondary py-1 px-2 text-[11px] flex items-center gap-1 font-bold cursor-pointer text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
+                      title="تعديل فاتورة المشتريات وضبط المخزون"
+                    >
+                      <Edit3 className="w-3 h-3 text-amber-600" />
+                      <span>تعديل</span>
+                    </button>
+
+                    <button
                       onClick={() => setDeleteTarget(purchase)}
                       className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white transition-colors cursor-pointer"
                       title="حذف فاتورة المشتريات"
@@ -1238,11 +1505,17 @@ No additional text, only JSON.`
               <div className="flex justify-between items-center mb-2.5">
                 <div>
                   <h2 className="text-base sm:text-lg font-extrabold text-[#2D2424] dark:text-amber-300 flex items-center gap-2">
-                    <span>🛒</span>
-                    <span>معالج تسجيل وتوريد المشتريات الشامل</span>
+                    <span>{editingPurchaseId ? '✏️' : '🛒'}</span>
+                    <span>
+                      {editingPurchaseId
+                        ? `تعديل فاتورة الشراء #${String(editingPurchaseId).slice(0, 12)}`
+                        : 'معالج تسجيل وتوريد المشتريات الشامل'}
+                    </span>
                   </h2>
                   <p className="text-[10px] text-gray-500 dark:text-slate-400">
-                    واجهة موسعة لإدخال التوريدات، تحديد الوحدات، وتوليد الباركود القياسي وحفظ الفواتير
+                    {editingPurchaseId
+                      ? 'تعديل بيانات الفاتورة وإعادة احتساب وضبط المخزون ومتوسط التكلفة تلقائياً'
+                      : 'واجهة موسعة لإدخال التوريدات، تحديد الوحدات، وتوليد الباركود القياسي وحفظ الفواتير'}
                   </p>
                 </div>
                 <button
@@ -1296,19 +1569,52 @@ No additional text, only JSON.`
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-amber-50/50 dark:bg-slate-800/40 p-5 rounded-2xl border border-amber-500/20">
-                    <div>
-                      <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1">
-                        اسم المورد / الشركة الموردة <span className="text-gray-400 font-normal">(اختياري)</span>:
-                      </label>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300">
+                          اسم المورد / الشركة الموردة:
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowSuppliersModal(true)}
+                          className="text-[11px] text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 font-bold cursor-pointer"
+                        >
+                          <Building2 className="w-3 h-3" />
+                          <span>إدارة الموردين 👥</span>
+                        </button>
+                      </div>
+
+                      {suppliers.length > 0 && (
+                        <select
+                          value={supplierName}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSupplierName(val);
+                            const found = suppliers.find((s) => s.name === val);
+                            if (found && found.phone) {
+                              setSupplierPhone(found.phone);
+                            }
+                          }}
+                          className="input-atelier w-full text-xs font-bold"
+                        >
+                          <option value="">-- اختر مورد محفوظ من القائمة أو اكتب يدوياً بالأسفل --</option>
+                          {suppliers.map((s) => (
+                            <option key={s.id} value={s.name}>
+                              {s.name} {s.phone ? `(${s.phone})` : ''} {s.company ? `- ${s.company}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
                       <input
                         type="text"
-                        placeholder="مثال: شركة العطور المتحدة، مورد محلي..."
+                        placeholder="أو اكتب اسم المورد يدوياً..."
                         value={supplierName}
                         onChange={(e) => setSupplierName(e.target.value)}
                         className="input-atelier w-full text-xs font-bold"
                         autoFocus
                       />
-                      <span className="text-[10px] text-gray-400 block mt-1">يظهر في كشف حساب الموردين والتقارير المالية</span>
+                      <span className="text-[10px] text-gray-400 block">يظهر في كشف حساب الموردين والتقارير المالية</span>
                     </div>
 
                     <div>
@@ -1438,178 +1744,264 @@ No additional text, only JSON.`
                             <th className="p-2.5 text-center">الكمية</th>
                             <th className="p-2.5 text-left">سعر التكلفة (د.ل)</th>
                             <th className="p-2.5 text-left">
-                              سعر البيع (د.ل) <span className="text-[9px] font-normal text-gray-400">(اختياري)</span>
+                              سعر البيع (د.ل) <span className="text-[9px] font-normal text-gray-400">(قطاعي)</span>
+                            </th>
+                            <th className="p-2.5 text-left">
+                              سعر الجملة (د.ل) <span className="text-[9px] font-normal text-gray-400">(اختياري)</span>
                             </th>
                             <th className="p-2.5 text-left">الإجمالي</th>
                             <th className="p-2.5 text-center">حذف</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-amber-500/10">
-                          {purchaseItems.map((item, index) => (
-                            <tr key={item.id || index} className="hover:bg-amber-500/5 transition-colors">
-                              {/* Product & Category & Barcode */}
-                              <td className="p-2.5 min-w-[280px]">
-                                {item.is_new ? (
-                                  <div className="space-y-1.5">
-                                    <input
-                                      type="text"
-                                      placeholder="اسم المنتج الجديد *"
-                                      value={item.name}
-                                      onChange={(e) => updatePurchaseItem(index, 'name', e.target.value)}
-                                      className="input-atelier w-full py-1 text-xs font-bold"
-                                    />
-                                    <div className="grid grid-cols-2 gap-1.5">
-                                      <select
-                                        value={item.category}
-                                        onChange={(e) => updatePurchaseItem(index, 'category', e.target.value)}
-                                        className="input-atelier py-0.5 px-1.5 text-[10px]"
-                                      >
-                                        {categories.map((cat) => (
-                                          <option key={cat} value={cat}>
-                                            {cat}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      <div className="flex items-center gap-1">
+                          {purchaseItems.map((item, index) => {
+                            const existingProd = getExistingProductForItem(item);
+                            const qOld = existingProd ? safeParseFloat(existingProd.qty, 0) : 0;
+                            const cOld = existingProd ? safeParseFloat(existingProd.cost, 0) : 0;
+                            const qNew = safeParseFloat(item.quantity, 0);
+                            const cNew = safeParseFloat(item.cost_per_unit, 0);
+                            const totalQ = qOld + qNew;
+                            const projectedWac = existingProd && totalQ > 0 ? (qOld * cOld + qNew * cNew) / totalQ : cNew;
+                            const sellPrice = safeParseFloat(item.sell_price, 0);
+                            const wholesalePrice = safeParseFloat(item.wholesale_price, 0);
+                            const isSellLoss = existingProd && sellPrice > 0 && sellPrice < projectedWac;
+                            const isWholesaleLoss = existingProd && wholesalePrice > 0 && wholesalePrice < projectedWac;
+                            const sellMargin = existingProd && sellPrice > projectedWac && projectedWac > 0 ? ((sellPrice - projectedWac) / projectedWac) * 100 : 0;
+
+                            return (
+                              <React.Fragment key={item.id || index}>
+                                <tr className="hover:bg-amber-500/5 transition-colors">
+                                  {/* Product & Category & Barcode */}
+                                  <td className="p-2.5 min-w-[280px]">
+                                    {item.is_new ? (
+                                      <div className="space-y-1.5">
                                         <input
                                           type="text"
-                                          placeholder="الباركود (اختياري)"
-                                          value={item.barcode}
-                                          onChange={(e) => updatePurchaseItem(index, 'barcode', e.target.value)}
-                                          className="input-atelier py-0.5 px-1.5 text-[10px] flex-1 font-mono"
+                                          placeholder="اسم المنتج الجديد *"
+                                          value={item.name}
+                                          onChange={(e) => updatePurchaseItem(index, 'name', e.target.value)}
+                                          className="input-atelier w-full py-1 text-xs font-bold"
                                         />
-                                        <button
-                                          type="button"
-                                          onClick={() => generateBarcodeForItem(index)}
-                                          className="p-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 text-[10px] font-bold shrink-0 cursor-pointer"
-                                          title="توليد باركود قياسي صالح فوراً"
-                                        >
-                                          ⚡
-                                        </button>
+                                        <div className="grid grid-cols-2 gap-1.5">
+                                          <select
+                                            value={item.category}
+                                            onChange={(e) => updatePurchaseItem(index, 'category', e.target.value)}
+                                            className="input-atelier py-0.5 px-1.5 text-[10px]"
+                                          >
+                                            {categories.map((cat) => (
+                                              <option key={cat} value={cat}>
+                                                {cat}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <div className="flex items-center gap-1">
+                                            <input
+                                              type="text"
+                                              placeholder="الباركود (اختياري)"
+                                              value={item.barcode}
+                                              onChange={(e) => updatePurchaseItem(index, 'barcode', e.target.value)}
+                                              className="input-atelier py-0.5 px-1.5 text-[10px] flex-1 font-mono"
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => generateBarcodeForItem(index)}
+                                              className="p-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 text-[10px] font-bold shrink-0 cursor-pointer"
+                                              title="توليد باركود قياسي صالح فوراً"
+                                            >
+                                              ⚡
+                                            </button>
+                                          </div>
+                                        </div>
                                       </div>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="space-y-1">
+                                    ) : (
+                                      <div className="space-y-1">
+                                        <select
+                                          value={item.product_id}
+                                          onChange={(e) => updatePurchaseItem(index, 'product_id', e.target.value)}
+                                          className="input-atelier w-full py-1 text-xs font-bold"
+                                        >
+                                          <option value="">-- اختر المنتج من المخزون --</option>
+                                          {products.map((p) => (
+                                            <option key={p.id} value={p.id}>
+                                              {p.name} (المتوفر: {p.qty} {p.unit} — التكلفة: {formatCurrency(p.cost)})
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <div className="flex items-center justify-between text-[10px] text-gray-400">
+                                          <span>الفئة: {item.category}</span>
+                                          {item.barcode && (
+                                            <span className="font-mono bg-black/10 dark:bg-slate-800 px-1.5 rounded">
+                                              {item.barcode}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </td>
+
+                                  {/* Unit Selector */}
+                                  <td className="p-2.5 min-w-[130px]">
                                     <select
-                                      value={item.product_id}
-                                      onChange={(e) => updatePurchaseItem(index, 'product_id', e.target.value)}
+                                      value={item.unit}
+                                      onChange={(e) => updatePurchaseItem(index, 'unit', e.target.value)}
                                       className="input-atelier w-full py-1 text-xs font-bold"
                                     >
-                                      <option value="">-- اختر المنتج من المخزون --</option>
-                                      {products.map((p) => (
-                                        <option key={p.id} value={p.id}>
-                                          {p.name} (المتوفر: {p.qty} {p.unit} — التكلفة: {formatCurrency(p.cost)})
+                                      {DEFAULT_UNITS.map((u) => (
+                                        <option key={u.value} value={u.value}>
+                                          {u.label}
                                         </option>
                                       ))}
                                     </select>
-                                    <div className="flex items-center justify-between text-[10px] text-gray-400">
-                                      <span>الفئة: {item.category}</span>
-                                      {item.barcode && (
-                                        <span className="font-mono bg-black/10 dark:bg-slate-800 px-1.5 rounded">
-                                          {item.barcode}
-                                        </span>
-                                      )}
+                                  </td>
+
+                                  {/* Quantity Counter */}
+                                  <td className="p-2.5 text-center min-w-[110px]">
+                                    <div className="inline-flex items-center gap-1 bg-black/5 dark:bg-slate-800 p-0.5 rounded-lg border border-white/5">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updatePurchaseItem(index, 'quantity', Math.max(0.1, (item.quantity || 1) - 1))
+                                        }
+                                        className="w-6 h-6 flex items-center justify-center rounded bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 text-xs font-bold cursor-pointer"
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        type="number"
+                                        step="any"
+                                        min="0.1"
+                                        value={item.quantity}
+                                        onChange={(e) =>
+                                          updatePurchaseItem(index, 'quantity', safeParseFloat(e.target.value, 1))
+                                        }
+                                        className="w-14 text-center py-0.5 text-xs font-bold bg-transparent border-0 focus:outline-none"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => updatePurchaseItem(index, 'quantity', (item.quantity || 1) + 1)}
+                                        className="w-6 h-6 flex items-center justify-center rounded bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 text-xs font-bold cursor-pointer"
+                                      >
+                                        +
+                                      </button>
                                     </div>
-                                  </div>
+                                  </td>
+
+                                  {/* Cost per unit */}
+                                  <td className="p-2.5 text-left min-w-[90px]">
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      min="0"
+                                      value={item.cost_per_unit || ''}
+                                      placeholder="التكلفة"
+                                      onChange={(e) =>
+                                        updatePurchaseItem(index, 'cost_per_unit', safeParseFloat(e.target.value, 0))
+                                      }
+                                      className="input-atelier w-20 text-left py-1 text-xs font-bold tabular-nums"
+                                    />
+                                  </td>
+
+                                  {/* Suggested Retail Price */}
+                                  <td className="p-2.5 text-left min-w-[90px]">
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      min="0"
+                                      value={item.sell_price || ''}
+                                      placeholder="سعر البيع"
+                                      onChange={(e) =>
+                                        updatePurchaseItem(index, 'sell_price', safeParseFloat(e.target.value, 0))
+                                      }
+                                      className="input-atelier w-20 text-left py-1 text-xs font-bold tabular-nums"
+                                    />
+                                  </td>
+
+                                  {/* Wholesale Price */}
+                                  <td className="p-2.5 text-left min-w-[90px]">
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      min="0"
+                                      value={item.wholesale_price || ''}
+                                      placeholder="سعر الجملة"
+                                      onChange={(e) =>
+                                        updatePurchaseItem(index, 'wholesale_price', safeParseFloat(e.target.value, 0))
+                                      }
+                                      className="input-atelier w-20 text-left py-1 text-xs font-bold tabular-nums"
+                                    />
+                                  </td>
+
+                                  {/* Total Cost */}
+                                  <td className="p-2.5 text-left font-bold text-emerald-600 dark:text-emerald-400 tabular-nums min-w-[100px]">
+                                    {formatCurrency(item.total_cost)}
+                                  </td>
+
+                                  {/* Delete Action */}
+                                  <td className="p-2.5 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => removePurchaseItem(index)}
+                                      className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
+                                      title="حذف هذا الصنف"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </td>
+                                </tr>
+
+                                {/* WAC Calculation Card if product already exists in database */}
+                                {existingProd && (
+                                  <tr className="bg-amber-500/5 border-b border-amber-500/20">
+                                    <td colSpan={8} className="p-2 px-3">
+                                      <div className="bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border border-amber-500/30 rounded-xl p-2 text-xs flex flex-wrap items-center justify-between gap-2 shadow-xs">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-slate-950 shadow-xs">
+                                            ⚡ عطر مسجل مسبقاً بالمخزون
+                                          </span>
+                                          <span className="text-gray-600 dark:text-slate-300 text-[11px]">
+                                            المخزون الحالي: <strong className="font-mono text-gray-900 dark:text-white">{qOld} {existingProd.unit || 'قطعة'}</strong> بسعر تكلفة <strong className="font-mono text-gray-900 dark:text-white">{formatCurrency(cOld)}</strong>
+                                          </span>
+                                          <span className="text-gray-400">←</span>
+                                          <span className="text-gray-600 dark:text-slate-300 text-[11px]">
+                                            الشحنة الجديدة: <strong className="font-mono text-gray-900 dark:text-white">{qNew}</strong> بسعر تكلفة <strong className="font-mono text-gray-900 dark:text-white">{formatCurrency(cNew)}</strong>
+                                          </span>
+                                          <span className="text-gray-400">←</span>
+                                          <div className="flex items-center gap-1 bg-amber-500/20 px-2 py-0.5 rounded-lg border border-amber-500/40">
+                                            <span className="text-[10px] font-bold text-amber-900 dark:text-amber-200">متوسط التكلفة المرجح (WAC):</span>
+                                            <span className="font-extrabold text-amber-950 dark:text-amber-300 font-mono text-xs">
+                                              {formatCurrency(projectedWac)}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          {isSellLoss ? (
+                                            <span className="px-2 py-0.5 rounded-lg bg-rose-500/20 text-rose-700 dark:text-rose-300 font-bold text-[10px] border border-rose-500/40 animate-pulse">
+                                              ⚠️ تنبيه خسارة: سعر البيع القطاعي ({formatCurrency(sellPrice)}) أقل من متوسط التكلفة ({formatCurrency(projectedWac)})!
+                                            </span>
+                                          ) : sellPrice > 0 ? (
+                                            <span className="px-2 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] border border-emerald-500/30">
+                                              ✅ هامش ربح قطاعي: +{sellMargin.toFixed(1)}% (صافي {formatCurrency(sellPrice - projectedWac)})
+                                            </span>
+                                          ) : null}
+
+                                          {isWholesaleLoss ? (
+                                            <span className="px-2 py-0.5 rounded-lg bg-rose-500/20 text-rose-700 dark:text-rose-300 font-bold text-[10px] border border-rose-500/40 animate-pulse">
+                                              ⚠️ سعر الجملة أقل من التكلفة!
+                                            </span>
+                                          ) : wholesalePrice > 0 ? (
+                                            <span className="px-2 py-0.5 rounded-lg bg-blue-500/15 text-blue-700 dark:text-blue-300 font-bold text-[10px] border border-blue-500/30">
+                                              🏷️ جملة: {formatCurrency(wholesalePrice)}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
                                 )}
-                              </td>
-
-                              {/* Unit Selector */}
-                              <td className="p-2.5 min-w-[130px]">
-                                <select
-                                  value={item.unit}
-                                  onChange={(e) => updatePurchaseItem(index, 'unit', e.target.value)}
-                                  className="input-atelier w-full py-1 text-xs font-bold"
-                                >
-                                  {DEFAULT_UNITS.map((u) => (
-                                    <option key={u.value} value={u.value}>
-                                      {u.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-
-                              {/* Quantity Counter */}
-                              <td className="p-2.5 text-center min-w-[110px]">
-                                <div className="inline-flex items-center gap-1 bg-black/5 dark:bg-slate-800 p-0.5 rounded-lg border border-white/5">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updatePurchaseItem(index, 'quantity', Math.max(0.1, (item.quantity || 1) - 1))
-                                    }
-                                    className="w-6 h-6 flex items-center justify-center rounded bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 text-xs font-bold cursor-pointer"
-                                  >
-                                    -
-                                  </button>
-                                  <input
-                                    type="number"
-                                    step="any"
-                                    min="0.1"
-                                    value={item.quantity}
-                                    onChange={(e) =>
-                                      updatePurchaseItem(index, 'quantity', safeParseFloat(e.target.value, 1))
-                                    }
-                                    className="w-14 text-center py-0.5 text-xs font-bold bg-transparent border-0 focus:outline-none"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => updatePurchaseItem(index, 'quantity', (item.quantity || 1) + 1)}
-                                    className="w-6 h-6 flex items-center justify-center rounded bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 text-xs font-bold cursor-pointer"
-                                  >
-                                    +
-                                  </button>
-                                </div>
-                              </td>
-
-                              {/* Cost per unit */}
-                              <td className="p-2.5 text-left min-w-[90px]">
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  min="0"
-                                  value={item.cost_per_unit || ''}
-                                  placeholder="التكلفة"
-                                  onChange={(e) =>
-                                    updatePurchaseItem(index, 'cost_per_unit', safeParseFloat(e.target.value, 0))
-                                  }
-                                  className="input-atelier w-20 text-left py-1 text-xs font-bold tabular-nums"
-                                />
-                              </td>
-
-                              {/* Suggested Retail Price */}
-                              <td className="p-2.5 text-left min-w-[90px]">
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  min="0"
-                                  value={item.sell_price || ''}
-                                  placeholder="سعر البيع"
-                                  onChange={(e) =>
-                                    updatePurchaseItem(index, 'sell_price', safeParseFloat(e.target.value, 0))
-                                  }
-                                  className="input-atelier w-20 text-left py-1 text-xs font-bold tabular-nums"
-                                />
-                              </td>
-
-                              {/* Total Cost */}
-                              <td className="p-2.5 text-left font-bold text-emerald-600 dark:text-emerald-400 tabular-nums min-w-[100px]">
-                                {formatCurrency(item.total_cost)}
-                              </td>
-
-                              {/* Delete Action */}
-                              <td className="p-2.5 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => removePurchaseItem(index)}
-                                  className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
-                                  title="حذف هذا الصنف"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                              </React.Fragment>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -1740,6 +2132,7 @@ No additional text, only JSON.`
                           <th className="p-2.5 text-center">الكمية</th>
                           <th className="p-2.5 text-left">التكلفة</th>
                           <th className="p-2.5 text-left">سعر البيع المقترح</th>
+                          <th className="p-2.5 text-left">سعر الجملة</th>
                           <th className="p-2.5 text-left">الإجمالي</th>
                         </tr>
                       </thead>
@@ -1754,6 +2147,9 @@ No additional text, only JSON.`
                             <td className="p-2.5 text-left font-mono">{formatCurrency(it.cost_per_unit)}</td>
                             <td className="p-2.5 text-left font-mono text-emerald-600">
                               {formatCurrency(it.sell_price || it.cost_per_unit * 1.35)}
+                            </td>
+                            <td className="p-2.5 text-left font-mono text-blue-600">
+                              {it.wholesale_price ? formatCurrency(it.wholesale_price) : '—'}
                             </td>
                             <td className="p-2.5 text-left font-bold text-amber-600 tabular-nums">
                               {formatCurrency(it.total_cost)}
@@ -1828,7 +2224,7 @@ No additional text, only JSON.`
                       ) : (
                         <>
                           <span>💾</span>
-                          <span>حفظ واعتماد الفاتورة</span>
+                          <span>{editingPurchaseId ? 'حفظ التعديلات وضبط المخزون' : 'حفظ واعتماد الفاتورة'}</span>
                         </>
                       )}
                     </button>
@@ -2325,6 +2721,225 @@ No additional text, only JSON.`
               >
                 {creatingQuickCat ? '⏳ جاري الإضافة...' : '➕ حفظ واختيار الفئة'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SUPPLIERS MANAGEMENT MODAL */}
+      {/* ========================================================================= */}
+      {showSuppliersModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-3" dir="rtl">
+          <div className="atelier-card bg-white dark:bg-slate-900 w-full max-w-3xl max-h-[90vh] flex flex-col p-5 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center border-b border-amber-500/20 pb-3 mb-4 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                  <Building2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-[#2D2424] dark:text-white">
+                    👥 إدارة الموردين المعتمدين ({suppliers.length} مورد)
+                  </h3>
+                  <p className="text-[10px] text-gray-500 dark:text-slate-400">
+                    إضافة وتعديل بيانات الموردين والشركات الموردة لربط فواتير المشتريات بدقة
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSuppliersModal(false);
+                  setEditingSupplier(null);
+                  setSupplierForm({ name: '', phone: '', company: '', address: '', notes: '' });
+                }}
+                className="w-7 h-7 rounded-full bg-gray-200 dark:bg-slate-800 text-gray-600 dark:text-gray-300 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content: Form on top, List below */}
+            <div className="flex-1 overflow-y-auto space-y-4 scrollbar-thin pr-1">
+              {/* Add / Edit Form */}
+              <form onSubmit={handleSaveSupplier} className="bg-amber-50/60 dark:bg-slate-800/50 p-3.5 rounded-2xl border border-amber-500/20 space-y-3">
+                <div className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                  <span>{editingSupplier ? '✏️ تعديل بيانات المورد' : '➕ إضافة مورد جديد'}</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                      اسم المورد / الشركة *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="اسم المورد..."
+                      value={supplierForm.name}
+                      onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
+                      className="input-atelier w-full py-1 text-xs font-bold"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                      رقم الهاتف
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="0912345678"
+                      value={supplierForm.phone}
+                      onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
+                      className="input-atelier w-full py-1 text-xs font-mono"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                      اسم الشركة / المؤسسة
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="شركة التوريد..."
+                      value={supplierForm.company}
+                      onChange={(e) => setSupplierForm({ ...supplierForm, company: e.target.value })}
+                      className="input-atelier w-full py-1 text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                      العنوان / المدينة
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="طرابلس، بنغازي..."
+                      value={supplierForm.address}
+                      onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })}
+                      className="input-atelier w-full py-1 text-xs"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                      ملاحظات إضافية
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="ملاحظات حول المورد أو طرق التعامل..."
+                      value={supplierForm.notes}
+                      onChange={(e) => setSupplierForm({ ...supplierForm, notes: e.target.value })}
+                      className="input-atelier w-full py-1 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end pt-1">
+                  {editingSupplier && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingSupplier(null);
+                        setSupplierForm({ name: '', phone: '', company: '', address: '', notes: '' });
+                      }}
+                      className="btn-atelier-secondary py-1 px-3 text-xs font-bold cursor-pointer"
+                    >
+                      إلغاء التعديل
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    className="btn-atelier-primary py-1 px-4 text-xs font-extrabold flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    <span>{editingSupplier ? '💾 حفظ التعديل' : '➕ حفظ المورد'}</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Suppliers List Table */}
+              <div className="border border-amber-500/20 rounded-2xl overflow-hidden shadow-sm">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-[#F4EFEA] dark:bg-slate-800 font-bold text-[#5C524F] dark:text-slate-300">
+                    <tr>
+                      <th className="p-2.5">المورد</th>
+                      <th className="p-2.5">الهاتف</th>
+                      <th className="p-2.5">الشركة</th>
+                      <th className="p-2.5">العنوان</th>
+                      <th className="p-2.5 text-center">الإجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-500/10">
+                    {suppliers.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-gray-400 text-xs">
+                          لا يوجد موردين مسجلين حالياً. استخدم النموذج أعلاه لإضافة أول مورد.
+                        </td>
+                      </tr>
+                    ) : (
+                      suppliers.map((sup) => (
+                        <tr key={sup.id} className="hover:bg-amber-500/5 transition-colors">
+                          <td className="p-2.5 font-bold text-[#2D2424] dark:text-white">
+                            {sup.name}
+                            {sup.notes && (
+                              <span className="block text-[10px] text-gray-400 font-normal">
+                                {sup.notes}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2.5 font-mono text-gray-600 dark:text-slate-300" dir="ltr">
+                            {sup.phone || '—'}
+                          </td>
+                          <td className="p-2.5 text-gray-600 dark:text-slate-300">
+                            {sup.company || '—'}
+                          </td>
+                          <td className="p-2.5 text-gray-600 dark:text-slate-300">
+                            {sup.address || '—'}
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSupplierName(sup.name);
+                                  if (sup.phone) setSupplierPhone(sup.phone);
+                                  setShowSuppliersModal(false);
+                                  if (!showWizardModal) {
+                                    setShowWizardModal(true);
+                                  }
+                                  showSuccess(`تم اختيار المورد "${sup.name}"`);
+                                }}
+                                className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold hover:bg-emerald-500 hover:text-white transition-colors cursor-pointer"
+                                title="اختيار في الفاتورة الحالية"
+                              >
+                                ⚡ اختيار
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleEditSupplierClick(sup)}
+                                className="p-1 rounded text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 transition-colors cursor-pointer"
+                                title="تعديل بيانات المورد"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSupplier(sup.id, sup.name)}
+                                className="p-1 rounded text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                                title="حذف المورد"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

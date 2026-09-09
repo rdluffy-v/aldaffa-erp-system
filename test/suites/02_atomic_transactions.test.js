@@ -159,5 +159,107 @@ export async function run() {
     testDb.close();
   });
 
+  await test('2.5 Suppliers CRUD & Constraint Invariants', async () => {
+    const testDb = createTestDb();
+
+    // Insert supplier
+    testDb.run(
+      'INSERT INTO suppliers (id, name, phone, company, address, notes) VALUES (?, ?, ?, ?, ?, ?)',
+      ['sup_1', 'شركة العطور العالمية', '0912345678', 'العالمية', 'طرابلس', 'مورد موثوق']
+    );
+
+    const sup = testDb.get('SELECT * FROM suppliers WHERE id = ?', ['sup_1']);
+    assert.strictEqual(sup.name, 'شركة العطور العالمية');
+    assert.strictEqual(sup.phone, '0912345678');
+
+    // Duplicate name constraint should throw
+    assert.throws(() => {
+      testDb.run('INSERT INTO suppliers (id, name) VALUES (?, ?)', ['sup_2', 'شركة العطور العالمية']);
+    }, /UNIQUE constraint failed/);
+
+    testDb.close();
+  });
+
+  await test('2.6 Purchase Order Edit with Atomic Rollback & WAC Re-Application', async () => {
+    const testDb = createTestDb();
+
+    // 1. Initial product: Qty 10, Cost 50, Price 100, Wholesale 80
+    testDb.run(
+      'INSERT INTO inventory (id, name, qty, cost, price, wholesale_price) VALUES (?, ?, ?, ?, ?, ?)',
+      ['perfume_A', 'عطر A الفاخر', 10, 50, 100, 80]
+    );
+
+    // 2. Initial purchase: 10 units at cost 70
+    // Initial WAC: (10*50 + 10*70)/20 = 1200 / 20 = 60
+    const initialPurchaseItems = [
+      { product_id: 'perfume_A', quantity: 10, cost_per_unit: 70, sell_price: 110, wholesale_price: 90, total_cost: 700 }
+    ];
+    testDb.run(
+      'INSERT INTO purchases (id, date, supplier_name, total, items_json) VALUES (?, ?, ?, ?, ?)',
+      ['po_1', new Date().toISOString(), 'مورد العود', 700, JSON.stringify(initialPurchaseItems)]
+    );
+    testDb.run(`
+      UPDATE inventory
+      SET
+        cost = (qty * cost + 10 * 70) / (qty + 10),
+        qty = qty + 10,
+        price = 110,
+        wholesale_price = 90
+      WHERE id = 'perfume_A'
+    `);
+
+    let inv = testDb.get('SELECT qty, cost, price, wholesale_price FROM inventory WHERE id = ?', ['perfume_A']);
+    assert.strictEqual(inv.qty, 20);
+    assert.strictEqual(inv.cost, 60);
+    assert.strictEqual(inv.price, 110);
+    assert.strictEqual(inv.wholesale_price, 90);
+
+    // 3. Edit purchase po_1: User changed quantity from 10 to 5 and cost from 70 to 80, wholesale to 95
+    // Atomic rollback old quantity: qty - 10 = 10
+    // Then apply new item: qty 10 + 5 = 15, WAC: (10*60 + 5*80)/15 = (600+400)/15 = 1000/15 = 66.6666...
+    const editedItems = [
+      { product_id: 'perfume_A', quantity: 5, cost_per_unit: 80, sell_price: 120, wholesale_price: 95, total_cost: 400 }
+    ];
+
+    const editQueries = [
+      // Rollback old purchase qty
+      {
+        sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ?',
+        params: [10, 'perfume_A']
+      },
+      // Apply new purchase items with WAC and price updates
+      {
+        sql: `
+          UPDATE inventory
+          SET
+            cost = (qty * cost + ? * ?) / (qty + ?),
+            qty = qty + ?,
+            price = CASE WHEN ? > 0 THEN ? ELSE price END,
+            wholesale_price = CASE WHEN ? > 0 THEN ? ELSE wholesale_price END
+          WHERE id = ?
+        `,
+        params: [5, 80, 5, 5, 120, 120, 95, 95, 'perfume_A']
+      },
+      // Update purchase record
+      {
+        sql: 'UPDATE purchases SET total = ?, items_json = ? WHERE id = ?',
+        params: [400, JSON.stringify(editedItems), 'po_1']
+      }
+    ];
+
+    testDb.transaction(editQueries);
+
+    inv = testDb.get('SELECT qty, cost, price, wholesale_price FROM inventory WHERE id = ?', ['perfume_A']);
+    assert.strictEqual(inv.qty, 15, 'Stock should be 15 after editing purchase');
+    assert.strictEqual(Math.round(inv.cost * 100) / 100, 66.67, 'WAC should be 66.67 after atomic edit');
+    assert.strictEqual(inv.price, 120, 'Retail price should be updated to 120');
+    assert.strictEqual(inv.wholesale_price, 95, 'Wholesale price should be updated to 95');
+
+    const po = testDb.get('SELECT total FROM purchases WHERE id = ?', ['po_1']);
+    assert.strictEqual(po.total, 400);
+
+    testDb.close();
+  });
+
   return results;
 }

@@ -40,7 +40,7 @@ const KNOWN_TABLES = [
   'categories', 'inventory', 'sales', 'sale_items', 'returns',
   'withdrawals', 'capital_injections', 'gifts', 'notes', 'debtors',
   'debt_history', 'losses', 'purchases', 'archives', 'settings',
-  'users', 'user_permissions', 'shift_reports'
+  'users', 'user_permissions', 'shift_reports', 'suppliers'
 ];
 
 // Validate a table-name identifier against the allowlist before it is used
@@ -236,12 +236,24 @@ function initDatabase() {
       is_allowed INTEGER DEFAULT 1,
       PRIMARY KEY(user_id, permission_key)
     );
+
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      phone TEXT,
+      company TEXT,
+      address TEXT,
+      notes TEXT,
+      created_at TEXT,
+      is_demo INTEGER DEFAULT 0
+    );
   `;
 
   db.exec(schema);
 
   // Non-destructive column migrations & index extensions
   const migrations = [
+    "ALTER TABLE suppliers ADD COLUMN is_demo INTEGER DEFAULT 0;",
     "ALTER TABLE inventory ADD COLUMN barcode TEXT;",
     "ALTER TABLE inventory ADD COLUMN min_qty REAL DEFAULT 5;",
     "ALTER TABLE inventory ADD COLUMN notes TEXT;",

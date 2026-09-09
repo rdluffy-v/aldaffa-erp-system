@@ -155,6 +155,17 @@ export function createTestDb() {
       is_demo INTEGER DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      phone TEXT,
+      company TEXT,
+      address TEXT,
+      notes TEXT,
+      created_at TEXT,
+      is_demo INTEGER DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS archives (
       id TEXT PRIMARY KEY,
       date TEXT NOT NULL,

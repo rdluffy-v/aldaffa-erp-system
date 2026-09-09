@@ -12,7 +12,7 @@ export class PurchasesRepository extends BaseRepository {
   }
 
   /**
-   * Create purchase with inventory update
+   * Create purchase with inventory update and WAC calculation
    */
   async createPurchaseWithInventoryUpdate(purchaseData, items, inventoryRepo) {
     let isDemo = purchaseData.is_demo !== undefined ? purchaseData.is_demo : 0;
@@ -34,11 +34,14 @@ export class PurchasesRepository extends BaseRepository {
       params: Object.values(payload)
     });
 
-    // Update inventory with WAC for each item
+    // Update inventory with WAC, selling price, and wholesale price for each item
     for (const item of items) {
       const q = Number(item.quantity) || 0;
       const c = Number(item.cost_per_unit) || 0;
+      const sellPrice = Number(item.sell_price) || 0;
+      const wholesalePrice = Number(item.wholesale_price) || 0;
       const pId = item.product_id;
+
       queries.push({
         sql: `
           UPDATE inventory
@@ -47,7 +50,9 @@ export class PurchasesRepository extends BaseRepository {
               WHEN (qty + ?) <= 0 THEN ?
               ELSE (qty * cost + ? * ?) / (qty + ?)
             END,
-            qty = qty + ?
+            qty = qty + ?,
+            price = CASE WHEN ? > 0 THEN ? ELSE price END,
+            wholesale_price = CASE WHEN ? > 0 THEN ? ELSE wholesale_price END
           WHERE id = ? OR CAST(id AS TEXT) = ?
         `,
         params: [
@@ -57,6 +62,10 @@ export class PurchasesRepository extends BaseRepository {
           c,
           q,
           q,
+          sellPrice,
+          sellPrice,
+          wholesalePrice,
+          wholesalePrice,
           pId,
           String(pId)
         ]
@@ -65,6 +74,88 @@ export class PurchasesRepository extends BaseRepository {
 
     await db.transaction(queries);
     db.invalidateCache();
+  }
+
+  /**
+   * Update purchase order with atomic rollback of old items and application of new items
+   */
+  async updatePurchaseWithInventoryAdjustment(purchaseId, updatedPurchaseData, newItems) {
+    const oldPurchase = await this.findById(purchaseId);
+    if (!oldPurchase) {
+      throw new Error(`فاتورة الشراء #${purchaseId} غير موجودة`);
+    }
+
+    let oldItems = [];
+    try {
+      oldItems = JSON.parse(oldPurchase.items_json || '[]');
+    } catch (e) {
+      oldItems = [];
+    }
+
+    const queries = [];
+
+    // 1. Rollback old items from inventory: deduct old quantities
+    for (const oldItem of oldItems) {
+      if (oldItem.product_id && oldItem.quantity) {
+        queries.push({
+          sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ? OR CAST(id AS TEXT) = ?',
+          params: [Number(oldItem.quantity) || 0, oldItem.product_id, String(oldItem.product_id)]
+        });
+      }
+    }
+
+    // 2. Apply new items: add quantities, recalculate WAC, update price and wholesale_price
+    for (const item of newItems) {
+      const q = Number(item.quantity) || 0;
+      const c = Number(item.cost_per_unit) || 0;
+      const sellPrice = Number(item.sell_price) || 0;
+      const wholesalePrice = Number(item.wholesale_price) || 0;
+      const pId = item.product_id;
+
+      queries.push({
+        sql: `
+          UPDATE inventory
+          SET
+            cost = CASE
+              WHEN (qty + ?) <= 0 THEN ?
+              ELSE (qty * cost + ? * ?) / (qty + ?)
+            END,
+            qty = qty + ?,
+            price = CASE WHEN ? > 0 THEN ? ELSE price END,
+            wholesale_price = CASE WHEN ? > 0 THEN ? ELSE wholesale_price END
+          WHERE id = ? OR CAST(id AS TEXT) = ?
+        `,
+        params: [
+          q,
+          c,
+          q,
+          c,
+          q,
+          q,
+          sellPrice,
+          sellPrice,
+          wholesalePrice,
+          wholesalePrice,
+          pId,
+          String(pId)
+        ]
+      });
+    }
+
+    // 3. Update purchase record
+    const updatePayload = { ...updatedPurchaseData };
+    delete updatePayload.id; // Don't modify primary key
+    const updateKeys = Object.keys(updatePayload);
+    const setClause = updateKeys.map(k => `${k} = ?`).join(', ');
+
+    queries.push({
+      sql: `UPDATE ${this.tableName} SET ${setClause} WHERE id = ?`,
+      params: [...Object.values(updatePayload), purchaseId]
+    });
+
+    await db.transaction(queries);
+    db.invalidateCache();
+    return { success: true };
   }
 
   /**
@@ -89,8 +180,8 @@ export class PurchasesRepository extends BaseRepository {
     for (const item of items) {
       if (item.product_id && item.quantity) {
         queries.push({
-          sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ?',
-          params: [Number(item.quantity) || 0, item.product_id]
+          sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ? OR CAST(id AS TEXT) = ?',
+          params: [Number(item.quantity) || 0, item.product_id, String(item.product_id)]
         });
       }
     }
