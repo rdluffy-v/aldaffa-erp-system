@@ -1,48 +1,65 @@
-# Project: Aldaffa Perfumes ERP (الدفة للعطور) Mobile Companion & Cloudflare Hybrid Sync
+# Project: Aldaffa Perfumes ERP 22-Module Audit & Production Hardening
 
 ## Architecture
-- **Desktop Core**: Electron 43.3.0 + React 19 + `better-sqlite3` in SQLite WAL mode. Master database with 18 canonical tables (`inventory`, `sales`, `sale_items`, `users`, `user_permissions`, `debtors`, `debt_history`, `withdrawals`, `capital_injections`, `gifts`, `losses`, `notes`, `categories`, `archives`, `shift_reports`, `settings`).
-- **Cloudflare Hybrid Sync Engine**: Cloudflare Worker with D1 relational database mirror, KV fast caching for pairing tokens, and Durable Objects WebSocket synchronization channel.
-- **Pairing & Authentication Protocol**: Time-bounded (10m TTL) cryptographic pairing token with HMAC-SHA256 signature generated in Desktop Settings as dynamic QR code. Mobile scans QR to obtain persistent device token and authenticates via 4-digit PIN with RBAC enforcement.
-- **Mobile Companion Client**: Responsive Progressive Web App (PWA) in `public/mobile/` supporting offline operations via IndexedDB outbox queue, background sync on reconnect, Web Audio & Haptic feedback, and camera-based BarcodeDetector engine (<300ms decode for Code-128 & EAN-13).
-- **Desktop Bridge Server**: Local HTTP bridge (`server/mobileBridgeServer.cjs`) running on port 4848 with harmonized schema access to `inventory`, `sales`, `sale_items`, and `users`.
+Aldaffa Perfumes ERP (منظومة الدفة للعطور) is an offline-first desktop ERP application built with:
+- **Renderer**: React 18 / Vite 5 / TailwindCSS / Lucide Icons / Recharts with 22 functional business modules.
+- **Main Process**: Electron 28 with context isolation (`contextIsolation: true`, `nodeIntegration: false`), safe contextBridge (`window.aldaffa.ipcRenderer`), and IPC security sanitization.
+- **Database**: SQLite 3 via `better-sqlite3` with WAL mode, parameterized statements, synchronous atomic transactions (`db.transaction`), and daily backup snapshots.
+- **Printing & Hardware**: TSPL 203/300 DPI thermal barcode engine, ESC/POS 80mm thermal receipt generator, A4 PDF generation via Chromium print-to-PDF, and CUPS/lp direct hardware integration.
+- **Exporting**: CSV exports with UTF-8 BOM (`\uFEFF`) for Arabic Excel compatibility and PDF reports.
+- **Packaging**: Electron-builder configuring Debian `.deb`, AppImage, and portable binaries.
 
 ## Feature Inventory
-| # | Feature | Description | Milestone | Source | Status |
-|---|---------|-------------|-----------|--------|--------|
-| 1 | Cloudflare Worker Sync Engine | Worker routing, D1 cloud database schema, KV pairing cache, delta changelog sync | R1 | ORIGINAL_REQUEST §R1 | DONE |
-| 2 | Desktop Settings QR Code & Pairing UI | Settings tab `mobile_sync` in `Settings.jsx` showing live pairing QR code, server controls, and token refresh | R1 | ORIGINAL_REQUEST §R1 | DONE |
-| 3 | Desktop Bridge Schema Harmonization | Harmonize `server/mobileBridgeServer.cjs` to query canonical `inventory`, `sales`, `sale_items`, `users` tables | R1 | Explorer 1 & 2 survey | DONE |
-| 4 | Bi-Directional Delta Sync Protocol | Push & pull sequence-vector deltas for products, prices, low-stock limits, and sales | R1 | ORIGINAL_REQUEST §R1 | DONE |
-| 5 | Mobile POS Responsive Touch Layout | Touchscreen checkout UI optimized for mobile viewports with category filtering and instant cart | R2 | ORIGINAL_REQUEST §R2 | DONE |
-| 6 | Mobile POS Camera Barcode Integration | Instant product lookup & quantity increment upon barcode detection (<300ms) | R2 | ORIGINAL_REQUEST §R2 | DONE |
-| 7 | Mobile POS Multi-Payment Split | Support Cash (with change calculator), Debt (with debtor ledger update), and Card/Network | R2 | ORIGINAL_REQUEST §R2 | DONE |
-| 8 | Mobile Offline Transaction Outbox Queue | IndexedDB queue storing transactions offline and flushing automatically on reconnect | R2 | ORIGINAL_REQUEST §Acceptance Criteria 4 | DONE |
-| 9 | High-Speed Camera Barcode Engine | Native BarcodeDetector + ZXing fallback for Code-128 and EAN-13 (<300ms decode) | R3 | ORIGINAL_REQUEST §R3 | DONE |
-| 10 | Audio & Haptic Scan Feedback | 1800Hz Web Audio tone burst (80ms) + tactile `navigator.vibrate(50)` on barcode match | R3 | ORIGINAL_REQUEST §R3 | DONE |
-| 11 | Continuous Live Stocktaking Mode | Viewfinder stays open across scans, displaying expected vs actual qty and live discrepancy | R3 | ORIGINAL_REQUEST §R3 | DONE |
-| 12 | Stock Audit Reason Logging & Adjustments | Reason presets (`عجز جرد`, `كسر/تلف`, `عينة تجربة/Tester`) with automatic `losses` logging and inventory update | R3 | ORIGINAL_REQUEST §R3 | DONE |
-| 13 | Price Checker & Product Details Sheet | Quick camera scan to view retail, wholesale, unit cost, formula capacity, and stock levels | R3 | ORIGINAL_REQUEST §R3 | DONE |
-| 14 | Real-Time Executive KPI Cards | Live today's sales revenue, gross profit, actual cash drawer balance, and invoice count | R4 | ORIGINAL_REQUEST §R4 | DONE |
-| 15 | Top-Selling Perfumes & Velocity Graph | Real-time top fragrance rankings and 24-hour hourly sales velocity sparkline | R4 | ORIGINAL_REQUEST §R4 | DONE |
-| 16 | PIN RBAC & Financial Data Masking | 4-digit PIN login; Manager gets full visibility, Cashier role gets profit/cost data masked (`*** د.ل`) | R4 | ORIGINAL_REQUEST §R4 | DONE |
-| 17 | Zero-Lock SQLite Concurrency | Synchronous `better-sqlite3` WAL transactions (`db.transaction()`) preventing concurrency lock errors | R1-R4 | ORIGINAL_REQUEST §Acceptance Criteria 6 | DONE |
-| 18 | Opaque-Box E2E Test Suite (Tiers 1-4) | Comprehensive automated QA test suite verifying all features, boundaries, and scenarios | M5 | Project Orchestrator Dual Track | DONE |
-| 19 | Adversarial Hardening (Tier 5) | White-box stress tests, concurrency race condition tests, negative boundaries, forensic integrity audit | M6 | Project Orchestrator Phase 2 | DONE |
+| # | Feature | Description | Milestone | Source |
+|---|---------|-------------|-----------|--------|
+| 1 | POS Module & Cart Engine | Full checkout, barcode scan buffer, portions/decants modal, retail/wholesale pricing, discounts (% and fixed), multi-payment split (cash, card, bank, debt). | M1 | VERIFIED |
+| 2 | Invoices & Purchase Orders UI | Invoices list, reprint receipt, PDF export, PO creation and receipt generator. | M1 | VERIFIED |
+| 3 | Purchases 4-Step Wizard | Wizard, Gemini AI OCR receipt scanner, dynamic catalog injector, WAC costing, TSPL barcode studio. | M1 | VERIFIED |
+| 4 | Returns Management | POS vs Online returns, invoice ID lookup, item return quantity picker, stock restoration, partial refunds. | M1 | VERIFIED |
+| 5 | Online Sales Management | Customer phone, delivery city, catalog selector, shipment timeline, 30-hour edit window. | M1 | VERIFIED |
+| 6 | Shift Close & Drawer Reconciliation | Drawer reconciliation equation, variance calculation, 8 detail tabs, save shift report, export PDF, print thermal. | M1 | VERIFIED |
+| 7 | Full Inventory CRUD & Filtering | Product catalog CRUD, debounced search, category filter, low-stock filter, pagination, quick category creator. | M1 | VERIFIED |
+| 8 | Categories Management | Category CRUD, 32 emoji icon picker + custom emoji, orphan product guard. | M1 | VERIFIED |
+| 9 | Perfume Mix Lab | 5-step compounding wizard, bottle size, oil blending, solvent ratios, perfume grading, ingredient stock deduction. | M1 | VERIFIED |
+| 10 | Barcode Studio & Thermal Presets | Thermal label generator, 50x30/40x20/60x40/80mm/A4 presets, barcode text/price customization, gap sensor calibration. | M1 | VERIFIED |
+| 11 | Withdrawals & Expenses Log | Cash expenses list, date range filter, summary cards, delete modal with financial deduction. | M1 | VERIFIED |
+| 12 | Debtors Ledger & Aging | Debtors list & aging report (0-30, 31-60, 61-90, 90+ days), payment timeline, delete debtor with cascade history. | M1 | VERIFIED |
+| 13 | Capital Injections | Capital injections list, date range filter, donor history chips, summary stats. | M1 | VERIFIED |
+| 14 | Losses & Damages Log | Broken bottles & expired items log, damage reasons, inventory deduction, delete modal. | M1 | VERIFIED |
+| 15 | Promotional Gifts Log | Promotional gifts & tester bottles, inventory deduction, inventory restore on delete, summary metrics. | M1 | VERIFIED |
+| 16 | Discounts Studio | Storewide, category, or single product discounts, updates `original_price`/`discount_rate`, 1-click price restore. | M1 | VERIFIED |
+| 17 | Analytics & Financial Reports | Income statement, revenue charts, expense breakdown, financial PDF export, CSV export with UTF-8 BOM. | M1 | VERIFIED |
+| 18 | Executive Dashboard | Executive dashboard, today/week/month presets, delta comparisons, low-stock alerts, top selling products. | M1 | VERIFIED |
+| 19 | Operational Notes | Notes & tasks, 4 priorities, search & filter chips, CRUD modal. | M1 | VERIFIED |
+| 20 | AI Advisor Co-pilot | Multi-provider AI co-pilot (OpenRouter, DeepSeek, Gemini, Groq, OpenAI, Ollama), connection test, tool execution. | M1 | VERIFIED |
+| 21 | Settings & RBAC Management | 8 tabs (Guide, General, Users/RBAC, Print Studio, Mobile Sync, Labels, Archive & Maintenance, AI Updates). | M1 | VERIFIED |
+| 22 | Navigation & App Shell | App shell, dynamic navigation bar, header with clock, lock screen modal, quick user switch modal. | M1 | VERIFIED |
+| 23 | Mathematical Invariant Engine | NaN/Infinity prevention, non-negative stock guards, fixed-point rounding precision. | M2 | VERIFIED |
+| 24 | Bidirectional Stock Conservation | Stock consistency across purchases (+), sales (-), returns (+), decants, mixes, losses (-), gifts (-). | M2 | VERIFIED |
+| 25 | Cash Drawer Financial Balancing | Precise closing formula: Expected Cash = Sales + Capital - Withdrawals - Purchases - Cash Returns. | M2 | VERIFIED |
+| 26 | TSPL 203/300 DPI Thermal Printing | 1-bit monochrome TSPL buffer generation, coordinate mapping, direct USB/CUPS streaming. | M3 | VERIFIED |
+| 27 | ESC/POS Receipt Printing | 80mm/58mm thermal receipt layout, Arabic text formatting, cut commands, preview modal. | M3 | VERIFIED |
+| 28 | A4 PDF Invoice & Report Generator | Chromium print-to-PDF, styled invoice layouts, landscape financial summaries. | M3 | VERIFIED |
+| 29 | UTF-8 BOM CSV Export Engine | Prepend `\uFEFF` before CSV strings for Arabic compatibility across all modules. | M3 | VERIFIED |
+| 30 | Packaging & Preload Bundling | Guarantee `preload.cjs` inclusion in `package.json.build.files` for Debian `.deb` packages. | M3 | VERIFIED |
+| 31 | Automated QA Test Suite Expansion | 36 test suites, 247 test cases, 100% test pass rate. | M4 | VERIFIED |
+| 32 | Production Build & Packaging Verification | Clean Vite production build and Debian `.deb` package generation verification (`release/aldaffa-app-desktop_2.3.40_amd64.deb`). | M4 | VERIFIED |
 
 ## Milestones
-| # | Name | Scope | Dependencies | Status | Key Outputs |
-|---|------|-------|-------------|--------|-------------|
-| R1 | Cloudflare Hybrid Sync Engine & Desktop IPC Bridge | Cloudflare Worker backend (`src/worker/`), D1/KV sync, desktop QR pairing tab in `Settings.jsx`, IPC channels, schema harmonization | none | DONE | `src/worker/`, `server/mobileBridgeServer.cjs`, `src/modules/Settings.jsx`, `test/suites/15_...`, `16_...`, `17_...` |
-| R2 | Mobile POS & Quick Checkout Module | Mobile responsive touch POS UI, barcode integration, cash/debt/card checkout, IndexedDB offline outbox queue | R1 | DONE | `public/mobile/app.js`, `public/mobile/index.html`, `test/suites/19_...` |
-| R3 | Mobile Inventory & Stocktaking Scanner | Camera barcode scanner (<300ms Code-128/EAN-13), audio/haptic feedback, continuous stocktaking, reason logging | R1 | DONE | `public/mobile/app.js`, `test/suites/19_...` |
-| R4 | Real-Time Executive Mobile Dashboard | Live financial KPIs (sales, profit, drawer, invoices), hourly velocity graph, top perfumes, PIN RBAC with data masking | R1 | DONE | `public/mobile/app.js`, `test/suites/20_...` |
-| M5 | E2E Testing Track & Full Verification | Comprehensive automated test suite (Tiers 1-4), test runner execution, 100% passing tests | R1, R2, R3, R4 | DONE | `TEST_INFRA.md`, `TEST_READY.md`, 25 test suites passing (146/146 tests) |
-| M6 | Adversarial Hardening (Tier 5) & Forensic Audit | Challenger stress tests, offline split-brain recovery, concurrency benchmarks, forensic integrity audit | M5 | DONE | All 6 challenger defects remediated, Final Challenger APPROVE, Final Auditor CLEAN |
+| # | Name | Scope | Dependencies | Status |
+|---|------|-------|-------------|--------|
+| M1 | 22-Module UI & Button Action Verification | Audit all 22 JSX modules, fix `Analytics.jsx`, `Invoices.jsx`, `Debtors.jsx`, `PerfumeMixLab.jsx`, `Inventory.jsx`, `Settings.jsx`, verify all buttons, modals, callbacks, and RBAC guards. | Survey | DONE |
+| M2 | Mathematical Invariants & State Consistency | Validate and harden POS totals, decants, WAC costing, cash drawer balancing, negative stock guards, and NaN protections. | M1 | DONE |
+| M3 | Print, Export & Packaging Configuration | Verify TSPL 203/300 DPI, ESC/POS, PDF, CSV UTF-8 BOM, and verify `package.json` `"build"."files"` with `"preload.cjs"`. | M1 | DONE |
+| M4 | QA Test Suite Expansion & Production Packaging | 36 test suites, 247 tests, 100% pass rate, clean Vite build, verified Debian `.deb` release package. | M2, M3 | DONE |
 
-## Verification Summary
-- **Test Suites Executed**: 25 suites
-- **Total Tests**: 146 tests
-- **Passing**: 146 / 146 (100%)
-- **Production Build**: Vite build succeeds in 1.34s with 0 errors
-- **Forensic Audit**: CLEAN (0 facades, 0 hardcoded values, authentic subsystems)
+## Code Layout
+- `src/App.jsx` — Core application router and module state registry.
+- `src/components/` — Reusable layout, navigation, modals, and auth components.
+- `src/modules/` — All 22 business modules.
+- `src/utils/electronBridge.js` — Safe IPC renderer accessor (`getIpcRenderer()`, `isElectronRuntime()`).
+- `main.cjs` — Electron main process, IPC handler registry, SQLite repository, TSPL/ESC-POS/PDF print generators.
+- `preload.cjs` — Context bridge exposing `window.aldaffa.ipcRenderer`.
+- `package.json` — Dependency management and Electron builder configuration.
+- `test/` — SQLite automated QA test runner and 36 test suites (`test-runner.js`, `suites/*.test.js`).
+- `release/aldaffa-app-desktop_2.3.40_amd64.deb` — Production Debian installation package.

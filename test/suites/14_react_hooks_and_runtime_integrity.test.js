@@ -104,5 +104,74 @@ export async function run() {
     );
   });
 
+  await test('14.3 Database Table Allowlist Parity Across Main and BaseRepository', async () => {
+    const mainContent = fs.readFileSync(path.resolve(process.cwd(), 'main.cjs'), 'utf8');
+    const baseRepoContent = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/database/repositories/BaseRepository.js'),
+      'utf8'
+    );
+
+    // Extract KNOWN_TABLES from main.cjs
+    const knownMatch = mainContent.match(/const\s+KNOWN_TABLES\s*=\s*\[([\s\S]*?)\];/);
+    assert.ok(knownMatch, 'main.cjs must define KNOWN_TABLES');
+    const knownTables = knownMatch[1]
+      .split(',')
+      .map(s => s.replace(/['"\s]/g, ''))
+      .filter(Boolean);
+
+    // Extract ALLOWED_TABLES from BaseRepository.js
+    const allowedMatch = baseRepoContent.match(/const\s+ALLOWED_TABLES\s*=\s*new\s+Set\(\[([\s\S]*?)\]\);/);
+    assert.ok(allowedMatch, 'BaseRepository.js must define ALLOWED_TABLES');
+    const allowedTables = new Set(
+      allowedMatch[1]
+        .split(',')
+        .map(s => s.replace(/['"\s]/g, ''))
+        .filter(Boolean)
+    );
+
+    const missingInBaseRepo = knownTables.filter(t => !allowedTables.has(t));
+    assert.strictEqual(
+      missingInBaseRepo.length,
+      0,
+      `BaseRepository.js ALLOWED_TABLES is missing tables from main.cjs KNOWN_TABLES: ${JSON.stringify(missingInBaseRepo)}`
+    );
+  });
+
+  await test('14.4 All Repository Subclasses Reference Valid Allowed Tables', async () => {
+    const baseRepoContent = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/database/repositories/BaseRepository.js'),
+      'utf8'
+    );
+    const allowedMatch = baseRepoContent.match(/const\s+ALLOWED_TABLES\s*=\s*new\s+Set\(\[([\s\S]*?)\]\);/);
+    assert.ok(allowedMatch, 'BaseRepository.js must define ALLOWED_TABLES');
+    const allowedTables = new Set(
+      allowedMatch[1]
+        .split(',')
+        .map(s => s.replace(/['"\s]/g, ''))
+        .filter(Boolean)
+    );
+
+    const repoDir = path.resolve(process.cwd(), 'src/database/repositories');
+    const repoFiles = fs.readdirSync(repoDir).filter(f => f.endsWith('.js') && f !== 'BaseRepository.js');
+    const invalidRepos = [];
+
+    for (const repoFile of repoFiles) {
+      const content = fs.readFileSync(path.join(repoDir, repoFile), 'utf8');
+      const superMatch = content.match(/super\(\s*['"]([^'"]+)['"]\s*\)/);
+      if (superMatch) {
+        const table = superMatch[1];
+        if (!allowedTables.has(table)) {
+          invalidRepos.push({ file: repoFile, table });
+        }
+      }
+    }
+
+    assert.strictEqual(
+      invalidRepos.length,
+      0,
+      `Found repository subclasses referencing disallowed tables: ${JSON.stringify(invalidRepos)}`
+    );
+  });
+
   return results;
 }

@@ -30,6 +30,8 @@ export function createTestDb() {
       image_url TEXT,
       barcode TEXT,
       min_qty REAL DEFAULT 5,
+      item_type TEXT DEFAULT 'ready_perfume',
+      shelf_location TEXT,
       notes TEXT,
       is_demo INTEGER DEFAULT 0
     );

@@ -1,86 +1,52 @@
 # Original User Request
 
-## 2026-08-27T19:43:26Z
+## Initial Request — 2026-09-01T15:40:03Z
 
-An autonomous multi-agent engineering and QA testing team for Aldaffa Perfumes ERP (الدفة للعطور). The agent team systematically explores all 20 desktop ERP modules, tests edge cases, detects UI glitches and data integrity flaws, verifies full settings editability, and implements requested new features.
+You are the Project Orchestrator for Aldaffa Perfumes ERP (منظومة الدفة للعطور) comprehensive 22-module audit, button action verification, mathematical invariant hardening, QA test suite expansion, and production packaging.
 
-Working directory: /home/rdluffy/Desktop/aldaffa-app-desktop
-Integrity mode: development
+Your working directory is: /home/rdluffy/Desktop/aldaffa-app-desktop/.agents/orchestrator_audit/
+Authoritative user request: /home/rdluffy/Desktop/aldaffa-app-desktop/.agents/ORIGINAL_REQUEST.md
 
-## Requirements
+Scope & Requirements:
+1. Complete System-Wide Audit & Button Action Verification (فحص وتدقيق كافة الأزرار والمدخلات): Exhaustive static and dynamic verification across all 22 JSX modules (POS, Inventory, Purchases, Returns, Invoices, OnlineSales, Expenses, Categories, Debtors, PerfumeMixLab, Barcodes, Settings, ShiftClose, Users/RBAC, Notes, Capital, Gifts, Losses, Archives, Analytics). Ensure every button, modal, form submission, and callback triggers reliably with zero unhandled errors.
+2. Input & Business Logic Mathematical Invariants (سلامة المدخلات والمنطق الرياضي): Prevent NaN, Infinity, negative stock, and rounding drift across all numerical operations. Validate bidirectional stock consistency (purchases, sales, returns, decants, mix formulations).
+3. Output, Exporting, and Print Hardening (سلامة المخرجات والطباعة والتصدير): Verify PDF generation, A4 invoice printing, ESC/POS receipt printing, TSPL 203/300 DPI barcode printing, and CSV exports across all modules. Ensure graceful error handling.
+4. Automated Multi-Agent QA Verification Suite (جناح الاختبارات المؤتمتة): 100% pass rate across SQLite test harness, clean Vite production build, and successful Debian (.deb) package generation.
 
-### R1. User Roles & Granular Permissions System (نظام المستخدمين والصلاحيات)
-- Create SQLite tables for users & permissions (`users`, `user_permissions`) with secure PIN/Password login and quick user switching.
-- Support 3 primary roles: **المدير العام (Manager)**, **المحاسب (Accountant)**, **الكاشير المناوب (Cashier)**.
-- Integrate permissions checks across all 20 ERP modules (e.g. restrict cost/profit visibility, delete operations, or sandbox purges based on role).
-- Provide a dedicated management screen in `Settings.jsx` to add/edit users, assign PINs, and toggle feature permissions individually.
+Decompose these tasks, spawn specialist subagents (explorers, workers, reviewers, challengers), track progress continuously in your progress.md, and synthesize results. Deliver handoff when ready for Victory Audit.
+## 2026-09-01T17:52:16Z
 
-### R2. Advanced Financial Analytics & Profit Charts Module (التقارير المالية المتقدمة والرسوم البيانية)
-- Build interactive visual dashboards for revenue, gross profit, daily liquidity flow, and sales trends using responsive charts.
-- Top-selling & highest-profit products ranking with category distribution breakdown.
-- One-click export of executive financial reports to pristine A4 PDF & CSV formats.
-
-### R3. Universal Settings & Full System Customization
-- Ensure 100% of application parameters (store identity, print mode, tax %, currency symbol, invoice prefixes, low stock thresholds, section labels) are fully editable via Settings and persisted in SQLite (`useSettingsStore`).
-
-### R4. Multi-Agent Automated QA & Testing Suite
-- Run automated end-to-end tests across all modules (POS, Inventory, Purchases, Debtors, Barcode Studio, Mix Lab, Shift Close, Settings) to verify zero crashes, clean transaction handling, and accurate calculations.
-
-## Acceptance Criteria
-
-### Security & Roles
-- [ ] User login and PIN authentication enforced on app launch and user switch.
-- [ ] Restricted actions (e.g. invoice deletion, data purge, profit view) are hidden or blocked for Cashier role.
-- [ ] Permissions configuration in Settings immediately takes effect across the application.
-
-### Analytics & Reports
-- [ ] Charts dynamically update based on date ranges (Today, This Week, This Month, Year-to-Date).
-- [ ] Financial report PDF exports render clean Arabic layout with store branding.
-
-### Integrity & Stability
-- [ ] 100% clean SQLite transactions without locking errors.
-- [ ] Zero unhandled IPC errors during print, export, or deletion.
-
-## 2026-08-30T05:55:35Z
-
-Build the official mobile companion application and cloud sync backend for Aldaffa Perfumes ERP (الدفة للعطور). The companion app connects seamlessly via Cloudflare Hybrid Sync, enables camera-based live barcode scanning for instant inventory stocktaking, provides a lightweight mobile POS checkout, and displays real-time store financial KPIs.
+<USER_REQUEST>
+Comprehensive quality audit, reactivity verification, and automated release pipeline for Aldaffa Perfumes Desktop ERP (Electron, React, SQLite, TSPL Thermal Engine).
 
 Working directory: /home/rdluffy/Desktop/aldaffa-app-desktop
 Integrity mode: development
 
 ## Requirements
 
-### R1. Cloudflare Hybrid Sync Engine & Desktop IPC Bridge (محرك المزامنة السحابية الهجين)
-- Implement a secure cloud sync pipeline (Cloudflare Worker + D1/KV sync channel or WebSocket RPC).
-- Generate pairing tokens and QR code in Desktop Settings.jsx to pair mobile devices in seconds.
-- Bi-directional sync for product catalog, stock updates, sales transactions, and live financial aggregates.
+### R1. UI Reactivity & Module Health Audit
+Verify that every action button and state mutation across all 22 modules triggers immediate reactive UI feedback without requiring page reload, screen switching, or manual data re-fetching. Prevent unhandled React exceptions, race conditions, and console errors during rapid user interactions.
 
-### R2. Mobile POS & Quick Checkout Module (نقطة البيع المحمولة)
-- Fast touchscreen checkout optimized for mobile viewports (iOS/Android responsive).
-- Barcode scanning via device camera with instant product lookup and quantity increments.
-- Support cash, debt, and card payments, pushing finalized sales directly into the desktop database.
+### R2. Mathematical Invariants & Data Integrity Verification
+Audit and enforce exact financial and inventory invariant calculations across all database operations:
+- Stock deduction and Weighted Average Cost (WAC) preservation in Purchases, Sales, Perfume Mix Lab, Returns, and Gifts.
+- Exact arithmetic balance in Debtors ledgers, Capital Injections, Expense Withdrawals, and POS Cash Drawer Shift Closings.
 
-### R3. Mobile Inventory & Stocktaking Scanner (الجرد المخزني بالكاميرا)
-- Continuous live camera barcode scanning with audio/haptic feedback on product detection.
-- Quick stock count audits and discrepancy adjustments with reason logging.
-- Price checker and product details overlay.
-
-### R4. Real-Time Executive Mobile Dashboard (لوحة المتابعة الإدارية الفورية)
-- Live monitoring of today's sales, gross profit, cash drawer total, and invoice count.
-- Top-selling perfumes of the day and hourly revenue velocity graph.
-- User role PIN authentication (Manager/Accountant/Cashier) with financial masking for restricted roles.
+### R3. Automated Test Verification & Debian Package Release
+Execute the complete automated test harness, verify 100% pass rate, ensure clean Vite build with zero unresolved imports, and package the production .deb binary and update manifest.
 
 ## Acceptance Criteria
 
-### Security & Pairing
-- [ ] QR Code pairing generated from Desktop Settings securely connects Mobile App in under 3 seconds.
-- [ ] Mobile users authenticate with their designated PIN code, respecting the same RBAC permissions matrix.
+### UI & Reactivity
+- [ ] Every button and action trigger in all 22 modules updates the active view immediately with zero required screen refreshes.
+- [ ] Zero unhandled exceptions or state synchronization failures occur during rapid user interaction cycles.
 
-### Sync & Integrity
-- [ ] Sales made on mobile appear instantly on Desktop ERP sales history.
-- [ ] Offline queue support: Mobile app queues transactions locally if connection drops and syncs on reconnect.
+### Data Integrity & Financial Precision
+- [ ] Purchases, Sales, Mix Lab, Returns, and Gifts accurately maintain stock levels and Weighted Average Cost (WAC) invariants.
+- [ ] Debtor transactions, Capital Injections, and POS Cash Drawer reconciliation match exact mathematical sums with zero variance discrepancy.
 
-### Scanning & Performance
-- [ ] Camera barcode scanner accurately reads Code-128 and EAN-13 barcodes in under 300ms.
-- [ ] 100% clean SQLite transactions on the Desktop without concurrency lock errors.
-
+### Stability & Packaging
+- [ ] 100% automated test pass rate across all SQLite, IPC, and unit test suites.
+- [ ] Clean Vite production build with zero syntax or bundling warnings.
+- [ ] Successful packaging of release/aldaffa-app-desktop_*.deb and generation of release/latest-linux.yml.
+</USER_REQUEST>

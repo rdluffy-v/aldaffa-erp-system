@@ -15,6 +15,7 @@ export const useInventoryStore = create((set, get) => ({
   error: null,
   searchTerm: '',
   categoryFilter: 'all',
+  itemTypeFilter: 'all',
   lowStockFilter: false,
   lastFetch: null,
 
@@ -101,7 +102,54 @@ export const useInventoryStore = create((set, get) => ({
 
   setCategoryFilter: (category) => set({ categoryFilter: category }),
 
+  setItemTypeFilter: (itemType) => set({ itemTypeFilter: itemType }),
+
   setLowStockFilter: (enabled) => set({ lowStockFilter: enabled }),
+
+  // Batch update prices across category or itemType
+  batchUpdatePrices: async ({ category = 'all', itemType = 'all', adjustmentType = 'percent_increase', value = 0 }) => {
+    set({ loading: true, error: null });
+    try {
+      const state = get();
+      const val = parseFloat(value) || 0;
+      if (val === 0) return { success: true, count: 0 };
+
+      const targets = state.products.filter(p => {
+        const matchCat = category === 'all' || p.category === category;
+        const matchType = itemType === 'all' || (p.item_type || 'ready_perfume') === itemType;
+        return matchCat && matchType;
+      });
+
+      let updatedCount = 0;
+      for (const p of targets) {
+        let newPrice = p.price;
+        let newWholesale = p.wholesale_price;
+
+        if (adjustmentType === 'percent_increase') {
+          newPrice = Math.round((p.price * (1 + val / 100)) * 100) / 100;
+          newWholesale = Math.round((p.wholesale_price * (1 + val / 100)) * 100) / 100;
+        } else if (adjustmentType === 'percent_decrease') {
+          newPrice = Math.max(0, Math.round((p.price * (1 - val / 100)) * 100) / 100);
+          newWholesale = Math.max(0, Math.round((p.wholesale_price * (1 - val / 100)) * 100) / 100);
+        } else if (adjustmentType === 'amount_increase') {
+          newPrice = Math.round((p.price + val) * 100) / 100;
+          newWholesale = Math.round((p.wholesale_price + val) * 100) / 100;
+        } else if (adjustmentType === 'amount_decrease') {
+          newPrice = Math.max(0, Math.round((p.price - val) * 100) / 100);
+          newWholesale = Math.max(0, Math.round((p.wholesale_price - val) * 100) / 100);
+        }
+
+        await inventoryRepo.update(p.id, { price: newPrice, wholesale_price: newWholesale });
+        updatedCount++;
+      }
+
+      await get().loadProducts(true);
+      return { success: true, count: updatedCount };
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      return { success: false, error: err.message };
+    }
+  },
 
   // Computed
   getFilteredProducts: () => {
@@ -113,9 +161,17 @@ export const useInventoryStore = create((set, get) => ({
       filtered = filtered.filter(p => p.category === state.categoryFilter);
     }
 
-    // Low stock filter
+    // Item type filter
+    if (state.itemTypeFilter && state.itemTypeFilter !== 'all') {
+      filtered = filtered.filter(p => (p.item_type || 'ready_perfume') === state.itemTypeFilter);
+    }
+
+    // Low stock filter (respects item custom min_qty or default 5)
     if (state.lowStockFilter) {
-      filtered = filtered.filter(p => p.qty <= 10);
+      filtered = filtered.filter(p => {
+        const threshold = p.min_qty !== undefined && p.min_qty !== null ? parseFloat(p.min_qty) : 5;
+        return p.qty <= threshold;
+      });
     }
 
     // Search filter
@@ -123,7 +179,8 @@ export const useInventoryStore = create((set, get) => ({
       const term = state.searchTerm.toLowerCase();
       filtered = filtered.filter(p =>
         p.name.toLowerCase().includes(term) ||
-        (p.barcode && p.barcode.includes(term))
+        (p.barcode && p.barcode.toLowerCase().includes(term)) ||
+        (p.shelf_location && p.shelf_location.toLowerCase().includes(term))
       );
     }
 

@@ -30,6 +30,7 @@ Whenever a feature is created, refactored, or released, review this playbook to 
 | **10** | Arabic CSV exports corrupted in Excel (`Ø¹Ø·Ø±`) | Exporting UTF-8 text without Unicode Byte Order Mark (`\uFEFF`). | Always prepend `\uFEFF` before CSV payload string: `new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })`. |
 | **11** | Unregistered IPC channel call (`No handler registered for 'channel'`) | Frontend invokes IPC channel not handled in `main.cjs`. | Enforce Suite 14 automated IPC channel validator in test harness. |
 | **12** | Database lock on app exit during WAL backup | Synchronous `db.close()` called while asynchronous `db.backup()` is still pending. | Execute synchronous `db.pragma('wal_checkpoint(FULL)')` before exit. |
+| **13** | Blank black screen on launch after update (`#root` empty) | Top-level repository instantiation throws `table "[name]" is not in the allowlist` because `BaseRepository.js` `ALLOWED_TABLES` is missing a new table defined in `main.cjs`. | Enforce Suite 14.3/14.4 allowlist parity test in `npm test`, add diagnostic `console-message` logging in `main.cjs`, and embed an emergency error catcher in `index.html`. |
 
 ---
 
@@ -65,13 +66,21 @@ PRINT 1,1\r\n
 
 ### 3. Release & Auto-Updater Verification Pipeline
 Whenever a new desktop package is built:
-1. Bump version in `package.json` (e.g. `2.3.27`).
+1. Bump version in `package.json` (e.g. `2.3.45`).
 2. Run `npm run build` (Vite production bundle).
-3. Run `npm test` (Verify all 16 test suites pass 100%).
+3. Run `npm test` (Verify all 36 test suites pass 100%).
 4. Package `.deb` with `npx electron-builder --linux deb`.
 5. Compute base64 SHA-512 of generated `.deb`.
 6. Write matching `latest-linux.yml`.
 7. Upload both `.deb` and `latest-linux.yml` to GitHub Releases.
+
+### 4. Database Table Allowlist Parity & Blank Screen Prevention
+Whenever a new database table or repository is added:
+1. Register the table in `KNOWN_TABLES` in `main.cjs`.
+2. Register the table in `ALLOWED_TABLES` in `src/database/repositories/BaseRepository.js`.
+3. Ensure every repository calling `super('table_name')` has its table in `ALLOWED_TABLES`.
+4. Run `npm test` to verify Suite 14.3 and 14.4 automated parity checks pass.
+5. In `index.html`, maintain the startup `<div id="startup-error">` listener so any module evaluation failure presents an Arabic recovery prompt rather than a blank black window.
 
 ---
 
@@ -80,4 +89,4 @@ Run the automated test harness at any time to verify application integrity:
 ```bash
 npm test
 ```
-All 16 test suites must pass 100% with 0 failures before any code is committed.
+All 36 test suites must pass 100% with 0 failures before any code is committed.

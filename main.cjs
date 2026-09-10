@@ -89,6 +89,8 @@ function initDatabase() {
       image_url TEXT,
       barcode TEXT,
       min_qty REAL DEFAULT 5,
+      item_type TEXT DEFAULT 'ready_perfume',
+      shelf_location TEXT,
       notes TEXT,
       is_demo INTEGER DEFAULT 0
     );
@@ -263,6 +265,8 @@ function initDatabase() {
     "ALTER TABLE inventory ADD COLUMN wholesale_price REAL DEFAULT 0;",
     "ALTER TABLE inventory ADD COLUMN original_price REAL DEFAULT 0;",
     "ALTER TABLE inventory ADD COLUMN capacity REAL DEFAULT 0;",
+    "ALTER TABLE inventory ADD COLUMN item_type TEXT DEFAULT 'ready_perfume';",
+    "ALTER TABLE inventory ADD COLUMN shelf_location TEXT;",
     "ALTER TABLE sales ADD COLUMN discount_type TEXT DEFAULT 'percentage';",
     "ALTER TABLE sales ADD COLUMN is_demo INTEGER DEFAULT 0;",
     "ALTER TABLE sales ADD COLUMN type TEXT DEFAULT 'store';",
@@ -465,9 +469,11 @@ function getPrintSettings() {
 }
 
 function createWindow() {
+  const iconPath = path.join(__dirname, 'build', 'icon.png');
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -501,6 +507,21 @@ function createWindow() {
       shell.openExternal(url);
     }
     return { action: 'deny' };
+  });
+
+  // Diagnostic logging for renderer runtime health
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    if (level >= 3) {
+      console.error(`[RENDERER ERROR] (${sourceId}:${line}): ${message}`);
+    }
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[WINDOW FAILED TO LOAD] code=${errorCode} desc=${errorDescription} url=${validatedURL}`);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('[RENDER PROCESS GONE]', details);
   });
 
   // Load app
