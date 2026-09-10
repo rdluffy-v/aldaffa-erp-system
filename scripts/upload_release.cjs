@@ -4,8 +4,9 @@ const https = require('https');
 const path = require('path');
 
 const token = process.argv[2] || process.env.GITHUB_TOKEN;
-const tag = process.argv[3] || 'v2.3.40';
+const tag = process.argv[3] || 'v2.3.45';
 const debPath = process.argv[4] || path.join(__dirname, `../release/aldaffa-app-desktop_${tag.replace(/^v/, '')}_amd64.deb`);
+const ymlPath = path.join(__dirname, '../release/latest-linux.yml');
 
 if (!token) {
   console.error('Usage: node upload_release.cjs <GITHUB_TOKEN> [TAG] [DEB_PATH]');
@@ -39,6 +40,50 @@ function githubRequest(options, data) {
   });
 }
 
+function uploadAsset(uploadBaseUrl, filePath, contentType) {
+  return new Promise((resolve, reject) => {
+    const fileName = path.basename(filePath);
+    const size = fs.statSync(filePath).size;
+    console.log(`Uploading asset: ${fileName} (${(size / (1024 * 1024)).toFixed(2)} MB)...`);
+
+    const uploadUrl = new URL(uploadBaseUrl.replace(/\{.*\}/, ''));
+    uploadUrl.searchParams.set('name', fileName);
+
+    const fileStream = fs.createReadStream(filePath);
+    const uploadReq = https.request({
+      hostname: uploadUrl.hostname,
+      path: `${uploadUrl.pathname}${uploadUrl.search}`,
+      method: 'POST',
+      headers: {
+        'User-Agent': 'Aldaffa-ERP-Uploader',
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': contentType,
+        'Content-Length': size
+      }
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        console.log(`[Result] Upload response for ${fileName}: status ${res.statusCode}`);
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          console.log(`✅ Asset ${fileName} successfully attached to release ${tag}!`);
+          resolve(true);
+        } else {
+          console.error(`Upload error response for ${fileName}:`, body);
+          resolve(false);
+        }
+      });
+    });
+
+    uploadReq.on('error', (err) => {
+      console.error(`Upload stream error for ${fileName}:`, err);
+      reject(err);
+    });
+
+    fileStream.pipe(uploadReq);
+  });
+}
+
 async function run() {
   console.log(`[1/3] Fetching release metadata for ${tag}...`);
   const relRes = await githubRequest({
@@ -54,6 +99,16 @@ async function run() {
   let release = relRes.data;
   if (relRes.status === 404) {
     console.log(`Release ${tag} not found, creating it...`);
+    const releaseNotes = `### الإصدار المستقر v2.3.45 - تخصيص المخزون للعطور وسلاسة الأداء 🌿✨
+
+- **تخصيص كامل للمخزون للعطور**: نافذة إضافة منتج مقسمة لـ 4 بطاقات ذكية وبديهية.
+- **الوحدات الذكية**: دعم العطور الجاهزة، الزيوت العطرية الخام، القناني الفارغة مع حرية تامة للمستخدم في اختيار وتحديد وحدات القياس وسعة العبوات.
+- **حاسبة هوامش الربح الحية**: حساب فوري لهامش ونسبة الربح قبل الحفظ.
+- **توليد باركود بنقرة واحدة**: دعم كامل للباركود التلقائي والماسح الضوئي.
+- **تتبع موقع الرف**: إضافة حقل موقع الرف أو الدولاب داخل المحل.
+- **الفلاتر السريعة والتعديل المباشر**: فلاتر فورية للمخزون، وتعديل مباشر من البطاقات، وتزويد سريع للمخزون (Quick Restock) متزامن مع متوسط التكلفة المرجح WAC، والتعديل الجماعي للأسعار.
+- **استعادة الشعار**: ضبط مسار الشعار الخارجي للتطبيق ليظهر بوضوح وبأعلى جودة.`;
+
     const createRes = await githubRequest({
       hostname: 'api.github.com',
       path: '/repos/rdluffy-v/aldaffa-erp-system/releases',
@@ -66,6 +121,7 @@ async function run() {
     }, JSON.stringify({
       tag_name: tag,
       name: `Aldaffa Perfumes ERP ${tag}`,
+      body: releaseNotes,
       draft: false,
       prerelease: false
     }));
@@ -79,41 +135,29 @@ async function run() {
 
   console.log(`[2/3] Release found with ID: ${release.id}`);
 
-  const fileName = path.basename(debPath);
-  console.log(`[3/3] Uploading binary asset: ${fileName} (${(fs.statSync(debPath).size / (1024 * 1024)).toFixed(2)} MB)...`);
-
-  const uploadUrl = new URL(release.upload_url.replace(/\{.*\}/, ''));
-  uploadUrl.searchParams.set('name', fileName);
-
-  const fileStream = fs.createReadStream(debPath);
-  const uploadReq = https.request({
-    hostname: uploadUrl.hostname,
-    path: `${uploadUrl.pathname}${uploadUrl.search}`,
-    method: 'POST',
-    headers: {
-      'User-Agent': 'Aldaffa-ERP-Uploader',
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/vnd.debian.binary-package',
-      'Content-Length': fs.statSync(debPath).size
-    }
-  }, (res) => {
-    let body = '';
-    res.on('data', chunk => body += chunk);
-    res.on('end', () => {
-      console.log(`[Result] Upload response status: ${res.statusCode}`);
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        console.log(`✅ Asset ${fileName} successfully attached to release ${tag}!`);
-      } else {
-        console.error('Upload error response:', body);
+  console.log(`[3/3] Uploading binary assets...`);
+  if (Array.isArray(release.assets)) {
+    for (const existingAsset of release.assets) {
+      if (existingAsset.name === path.basename(debPath) || existingAsset.name === 'latest-linux.yml') {
+        console.log(`Removing old asset ${existingAsset.name} (id: ${existingAsset.id})...`);
+        await githubRequest({
+          hostname: 'api.github.com',
+          path: `/repos/rdluffy-v/aldaffa-erp-system/releases/assets/${existingAsset.id}`,
+          method: 'DELETE',
+          headers: {
+            'User-Agent': 'Aldaffa-ERP-Uploader',
+            'Authorization': `Bearer ${token}`
+          }
+        });
       }
-    });
-  });
+    }
+  }
 
-  uploadReq.on('error', (err) => {
-    console.error('Upload stream error:', err);
-  });
-
-  fileStream.pipe(uploadReq);
+  await uploadAsset(release.upload_url, debPath, 'application/vnd.debian.binary-package');
+  if (fs.existsSync(ymlPath)) {
+    await uploadAsset(release.upload_url, ymlPath, 'text/yaml');
+  }
+  console.log('🎉 All assets uploaded successfully!');
 }
 
 run().catch(console.error);
