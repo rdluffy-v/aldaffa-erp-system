@@ -788,15 +788,20 @@ ipcMain.handle('updater:check', async (event, { token } = {}) => {
       const isNewer = compareSemver(latestTag, currentVer);
 
       const debAsset = (release.assets || []).find(a => a.name.endsWith('.deb'));
-      const downloadUrl = debAsset ? debAsset.browser_download_url : release.html_url;
+      const downloadUrl = debAsset ? debAsset.browser_download_url : `https://github.com/rdluffy-v/aldaffa-erp-system/releases/download/v${latestTag}/aldaffa-app-desktop_${latestTag}_amd64.deb`;
 
       const info = {
         version: latestTag,
+        latestVersion: latestTag,
+        currentVersion: currentVer,
+        isNewer,
         assetId: debAsset ? debAsset.id : null,
-        assetName: debAsset ? debAsset.name : null,
+        assetName: debAsset ? debAsset.name : `aldaffa-app-desktop_${latestTag}_amd64.deb`,
+        assetSize: debAsset ? debAsset.size : 0,
         releaseNotes: release.body || 'تحديثات وتحسينات جديدة للأداء والاستقرار.',
         releaseDate: release.published_at,
-        downloadUrl
+        downloadUrl,
+        htmlUrl: release.html_url || `https://github.com/rdluffy-v/aldaffa-erp-system/releases/tag/v${latestTag}`
       };
 
       if (isNewer) {
@@ -814,10 +819,10 @@ ipcMain.handle('updater:check', async (event, { token } = {}) => {
           mainWindow.webContents.send('update-status', {
             status: 'not-available',
             updateNotAvailable: true,
-            info: { version: currentVer }
+            info: { ...info, version: currentVer }
           });
         }
-        return { success: true, updateAvailable: false, info: { version: currentVer } };
+        return { success: true, updateAvailable: false, info: { ...info, version: currentVer } };
       }
     } else if (res.status === 404 || res.status === 401) {
       const errorMsg = 'رمز الوصول (GitHub Token) غير صالح أو لا يملك صلاحية قراءة المستودع (repo scope).';
@@ -936,12 +941,53 @@ ipcMain.handle('updater:install', async () => {
   }
 });
 
-ipcMain.handle('updater:open-releases', async (event, { url } = {}) => {
+ipcMain.handle('updater:get-latest-info', async (event, { token } = {}) => {
+  try {
+    const effectiveToken = getEffectiveGitHubToken(token);
+    const res = await fetchGitHubRelease(effectiveToken);
+    if (res.status === 200 && res.data) {
+      const release = res.data;
+      const latestTag = (release.tag_name || '').replace(/^v/, '');
+      const currentVer = app.getVersion();
+      const isNewer = compareSemver(latestTag, currentVer);
+      const debAsset = (release.assets || []).find(a => a.name.endsWith('.deb'));
+      const downloadUrl = debAsset ? debAsset.browser_download_url : `https://github.com/rdluffy-v/aldaffa-erp-system/releases/download/v${latestTag}/aldaffa-app-desktop_${latestTag}_amd64.deb`;
+      return {
+        success: true,
+        info: {
+          version: latestTag,
+          latestVersion: latestTag,
+          currentVersion: currentVer,
+          isNewer,
+          assetName: debAsset ? debAsset.name : `aldaffa-app-desktop_${latestTag}_amd64.deb`,
+          assetSize: debAsset ? debAsset.size : 0,
+          releaseNotes: release.body || 'تحديثات وتحسينات جديدة للأداء والاستقرار.',
+          releaseDate: release.published_at,
+          downloadUrl,
+          htmlUrl: release.html_url || `https://github.com/rdluffy-v/aldaffa-erp-system/releases/tag/v${latestTag}`
+        }
+      };
+    }
+    return { success: false, error: 'تعذر جلب تفاصيل الإصدار' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('updater:show-downloaded-folder', async () => {
   try {
     if (latestDownloadedPackagePath && fs.existsSync(latestDownloadedPackagePath)) {
       shell.showItemInFolder(latestDownloadedPackagePath);
-      return { success: true, openedFolder: true };
+      return { success: true, filePath: latestDownloadedPackagePath };
     }
+    return { success: false, error: 'لم يتم العثور على ملف الحزمة المحملة' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('updater:open-releases', async (event, { url } = {}) => {
+  try {
     const targetUrl = url || 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
     if (!isSafeExternalUrl(targetUrl)) {
       return { success: false, error: 'رابط غير آمن' };
@@ -956,6 +1002,9 @@ ipcMain.handle('updater:open-releases', async (event, { url } = {}) => {
 ipcMain.handle('updater:open-browser-download', async (event, { url } = {}) => {
   try {
     const targetUrl = url || 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest';
+    if (!isSafeExternalUrl(targetUrl)) {
+      return { success: false, error: 'رابط غير آمن' };
+    }
     await shell.openExternal(targetUrl);
     return { success: true };
   } catch (error) {

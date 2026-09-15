@@ -58,7 +58,9 @@ import {
   Zap,
   Activity,
   Server,
-  Globe
+  Globe,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 import { BarcodeSVG } from '../utils/barcodeGenerator.jsx';
 
@@ -645,6 +647,10 @@ const SettingsModule = () => {
   const [downloadProgress, setDownloadProgress] = useState(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
+  const [releaseInfo, setReleaseInfo] = useState(null);
+  const [copiedBash, setCopiedBash] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [commandTool, setCommandTool] = useState('wget'); // 'wget' | 'curl' | 'oneliner'
 
   // Hardware Scanner State
   const [hardwareInfo, setHardwareInfo] = useState({
@@ -731,11 +737,18 @@ const SettingsModule = () => {
       // Load Updater Settings
       setGhToken(settingsMap['github_token'] || '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');
 
-      // Load Version
+      // Load Version & Latest Release Metadata
       const verRes = await invokeIpc('updater:get-version');
       if (verRes?.success && verRes.version) {
         setAppVersion(verRes.version);
       }
+
+      try {
+        const relRes = await invokeIpc('updater:get-latest-info', { token: settingsMap['github_token'] || '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' });
+        if (relRes?.success && relRes.info) {
+          setReleaseInfo(relRes.info);
+        }
+      } catch (e) {}
 
       // Load Archives List & Sandbox status
       loadArchives();
@@ -908,6 +921,9 @@ const SettingsModule = () => {
           const payload = (data !== undefined) ? data : eventOrData;
           if (!payload) return;
           setUpdateStatus(payload);
+          if (payload.info) {
+            setReleaseInfo(payload.info);
+          }
           if (payload.status === 'available') {
             showInfo('يوجد تحديث جديد متاح للتحميل!');
           } else if (payload.status === 'downloaded') {
@@ -1259,7 +1275,9 @@ const SettingsModule = () => {
       showInfo('جاري الاتصال بمستودع GitHub للتحقق من التحديثات...');
       const res = await invokeIpc('updater:check', { token: ghToken });
       if (res?.success) {
-        // Status handled by update-status event
+        if (res.info) {
+          setReleaseInfo(res.info);
+        }
       } else {
         const errorText = res?.error || '';
         const cleanErr = errorText.includes('404') || errorText.includes('authentication token') || errorText.includes('401')
@@ -1305,14 +1323,87 @@ const SettingsModule = () => {
     }
   };
 
+  const handleShowDownloadedFolder = async () => {
+    try {
+      const res = await invokeIpc('updater:show-downloaded-folder');
+      if (!res?.success) {
+        showError(res?.error || 'لم يتم العثور على الملف في مجلد التنزيلات');
+      }
+    } catch (e) {
+      showError('فشل فتح المجلد: ' + e.message);
+    }
+  };
+
+  const latestVersionStr = releaseInfo?.version || releaseInfo?.latestVersion || appVersion || '2.3.46';
+  const rawDownloadUrl = releaseInfo?.downloadUrl || `https://github.com/rdluffy-v/aldaffa-erp-system/releases/download/v${latestVersionStr}/aldaffa-app-desktop_${latestVersionStr}_amd64.deb`;
+  const rawReleasesUrl = releaseInfo?.htmlUrl || `https://github.com/rdluffy-v/aldaffa-erp-system/releases/tag/v${latestVersionStr}`;
+
   const handleOpenDirectDownload = async () => {
     try {
-      showInfo('جاري فتح صفحة تنزيل حزمة التحديث (.deb) في المتصفح...');
+      showInfo('جاري فتح رابط تنزيل حزمة التحديث (.deb) في المتصفح...');
       await invokeIpc('updater:open-browser-download', {
-        url: 'https://github.com/rdluffy-v/aldaffa-erp-system/releases/latest'
+        url: rawDownloadUrl
       });
     } catch (e) {
       showError('فشل فتح الرابط: ' + e.message);
+    }
+  };
+
+  const handleOpenReleases = async () => {
+    try {
+      await invokeIpc('updater:open-releases', {
+        url: rawReleasesUrl
+      });
+    } catch (e) {
+      showError('فشل فتح صفحة الإصدار: ' + e.message);
+    }
+  };
+
+  const getLinuxCommands = () => {
+    if (commandTool === 'curl') {
+      return `# 1. تنزيل حزمة التحديث لمنظومة الدفة للعطور
+curl -L -o aldaffa-app-desktop.deb "${rawDownloadUrl}"
+
+# 2. تثبيت الحزمة تلقائياً ومعالجة أي تبعيات
+sudo dpkg -i aldaffa-app-desktop.deb || sudo apt-get install -f -y
+
+# 3. تشغيل المنظومة المحدثة
+aldaffa-app-desktop`;
+    }
+    if (commandTool === 'oneliner') {
+      return `wget -O /tmp/aldaffa-latest.deb "${rawDownloadUrl}" && sudo dpkg -i /tmp/aldaffa-latest.deb || sudo apt-get install -f -y && aldaffa-app-desktop`;
+    }
+    // Default: wget
+    return `# 1. تنزيل حزمة التحديث لمنظومة الدفة للعطور (.deb)
+wget -O aldaffa-app-desktop.deb "${rawDownloadUrl}"
+
+# 2. تثبيت الحزمة تلقائياً ومعالجة أي تبعيات
+sudo dpkg -i aldaffa-app-desktop.deb || sudo apt-get install -f -y
+
+# 3. تشغيل المنظومة المحدثة
+aldaffa-app-desktop`;
+  };
+
+  const handleCopyCommands = async () => {
+    try {
+      const cmd = getLinuxCommands();
+      await navigator.clipboard.writeText(cmd);
+      setCopiedBash(true);
+      showSuccess('✅ تم نسخ أوامر التثبيت إلى الحافظة بنجاح');
+      setTimeout(() => setCopiedBash(false), 3000);
+    } catch (err) {
+      showError('فشل نسخ الأوامر: ' + err.message);
+    }
+  };
+
+  const handleCopyDownloadUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(rawDownloadUrl);
+      setCopiedUrl(true);
+      showSuccess('✅ تم نسخ رابط التنزيل المباشر إلى الحافظة');
+      setTimeout(() => setCopiedUrl(false), 3000);
+    } catch (err) {
+      showError('فشل نسخ الرابط: ' + err.message);
     }
   };
 
@@ -3450,14 +3541,25 @@ const SettingsModule = () => {
                   )}
 
                   {updateStatus.updateDownloaded && (
-                    <button
-                      type="button"
-                      onClick={handleInstallUpdate}
-                      className="btn-primary text-xs flex items-center gap-2 bg-[#10b981] hover:bg-[#059669]"
-                    >
-                      <Check className="w-4 h-4" />
-                      تثبيت وإعادة التشغيل
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleInstallUpdate}
+                        className="btn-primary text-xs flex items-center gap-2 bg-[#10b981] hover:bg-[#059669]"
+                      >
+                        <Check className="w-4 h-4" />
+                        تثبيت وإعادة التشغيل
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleShowDownloadedFolder}
+                        className="btn-secondary text-xs flex items-center gap-2 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 cursor-pointer"
+                        title="فتح مجلد التنزيلات وتحديد ملف الحزمة"
+                      >
+                        <FolderArchive className="w-4 h-4" />
+                        عرض الملف
+                      </button>
+                    </>
                   )}
 
                   <button
@@ -3470,6 +3572,202 @@ const SettingsModule = () => {
                     تنزيل حزمة (.deb) المباشرة
                   </button>
                 </div>
+              </div>
+
+              {/* ========================================================================= */}
+              {/* CARD: Manual Download & Debian Linux Terminal Commands (1-Click Copy)   */}
+              {/* ========================================================================= */}
+              <div className="glass-card p-5 lg:col-span-2 flex flex-col gap-4 border border-emerald-500/20 bg-[#161b22]/80 shadow-lg">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      <Terminal className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-[#e6edf3] flex items-center gap-2">
+                        التحميل اليدوي وتثبيت التحديث على توزيعات ديبيان ولينكس
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono">
+                          Debian / Kali / Ubuntu / Mint
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-[#768390] mt-0.5">
+                        روابط مباشرة لحزم التثبيت على مستودع GitHub مع أوامر سطر الأوامر الجاهزة للنسخ والتنفيذ الفوري
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#1f242c] text-[#adbac7] border border-white/10">
+                      النسخة الحالية: <span className="text-[#fbbf24]">v{appVersion}</span>
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      أحدث إصدار: <span className="font-mono">v{latestVersionStr}</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Release Details Summary Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="p-3 bg-[#0d1117] rounded-xl border border-white/5 flex flex-col justify-between">
+                    <div>
+                      <div className="text-[11px] text-[#768390] mb-1">اسم حزمة التثبيت (.deb):</div>
+                      <div className="font-mono text-xs font-bold text-sky-400 truncate" title={releaseInfo?.assetName || `aldaffa-app-desktop_${latestVersionStr}_amd64.deb`}>
+                        {releaseInfo?.assetName || `aldaffa-app-desktop_${latestVersionStr}_amd64.deb`}
+                      </div>
+                    </div>
+                    <div className="mt-2 text-[10px] text-gray-500">
+                      {releaseInfo?.assetSize ? `الحجم: ${(releaseInfo.assetSize / (1024 * 1024)).toFixed(1)} ميغابايت` : 'الحجم: ~111.5 ميغابايت'}
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-[#0d1117] rounded-xl border border-white/5 flex flex-col justify-between">
+                    <div>
+                      <div className="text-[11px] text-[#768390] mb-1">تاريخ النشر والحالة:</div>
+                      <div className="text-xs font-bold text-[#e6edf3]">
+                        {releaseInfo?.releaseDate ? new Date(releaseInfo.releaseDate).toLocaleDateString('ar-LY', { dateStyle: 'long' }) : 'أحدث إصدار مستقر'}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+                      {releaseInfo?.isNewer ? (
+                        <span className="text-amber-400 font-bold flex items-center gap-1">
+                          <Sparkles className="w-3 h-3" /> يتوفر إصدار أحدث للترقية
+                        </span>
+                      ) : (
+                        <span className="text-emerald-400 font-bold flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> مثبت لديك آخر إصدار متوفر
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-[#0d1117] rounded-xl border border-white/5 flex flex-col justify-between">
+                    <div className="text-[11px] text-[#768390] mb-1.5">الروابط والتحميل المباشر:</div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={handleOpenDirectDownload}
+                        className="flex-1 py-1.5 px-2 bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/30 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                        title="تنزيل حزمة .deb مباشرة عبر المتصفح"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>تحميل الحزمة</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleOpenReleases}
+                        className="py-1.5 px-2 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        title="فتح صفحة الإصدار والمستودع على GitHub"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>GitHub</span>
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCopyDownloadUrl}
+                      className="mt-2 text-[11px] text-[#768390] hover:text-[#e6edf3] flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      {copiedUrl ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedUrl ? 'تم نسخ الرابط المباشر!' : 'نسخ رابط التحميل المباشر'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Debian Linux Installation Commands Terminal */}
+                <div className="bg-[#0b0e14] border border-white/10 rounded-xl overflow-hidden shadow-inner">
+                  {/* Terminal Header */}
+                  <div className="flex flex-wrap items-center justify-between px-4 py-2.5 bg-[#12161f] border-b border-white/10 gap-2">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block" />
+                      </div>
+                      <span className="font-mono text-xs text-gray-400 font-bold flex items-center gap-1.5">
+                        <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+                        أوامر الطرفية لنظام لينكس ديبيان (Terminal Commands)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {/* Tool selector buttons */}
+                      <div className="flex items-center bg-[#0d1117] p-0.5 rounded-lg border border-white/10 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => setCommandTool('wget')}
+                          className={`px-2.5 py-1 rounded-md font-mono transition-all cursor-pointer ${
+                            commandTool === 'wget' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          wget
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCommandTool('curl')}
+                          className={`px-2.5 py-1 rounded-md font-mono transition-all cursor-pointer ${
+                            commandTool === 'curl' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          curl
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCommandTool('oneliner')}
+                          className={`px-2.5 py-1 rounded-md font-mono transition-all cursor-pointer ${
+                            commandTool === 'oneliner' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          سطر واحد
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleCopyCommands}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm ${
+                          copiedBash
+                            ? 'bg-emerald-500 text-slate-950'
+                            : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+                        }`}
+                        title="نسخ الأوامر كاملة إلى الحافظة"
+                      >
+                        {copiedBash ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedBash ? 'تم نسخ الأوامر!' : 'نسخ الأوامر'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Terminal Code Display */}
+                  <div className="p-4 overflow-x-auto text-left" dir="ltr">
+                    <pre className="font-mono text-xs leading-relaxed text-emerald-400 whitespace-pre-wrap select-all">
+                      {getLinuxCommands()}
+                    </pre>
+                  </div>
+
+                  {/* Terminal Footer Instructions */}
+                  <div className="px-4 py-2 bg-[#12161f]/60 border-t border-white/5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#768390]">
+                    <div className="flex items-center gap-2">
+                      <Info className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span>افتح الطرفية (Terminal) واضغط <strong>Ctrl + Shift + V</strong> للصق الأوامر ثم اضغط <strong>Enter</strong>.</span>
+                    </div>
+                    <div className="text-gray-500">
+                      متوافق تماماً مع: Debian, Kali Linux, Ubuntu, Linux Mint, Pop!_OS
+                    </div>
+                  </div>
+                </div>
+
+                {/* Release Notes Changelog (if available) */}
+                {releaseInfo?.releaseNotes && (
+                  <div className="p-3 bg-[#0d1117] rounded-xl border border-white/5 text-xs">
+                    <div className="font-bold text-[#adbac7] mb-1.5 flex items-center gap-1.5">
+                      <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                      <span>ملاحظات التحديث الرسمي (v{latestVersionStr}):</span>
+                    </div>
+                    <div className="text-[11px] text-gray-400 whitespace-pre-line leading-relaxed max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                      {releaseInfo.releaseNotes}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Old Packages & Storage Cleanup Card */}
