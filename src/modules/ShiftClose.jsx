@@ -191,6 +191,14 @@ const ShiftCloseModule = () => {
 
       // Expenses, Losses, Gifts, Capital, Returns
       const totalWithdrawals = (withdrawals || []).reduce((sum, w) => sum + safeParseFloat(w.amount, 0), 0);
+      
+      // Isolation: Only cash withdrawals from the physical drawer reduce the daily shift drawer balance!
+      // Withdrawals from the general safe/capital (source === 'safe') or capital assets do not penalize the cashier drawer.
+      const drawerWithdrawals = (withdrawals || []).filter((w) => (w.source === 'drawer' || !w.source) && w.category !== 'capital_asset');
+      const totalDrawerWithdrawals = drawerWithdrawals.reduce((sum, w) => sum + safeParseFloat(w.amount, 0), 0);
+      const safeWithdrawals = (withdrawals || []).filter((w) => w.source === 'safe' || w.category === 'capital_asset');
+      const totalSafeWithdrawals = safeWithdrawals.reduce((sum, w) => sum + safeParseFloat(w.amount, 0), 0);
+
       const totalCapital = (capitalInjections || []).reduce((sum, c) => sum + safeParseFloat(c.amount, 0), 0);
       const totalLosses = (losses || []).reduce((sum, l) => sum + safeParseFloat(l.cost_value, 0), 0);
       const totalLossesQty = (losses || []).reduce((sum, l) => sum + safeParseFloat(l.qty, 0), 0);
@@ -199,8 +207,8 @@ const ShiftCloseModule = () => {
       const totalCashReturns = totalReturns;
 
       // Cash Drawer Calculation Formula:
-      // Expected Cash in Drawer = Cash Sales + Cash Capital Injected - Cash Withdrawals - Cash Purchases - Cash Returns
-      const expectedCashBalance = totalCashSales + totalCapital - totalWithdrawals - totalCashPurchases - totalCashReturns;
+      // Expected Cash in Drawer = Cash Sales + Cash Capital Injected - Drawer Cash Withdrawals - Cash Purchases - Cash Returns
+      const expectedCashBalance = totalCashSales + totalCapital - totalDrawerWithdrawals - totalCashPurchases - totalCashReturns;
       const actualCashValue = safeParseFloat(actualCash, 0);
       const variance = actualCashValue - expectedCashBalance;
 
@@ -231,6 +239,8 @@ const ShiftCloseModule = () => {
         },
         withdrawals: {
           total: totalWithdrawals,
+          drawerTotal: totalDrawerWithdrawals,
+          safeTotal: totalSafeWithdrawals,
           count: (withdrawals || []).length,
           items: withdrawals || []
         },

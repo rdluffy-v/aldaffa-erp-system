@@ -139,7 +139,13 @@ function initDatabase() {
       date TEXT NOT NULL,
       amount REAL NOT NULL,
       recipient TEXT,
-      reason TEXT
+      reason TEXT,
+      category TEXT DEFAULT 'general',
+      source TEXT DEFAULT 'drawer',
+      employee_name TEXT,
+      asset_name TEXT,
+      notes TEXT,
+      is_demo INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS capital_injections (
@@ -277,6 +283,7 @@ function initDatabase() {
     "ALTER TABLE sale_items ADD COLUMN is_demo INTEGER DEFAULT 0;",
     "ALTER TABLE sale_items ADD COLUMN unit_cost REAL DEFAULT 0;",
     "ALTER TABLE sale_items ADD COLUMN portion_ml REAL;",
+    "ALTER TABLE sale_items ADD COLUMN blend_details TEXT;",
     "ALTER TABLE purchases ADD COLUMN invoice_ref TEXT;",
     "ALTER TABLE purchases ADD COLUMN payment_type TEXT DEFAULT 'cash';",
     "ALTER TABLE purchases ADD COLUMN notes TEXT;",
@@ -286,6 +293,11 @@ function initDatabase() {
     "ALTER TABLE debt_history ADD COLUMN invoice_id INTEGER;",
     "ALTER TABLE categories ADD COLUMN is_demo INTEGER DEFAULT 0;",
     "ALTER TABLE withdrawals ADD COLUMN is_demo INTEGER DEFAULT 0;",
+    "ALTER TABLE withdrawals ADD COLUMN category TEXT DEFAULT 'general';",
+    "ALTER TABLE withdrawals ADD COLUMN source TEXT DEFAULT 'drawer';",
+    "ALTER TABLE withdrawals ADD COLUMN employee_name TEXT;",
+    "ALTER TABLE withdrawals ADD COLUMN asset_name TEXT;",
+    "ALTER TABLE withdrawals ADD COLUMN notes TEXT;",
     "ALTER TABLE capital_injections ADD COLUMN is_demo INTEGER DEFAULT 0;",
     "ALTER TABLE gifts ADD COLUMN is_demo INTEGER DEFAULT 0;",
     "ALTER TABLE losses ADD COLUMN is_demo INTEGER DEFAULT 0;",

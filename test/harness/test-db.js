@@ -63,6 +63,7 @@ export function createTestDb() {
       final_price REAL NOT NULL,
       unit_cost REAL DEFAULT 0,
       portion_ml REAL,
+      blend_details TEXT,
       is_demo INTEGER DEFAULT 0,
       FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
     );
@@ -83,7 +84,13 @@ export function createTestDb() {
       date TEXT NOT NULL,
       amount REAL NOT NULL,
       recipient TEXT,
-      reason TEXT
+      reason TEXT,
+      category TEXT DEFAULT 'general',
+      source TEXT DEFAULT 'drawer',
+      employee_name TEXT,
+      asset_name TEXT,
+      notes TEXT,
+      is_demo INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS capital_injections (

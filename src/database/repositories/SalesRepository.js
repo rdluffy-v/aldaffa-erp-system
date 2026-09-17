@@ -39,6 +39,10 @@ export class SalesRepository extends BaseRepository {
 
     // 2. Insert sale items linked with sale_id
     for (const item of items) {
+      const blendDetailsStr = item.blend_details
+        ? (typeof item.blend_details === 'string' ? item.blend_details : JSON.stringify(item.blend_details))
+        : null;
+
       const itemToInsert = {
         sale_id: saleId,
         product_id: String(item.product_id),
@@ -48,6 +52,7 @@ export class SalesRepository extends BaseRepository {
         final_price: safeParseFloat(item.final_price, 0),
         unit_cost: safeParseFloat(item.unit_cost, 0),
         portion_ml: item.portion_ml || null,
+        blend_details: blendDetailsStr,
         is_demo: isDemo
       };
 
@@ -59,14 +64,51 @@ export class SalesRepository extends BaseRepository {
       });
 
       // 3. Deduct stock from inventory
-      const qtyToDeduct = item.portion_ml
-        ? (item.cart_qty * item.portion_ml / (item.capacity || 1))
-        : item.cart_qty;
+      let blend = null;
+      if (item.blend_details) {
+        try {
+          blend = typeof item.blend_details === 'string' ? JSON.parse(item.blend_details) : item.blend_details;
+        } catch (e) {}
+      }
 
-      queries.push({
-        sql: 'UPDATE inventory SET qty = qty - ? WHERE id = ?',
-        params: [qtyToDeduct, item.product_id]
-      });
+      if (blend && blend.is_custom_blend) {
+        const cartQty = safeParseFloat(item.cart_qty, 1);
+        if (blend.oil && blend.oil.id) {
+          const oilMl = safeParseFloat(blend.oil.ml, 0) * cartQty;
+          queries.push({
+            sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ? OR CAST(id AS TEXT) = ?',
+            params: [oilMl, blend.oil.id, String(blend.oil.id)]
+          });
+        }
+        if (blend.alcohol && blend.alcohol.id) {
+          const alcMl = safeParseFloat(blend.alcohol.ml, 0) * cartQty;
+          queries.push({
+            sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ? OR CAST(id AS TEXT) = ?',
+            params: [alcMl, blend.alcohol.id, String(blend.alcohol.id)]
+          });
+        }
+        if (blend.bottle && blend.bottle.id) {
+          queries.push({
+            sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ? OR CAST(id AS TEXT) = ?',
+            params: [cartQty, blend.bottle.id, String(blend.bottle.id)]
+          });
+        }
+        if (blend.packaging && blend.packaging.id) {
+          queries.push({
+            sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ? OR CAST(id AS TEXT) = ?',
+            params: [cartQty, blend.packaging.id, String(blend.packaging.id)]
+          });
+        }
+      } else {
+        const qtyToDeduct = item.portion_ml
+          ? (item.cart_qty * item.portion_ml / (item.capacity || 1))
+          : item.cart_qty;
+
+        queries.push({
+          sql: 'UPDATE inventory SET qty = qty - ? WHERE id = ?',
+          params: [qtyToDeduct, item.product_id]
+        });
+      }
     }
 
     if (queries.length > 0) {
@@ -92,14 +134,51 @@ export class SalesRepository extends BaseRepository {
 
     // 2. Restore stock for each item
     for (const item of (items || [])) {
-      const qtyToRestore = item.portion_ml
-        ? (item.cart_qty * item.portion_ml / (item.capacity || 1))
-        : item.cart_qty;
+      let blend = null;
+      if (item.blend_details) {
+        try {
+          blend = typeof item.blend_details === 'string' ? JSON.parse(item.blend_details) : item.blend_details;
+        } catch (e) {}
+      }
 
-      queries.push({
-        sql: 'UPDATE inventory SET qty = qty + ? WHERE id = ?',
-        params: [qtyToRestore, item.product_id]
-      });
+      if (blend && blend.is_custom_blend) {
+        const cartQty = safeParseFloat(item.cart_qty, 1);
+        if (blend.oil && blend.oil.id) {
+          const oilMl = safeParseFloat(blend.oil.ml, 0) * cartQty;
+          queries.push({
+            sql: 'UPDATE inventory SET qty = qty + ? WHERE id = ? OR CAST(id AS TEXT) = ?',
+            params: [oilMl, blend.oil.id, String(blend.oil.id)]
+          });
+        }
+        if (blend.alcohol && blend.alcohol.id) {
+          const alcMl = safeParseFloat(blend.alcohol.ml, 0) * cartQty;
+          queries.push({
+            sql: 'UPDATE inventory SET qty = qty + ? WHERE id = ? OR CAST(id AS TEXT) = ?',
+            params: [alcMl, blend.alcohol.id, String(blend.alcohol.id)]
+          });
+        }
+        if (blend.bottle && blend.bottle.id) {
+          queries.push({
+            sql: 'UPDATE inventory SET qty = qty + ? WHERE id = ? OR CAST(id AS TEXT) = ?',
+            params: [cartQty, blend.bottle.id, String(blend.bottle.id)]
+          });
+        }
+        if (blend.packaging && blend.packaging.id) {
+          queries.push({
+            sql: 'UPDATE inventory SET qty = qty + ? WHERE id = ? OR CAST(id AS TEXT) = ?',
+            params: [cartQty, blend.packaging.id, String(blend.packaging.id)]
+          });
+        }
+      } else {
+        const qtyToRestore = item.portion_ml
+          ? (item.cart_qty * item.portion_ml / (item.capacity || 1))
+          : item.cart_qty;
+
+        queries.push({
+          sql: 'UPDATE inventory SET qty = qty + ? WHERE id = ?',
+          params: [qtyToRestore, item.product_id]
+        });
+      }
     }
 
     // 3. Delete sale items

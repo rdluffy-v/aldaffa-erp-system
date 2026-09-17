@@ -197,10 +197,19 @@ const AnalyticsModule = () => {
     const totalProfit = salesList.reduce((acc, s) => acc + safeParseFloat(s.profit), 0);
     const totalPurchases = purchasesList.reduce((acc, p) => acc + safeParseFloat(p.total), 0);
     const totalWithdrawals = withdrawalsList.reduce((acc, w) => acc + safeParseFloat(w.amount), 0);
+    const operatingExpenses = withdrawalsList
+      .filter((w) => w.category !== 'capital_asset')
+      .reduce((acc, w) => acc + safeParseFloat(w.amount), 0);
+    const salariesTotal = withdrawalsList
+      .filter((w) => w.category === 'salary')
+      .reduce((acc, w) => acc + safeParseFloat(w.amount), 0);
+    const capitalAssetsTotal = withdrawalsList
+      .filter((w) => w.category === 'capital_asset')
+      .reduce((acc, w) => acc + safeParseFloat(w.amount), 0);
     const totalLosses = lossesList.reduce((acc, l) => acc + safeParseFloat(l.cost_value), 0);
     const totalCapital = capitalList.reduce((acc, c) => acc + safeParseFloat(c.amount), 0);
 
-    const netProfit = totalProfit - totalWithdrawals - totalLosses;
+    const netProfit = totalProfit - operatingExpenses - totalLosses;
     const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0';
     const avgOrderValue = salesList.length > 0 ? (totalRevenue / salesList.length).toFixed(2) : '0';
 
@@ -210,6 +219,9 @@ const AnalyticsModule = () => {
       netProfit,
       totalPurchases,
       totalWithdrawals,
+      operatingExpenses,
+      salariesTotal,
+      capitalAssetsTotal,
       totalLosses,
       totalCapital,
       profitMargin,
@@ -322,6 +334,9 @@ const AnalyticsModule = () => {
         ['متوسط قيمة الفاتورة', metrics.avgOrderValue, currencySymbol],
         ['إجمالي المشتريات', metrics.totalPurchases.toFixed(2), currencySymbol],
         ['إجمالي المصروفات والسحوبات', metrics.totalWithdrawals.toFixed(2), currencySymbol],
+        ['المصروفات التشغيلية', metrics.operatingExpenses.toFixed(2), currencySymbol],
+        ['المرتبات والأجور', metrics.salariesTotal.toFixed(2), currencySymbol],
+        ['الأصول الرأسمالية والآلات (CapEx)', metrics.capitalAssetsTotal.toFixed(2), currencySymbol],
         ['قيمة التوالف والضياع', metrics.totalLosses.toFixed(2), currencySymbol],
         ['رأس المال وضخ التمويل', metrics.totalCapital.toFixed(2), currencySymbol],
         [''],
@@ -591,7 +606,9 @@ const AnalyticsModule = () => {
             <h3 className="text-xl font-black text-rose-400 mt-1 tabular-nums">
               {formatCurrency(metrics.totalWithdrawals, currencySymbol)}
             </h3>
-            <p className="text-[10px] text-gray-500 mt-0.5">نفقات تشغيلية</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              تشغيلي: {formatCurrency(metrics.operatingExpenses, currencySymbol)} • أصول: {formatCurrency(metrics.capitalAssetsTotal, currencySymbol)}
+            </p>
           </div>
           <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center font-bold">
             <TrendingDown className="w-5 h-5" />

@@ -21,8 +21,9 @@ import { useAuthStore } from '../stores/useAuthStore.js';
 import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { SalesRepository } from '../database/repositories/SalesRepository.js';
 import { DebtorsRepository } from '../database/repositories/DebtorsRepository.js';
-import { formatCurrency, generateId } from '../utils/helpers.js';
+import { formatCurrency, generateId, safeParseFloat } from '../utils/helpers.js';
 import { getIpcRenderer, isElectronRuntime } from '../utils/electronBridge.js';
+import { FlaskConical, Sparkles, Package, Droplets, X } from 'lucide-react';
 import PortionModal from '../components/PortionModal.jsx';
 import DateTimePicker from '../components/DateTimePicker.jsx';
 import ConfirmModal from '../components/shared/ConfirmModal.jsx';
@@ -82,6 +83,130 @@ const POSModule = () => {
   const [barcodeBuffer, setBarcodeBuffer] = useState('');
   const [barcodeTimeout, setBarcodeTimeout] = useState(null);
   const [showClearCartConfirm, setShowClearCartConfirm] = useState(false);
+
+  // Quick Blending Engine (F4)
+  const [showBlendModal, setShowBlendModal] = useState(false);
+  const [blendOilId, setBlendOilId] = useState('');
+  const [blendCapacity, setBlendCapacity] = useState(50);
+  const [blendOilMl, setBlendOilMl] = useState(15);
+  const [blendBottleId, setBlendBottleId] = useState('');
+  const [blendBottleCost, setBlendBottleCost] = useState(5);
+  const [blendAlcoholId, setBlendAlcoholId] = useState('');
+  const [blendIncludeBox, setBlendIncludeBox] = useState(false);
+  const [blendBoxId, setBlendBoxId] = useState('');
+  const [blendBoxCost, setBlendBoxCost] = useState(3);
+  const [blendPrice, setBlendPrice] = useState('');
+  const [blendCustomName, setBlendCustomName] = useState('');
+
+  // Raw materials categorization for quick blending
+  const oilProducts = useMemo(() => {
+    return products.filter((p) => {
+      const cat = (p.category || '').toLowerCase();
+      const name = (p.name || '').toLowerCase();
+      const unit = (p.unit || '').toLowerCase();
+      return (
+        cat.includes('زيت') ||
+        cat.includes('خام') ||
+        cat.includes('عطر') ||
+        name.includes('زيت') ||
+        name.includes('مسك') ||
+        name.includes('عود') ||
+        name.includes('عنبر') ||
+        unit === 'ml' ||
+        unit === 'تولة'
+      );
+    });
+  }, [products]);
+
+  const bottleProducts = useMemo(() => {
+    return products.filter((p) => {
+      const cat = (p.category || '').toLowerCase();
+      const name = (p.name || '').toLowerCase();
+      return (
+        cat.includes('زجاج') ||
+        name.includes('زجاج') ||
+        name.includes('قارورة') ||
+        name.includes('غرشة') ||
+        p.unit === 'bottle'
+      );
+    });
+  }, [products]);
+
+  const alcoholProducts = useMemo(() => {
+    return products.filter((p) => {
+      const cat = (p.category || '').toLowerCase();
+      const name = (p.name || '').toLowerCase();
+      return (
+        cat.includes('كحول') ||
+        name.includes('كحول') ||
+        name.includes('مذيب') ||
+        name.includes('مثبت')
+      );
+    });
+  }, [products]);
+
+  const boxProducts = useMemo(() => {
+    return products.filter((p) => {
+      const cat = (p.category || '').toLowerCase();
+      const name = (p.name || '').toLowerCase();
+      return (
+        cat.includes('علب') ||
+        cat.includes('تغليف') ||
+        name.includes('علبة') ||
+        name.includes('كرتون') ||
+        name.includes('تغليف')
+      );
+    });
+  }, [products]);
+
+  const selectedOil = useMemo(() => {
+    return products.find((p) => String(p.id) === String(blendOilId));
+  }, [products, blendOilId]);
+
+  const oilCostPerMl = useMemo(() => {
+    if (!selectedOil) return 0.8;
+    const cost = safeParseFloat(selectedOil.cost, 0);
+    const cap = safeParseFloat(selectedOil.capacity, 0);
+    if (selectedOil.unit === 'ml') return cost;
+    if (cap > 0) return cost / cap;
+    return cost > 0 ? cost / 50 : 0.8;
+  }, [selectedOil]);
+
+  const selectedAlcohol = useMemo(() => {
+    return products.find((p) => String(p.id) === String(blendAlcoholId)) || alcoholProducts[0];
+  }, [products, blendAlcoholId, alcoholProducts]);
+
+  const alcoholCostPerMl = useMemo(() => {
+    if (!selectedAlcohol) return 0.05;
+    const cost = safeParseFloat(selectedAlcohol.cost, 0);
+    const cap = safeParseFloat(selectedAlcohol.capacity, 0);
+    if (cap > 0) return cost / cap;
+    return 0.05;
+  }, [selectedAlcohol]);
+
+  const alcoholMl = Math.max(0, blendCapacity - blendOilMl);
+
+  const calculatedBlendCost = useMemo(() => {
+    const oilCost = blendOilMl * oilCostPerMl;
+    const alcCost = alcoholMl * alcoholCostPerMl;
+    const bCost = safeParseFloat(blendBottleCost, 0);
+    const pCost = blendIncludeBox ? safeParseFloat(blendBoxCost, 0) : 0;
+    return oilCost + alcCost + bCost + pCost;
+  }, [blendOilMl, oilCostPerMl, alcoholMl, alcoholCostPerMl, blendBottleCost, blendIncludeBox, blendBoxCost]);
+
+  const defaultBlendName = useMemo(() => {
+    return selectedOil
+      ? `خلطة ${selectedOil.name} (${blendCapacity}ml)`
+      : `خلطة عطر مخصصة (${blendCapacity}ml)`;
+  }, [selectedOil, blendCapacity]);
+
+  // Sync auto-suggested price when cost updates
+  useEffect(() => {
+    if (calculatedBlendCost > 0) {
+      const suggested = Math.round(calculatedBlendCost * 1.8);
+      setBlendPrice((prev) => (!prev || prev === '0' ? String(suggested) : prev));
+    }
+  }, [calculatedBlendCost]);
 
   // Print or Export PDF Invoice for completed sale
   const handlePrintSalePdf = async (saleData) => {
@@ -153,6 +278,11 @@ const POSModule = () => {
         if (cartItems.length > 0) {
           handleCompleteSale();
         }
+      }
+      // F4: Quick Perfume Blending
+      if (e.key === 'F4') {
+        e.preventDefault();
+        setShowBlendModal(true);
       }
     };
 
@@ -236,6 +366,76 @@ const POSModule = () => {
     });
   }, [pricingMode, addItem, showError]);
 
+  // Add custom perfume blend to cart
+  const handleAddBlendToCart = () => {
+    if (!selectedOil) {
+      showError('يرجى اختيار الزيت العطري المراد تركيبه');
+      return;
+    }
+
+    if (blendOilMl <= 0) {
+      showError('يرجى تحديد كمية الزيت العطري بالملّ');
+      return;
+    }
+
+    if (selectedOil.qty < blendOilMl) {
+      showError(`كمية الزيت المطلوبة (${blendOilMl} مل) تفوق الرصيد المتوفر بالمخزون (${selectedOil.qty} مل)`);
+      return;
+    }
+
+    const price = safeParseFloat(blendPrice, 0);
+    if (price <= 0) {
+      showError('يرجى تحديد سعر بيع صحيح أكبر من الصفر');
+      return;
+    }
+
+    const finalName = (blendCustomName || '').trim() || defaultBlendName;
+    const selectedBottle = products.find((p) => String(p.id) === String(blendBottleId));
+    const selectedBox = products.find((p) => String(p.id) === String(blendBoxId));
+
+    const blendData = {
+      is_custom_blend: true,
+      bottle_capacity: blendCapacity,
+      oil: {
+        id: selectedOil.id,
+        name: selectedOil.name,
+        ml: blendOilMl,
+        cost_per_ml: oilCostPerMl
+      },
+      alcohol: {
+        id: selectedAlcohol?.id || null,
+        name: selectedAlcohol?.name || 'كحول إيثيلي نقي 96%',
+        ml: alcoholMl,
+        cost_per_ml: alcoholCostPerMl
+      },
+      bottle: {
+        id: selectedBottle?.id || null,
+        name: selectedBottle?.name || 'زجاجة عطر',
+        cost: safeParseFloat(blendBottleCost, 0)
+      },
+      packaging: blendIncludeBox ? {
+        id: selectedBox?.id || null,
+        name: selectedBox?.name || 'علبة وتغليف فاخر',
+        cost: safeParseFloat(blendBoxCost, 0)
+      } : null
+    };
+
+    addItem({
+      product_id: `custom_blend_${generateId()}`,
+      name: finalName,
+      cart_qty: 1,
+      unit: 'زجاجة',
+      final_price: price,
+      unit_cost: calculatedBlendCost,
+      portion_ml: blendCapacity,
+      blend_details: blendData
+    });
+
+    setShowBlendModal(false);
+    setBlendCustomName('');
+    showSuccess(`✅ تمت إضافة "${finalName}" إلى السلة بنجاح`);
+  };
+
   // Complete sale transaction
   const handleCompleteSale = async () => {
     if (cartItems.length === 0) {
@@ -285,7 +485,8 @@ const POSModule = () => {
         unit: item.unit,
         final_price: item.final_price,
         unit_cost: item.unit_cost,
-        portion_ml: item.portion_ml || null
+        portion_ml: item.portion_ml || null,
+        blend_details: item.blend_details || null
       }));
 
       // Create sale with transaction (includes inventory updates)
@@ -378,6 +579,14 @@ const POSModule = () => {
             autoFocus
           />
           <div className="flex gap-2">
+            <button
+              onClick={() => setShowBlendModal(true)}
+              className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-4 py-3 rounded-lg font-bold transition-all flex items-center gap-1.5 shadow-md hover:scale-105 cursor-pointer text-sm"
+              title="تركيب وتخليط عطر مخصص للزبون (F4)"
+            >
+              <FlaskConical className="w-4 h-4 text-amber-400" />
+              <span>خلطة عطر (F4)</span>
+            </button>
             <button
               onClick={() => setPricingMode('retail')}
               className={`px-6 py-3 rounded-lg font-bold transition-all ${
@@ -744,6 +953,266 @@ const POSModule = () => {
         onCancel={() => setShowClearCartConfirm(false)}
         onClose={() => setShowClearCartConfirm(false)}
       />
+
+      {/* Quick Perfume Blending Modal (F4) */}
+      {showBlendModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" dir="rtl">
+          <div className="glass-card p-6 w-full max-w-2xl border border-amber-500/40 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <FlaskConical className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-extrabold text-gold">تركيب خلطة عطر مخصصة للزبون (F4)</h2>
+                  <p className="text-[11px] text-gray-400">حساب فوري للتكلفة والربح وخصم المواد الخام تلقائياً عند الدفع</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBlendModal(false)}
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* 1. Bottle Capacity Selector */}
+              <div>
+                <label className="font-bold text-gray-300 block mb-1.5">
+                  1. سعة زجاجة العطر المراد تعبئتها:
+                </label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[5, 10, 20, 30, 40, 50, 100, 200].map((cap) => (
+                    <button
+                      key={cap}
+                      type="button"
+                      onClick={() => {
+                        setBlendCapacity(cap);
+                        setBlendOilMl(Math.round(cap * 0.3)); // Default 30% concentration
+                      }}
+                      className={`px-3 py-1.5 rounded-lg font-bold border transition-all cursor-pointer ${
+                        blendCapacity === cap
+                          ? 'bg-amber-500 text-slate-950 border-amber-400 font-extrabold shadow-sm'
+                          : 'bg-black/30 border-white/10 text-gray-300 hover:border-amber-400/40'
+                      }`}
+                    >
+                      {cap} مل
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    min="1"
+                    value={blendCapacity}
+                    onChange={(e) => {
+                      const cap = safeParseFloat(e.target.value, 50);
+                      setBlendCapacity(cap);
+                      setBlendOilMl(Math.round(cap * 0.3));
+                    }}
+                    className="bg-gray-800 text-white px-2 py-1 rounded-lg border border-white/10 text-center font-bold w-20"
+                    placeholder="سعة أخرى"
+                  />
+                </div>
+              </div>
+
+              {/* 2. Fragrance Oil Selector */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-gray-300 block mb-1">
+                    2. الزيت العطري الخام من المخزون: *
+                  </label>
+                  <select
+                    value={blendOilId}
+                    onChange={(e) => setBlendOilId(e.target.value)}
+                    className="w-full bg-gray-800 text-white px-3 py-2 rounded-lg border border-amber-500/30 focus:outline-none focus:border-amber-400"
+                  >
+                    <option value="">-- اختر الزيت العطري المتوفر --</option>
+                    {oilProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (المتوفر: {p.qty} {p.unit || 'مل'} - التكلفة: {formatCurrency(p.cost)}/{p.unit || 'مل'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. Oil Dosage (ml) & Percentage */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="font-bold text-gray-300">
+                      كمية الزيت: <span className="text-amber-400 font-extrabold">{blendOilMl} مل</span>
+                    </label>
+                    <span className="text-gray-400">
+                      نسبة التركيز: <strong className="text-amber-300">{Math.round((blendOilMl / (blendCapacity || 1)) * 100)}%</strong>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min="1"
+                      max={blendCapacity}
+                      value={blendOilMl}
+                      onChange={(e) => setBlendOilMl(safeParseFloat(e.target.value, 1))}
+                      className="flex-1 accent-amber-400 cursor-pointer"
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      max={blendCapacity}
+                      value={blendOilMl}
+                      onChange={(e) => setBlendOilMl(safeParseFloat(e.target.value, 1))}
+                      className="w-16 bg-gray-800 text-white px-2 py-1 rounded-lg border border-white/10 text-center font-bold"
+                    />
+                  </div>
+                  <div className="text-[10px] text-gray-400 mt-1 flex justify-between">
+                    <span>كحول مكمل: <strong className="text-blue-300">{alcoholMl} مل</strong></span>
+                    <span>تكلفة الزيت بالملّ: <strong className="text-emerald-400">{formatCurrency(oilCostPerMl)}/مل</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Bottle & Packaging Options */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-black/20 rounded-xl border border-white/5">
+                <div>
+                  <label className="font-bold text-gray-300 block mb-1">الزجاجة الفارغة:</label>
+                  <select
+                    value={blendBottleId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setBlendBottleId(id);
+                      const prod = products.find((p) => String(p.id) === String(id));
+                      if (prod) setBlendBottleCost(prod.cost || 0);
+                    }}
+                    className="w-full bg-gray-800 text-white px-3 py-1.5 rounded-lg border border-white/10"
+                  >
+                    <option value="">زجاجة افتراضية ({formatCurrency(blendBottleCost)})</option>
+                    {bottleProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (المتوفر: {p.qty} - التكلفة: {formatCurrency(p.cost)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-gray-300 flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={blendIncludeBox}
+                        onChange={(e) => setBlendIncludeBox(e.target.checked)}
+                        className="accent-amber-400"
+                      />
+                      <span>علبة كرتونية فاخرة وتغليف (+ التكلفة)</span>
+                    </label>
+                  </div>
+                  {blendIncludeBox ? (
+                    <select
+                      value={blendBoxId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setBlendBoxId(id);
+                        const prod = products.find((p) => String(p.id) === String(id));
+                        if (prod) setBlendBoxCost(prod.cost || 0);
+                      }}
+                      className="w-full bg-gray-800 text-white px-3 py-1.5 rounded-lg border border-amber-500/30"
+                    >
+                      <option value="">علبة قياسية فاخرة ({formatCurrency(blendBoxCost)})</option>
+                      {boxProducts.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} (المتوفر: {p.qty} - التكلفة: {formatCurrency(p.cost)})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-[11px] text-gray-500 block pt-1">بدون علبة كرتونية خارجية</span>
+                  )}
+                </div>
+              </div>
+
+              {/* 5. Live Cost & Pricing Breakdown */}
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-2">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+                  <div className="bg-black/30 p-2 rounded-lg">
+                    <span className="text-gray-400 text-[10px] block">تكلفة الزيت</span>
+                    <span className="font-bold text-emerald-400 text-xs">
+                      {formatCurrency(blendOilMl * oilCostPerMl)}
+                    </span>
+                  </div>
+                  <div className="bg-black/30 p-2 rounded-lg">
+                    <span className="text-gray-400 text-[10px] block">تكلفة الكحول</span>
+                    <span className="font-bold text-blue-400 text-xs">
+                      {formatCurrency(alcoholMl * alcoholCostPerMl)}
+                    </span>
+                  </div>
+                  <div className="bg-black/30 p-2 rounded-lg">
+                    <span className="text-gray-400 text-[10px] block">الزجاجة والتغليف</span>
+                    <span className="font-bold text-purple-400 text-xs">
+                      {formatCurrency(safeParseFloat(blendBottleCost, 0) + (blendIncludeBox ? safeParseFloat(blendBoxCost, 0) : 0))}
+                    </span>
+                  </div>
+                  <div className="bg-black/30 p-2 rounded-lg border border-amber-500/40">
+                    <span className="text-amber-300 text-[10px] block font-bold">إجمالي التكلفة</span>
+                    <span className="font-black text-amber-400 text-sm">
+                      {formatCurrency(calculatedBlendCost)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-white/10">
+                  <div>
+                    <label className="font-bold text-gray-200 block mb-1">سعر البيع للزبون (د.ل): *</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      value={blendPrice}
+                      onChange={(e) => setBlendPrice(e.target.value)}
+                      className="w-full bg-gray-800 text-white px-3 py-2 rounded-lg border border-gold/40 text-lg font-black text-gold focus:outline-none focus:border-gold"
+                      placeholder="0.00"
+                    />
+                    <div className="text-[11px] text-gray-400 mt-1 flex justify-between">
+                      <span>الربح الصافي: <strong className="text-emerald-400">{formatCurrency(Math.max(0, safeParseFloat(blendPrice, 0) - calculatedBlendCost))}</strong></span>
+                      <span>هامش الربح: <strong className="text-gold">{safeParseFloat(blendPrice, 0) > 0 ? Math.round(((safeParseFloat(blendPrice, 0) - calculatedBlendCost) / safeParseFloat(blendPrice, 0)) * 100) : 0}%</strong></span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-gray-200 block mb-1">اسم العطر أو بيان الفاتورة:</label>
+                    <input
+                      type="text"
+                      value={blendCustomName}
+                      onChange={(e) => setBlendCustomName(e.target.value)}
+                      placeholder={defaultBlendName}
+                      className="w-full bg-gray-800 text-white px-3 py-2 rounded-lg border border-white/10 text-xs"
+                    />
+                    <span className="text-[10px] text-gray-400 block mt-1">يظهر هذا الاسم في الفاتورة وسلة المبيعات</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 mt-5">
+              <button
+                type="button"
+                onClick={handleAddBlendToCart}
+                className="flex-1 btn-gold py-2.5 text-sm font-bold flex items-center justify-center gap-2 cursor-pointer shadow-lg"
+              >
+                <span>🧪 إضافة الخلطة إلى السلة</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowBlendModal(false)}
+                className="px-5 py-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white font-bold text-sm cursor-pointer transition-colors"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Post-Sale Invoice PDF Prompt Modal */}
       {completedSaleInfo && (
