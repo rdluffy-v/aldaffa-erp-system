@@ -1334,7 +1334,7 @@ const SettingsModule = () => {
     }
   };
 
-  const latestVersionStr = releaseInfo?.version || releaseInfo?.latestVersion || appVersion || '2.3.48';
+  const latestVersionStr = releaseInfo?.version || releaseInfo?.latestVersion || appVersion || '2.3.49';
   const rawDownloadUrl = releaseInfo?.downloadUrl || `https://github.com/rdluffy-v/aldaffa-erp-system/releases/download/v${latestVersionStr}/aldaffa-app-desktop_${latestVersionStr}_amd64.deb`;
   const rawReleasesUrl = releaseInfo?.htmlUrl || `https://github.com/rdluffy-v/aldaffa-erp-system/releases/tag/v${latestVersionStr}`;
 

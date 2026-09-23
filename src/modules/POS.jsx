@@ -27,6 +27,7 @@ import { FlaskConical, Sparkles, Package, Droplets, X } from 'lucide-react';
 import PortionModal from '../components/PortionModal.jsx';
 import DateTimePicker from '../components/DateTimePicker.jsx';
 import ConfirmModal from '../components/shared/ConfirmModal.jsx';
+import RecordTesterModal from '../components/RecordTesterModal.jsx';
 
 const salesRepo = new SalesRepository();
 const debtorsRepo = new DebtorsRepository();
@@ -86,6 +87,7 @@ const POSModule = () => {
 
   // Quick Blending Engine (F4)
   const [showBlendModal, setShowBlendModal] = useState(false);
+  const [showTesterModal, setShowTesterModal] = useState(false);
   const [blendOilId, setBlendOilId] = useState('');
   const [blendCapacity, setBlendCapacity] = useState(50);
   const [blendOilMl, setBlendOilMl] = useState(15);
@@ -283,6 +285,11 @@ const POSModule = () => {
       if (e.key === 'F4') {
         e.preventDefault();
         setShowBlendModal(true);
+      }
+      // F7: Quick Perfume Tester / Sample
+      if (e.key === 'F7') {
+        e.preventDefault();
+        setShowTesterModal(true);
       }
     };
 
@@ -586,6 +593,14 @@ const POSModule = () => {
             >
               <FlaskConical className="w-4 h-4 text-amber-400" />
               <span>خلطة عطر (F4)</span>
+            </button>
+            <button
+              onClick={() => setShowTesterModal(true)}
+              className="bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 px-4 py-3 rounded-lg font-bold transition-all flex items-center gap-1.5 shadow-md hover:scale-105 cursor-pointer text-sm"
+              title="صرف وتوثيق عينة تستر وترويج (F7)"
+            >
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              <span>تستر (F7)</span>
             </button>
             <button
               onClick={() => setPricingMode('retail')}
@@ -1253,6 +1268,18 @@ const POSModule = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Record Tester / Discovery Sample Modal (F7) */}
+      {showTesterModal && (
+        <RecordTesterModal
+          isOpen={showTesterModal}
+          onClose={() => setShowTesterModal(false)}
+          onSuccess={() => {
+            showSuccess('✅ تم تسجيل وصرف التستر وتحديث المخزون بنجاح');
+            loadProducts(true);
+          }}
+        />
       )}
     </div>
   );

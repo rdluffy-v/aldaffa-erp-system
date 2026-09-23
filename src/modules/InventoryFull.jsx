@@ -10,6 +10,7 @@ import useDebounce from '../hooks/useDebounce.js';
 import { getIpcRenderer } from '../utils/electronBridge.js';
 import usePagination from '../hooks/usePagination.js';
 import Modal from '../components/ui/Modal.jsx';
+import TestersManagementModal from '../components/TestersManagementModal.jsx';
 import { generateId, formatCurrency, safeParseFloat } from '../utils/helpers.js';
 
 const categoriesRepo = new CategoriesRepository();
@@ -137,6 +138,7 @@ const InventoryFullModule = () => {
 
   // Batch Price Update Modal
   const [showBatchModal, setShowBatchModal] = useState(false);
+  const [showTestersModal, setShowTestersModal] = useState(false);
   const [batchForm, setBatchForm] = useState({
     category: 'all',
     itemType: 'all',
@@ -785,6 +787,15 @@ const InventoryFullModule = () => {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setShowTestersModal(true)}
+            className="px-3 py-2 bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold rounded-lg hover:bg-purple-500/30 transition-all cursor-pointer flex items-center gap-1.5 text-xs sm:text-sm shadow-sm"
+            title="إدارة العينات والتيسترات ومتابعة الاستهلاك التسويقي"
+          >
+            <span>🧴</span>
+            <span>إدارة التيسترات والعينات</span>
+          </button>
           <button
             type="button"
             onClick={() => setShowBatchModal(true)}
@@ -2077,6 +2088,15 @@ const InventoryFullModule = () => {
             هذه العملية.
           </p>
         </Modal>
+      )}
+
+      {/* Testers & Sampling Management Modal */}
+      {showTestersModal && (
+        <TestersManagementModal
+          isOpen={showTestersModal}
+          onClose={() => setShowTestersModal(false)}
+          onRefreshInventory={() => loadProducts(true)}
+        />
       )}
     </div>
   );

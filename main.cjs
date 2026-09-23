@@ -41,7 +41,7 @@ const KNOWN_TABLES = [
   'withdrawals', 'capital_injections', 'gifts', 'notes', 'debtors',
   'debt_history', 'losses', 'purchases', 'archives', 'settings',
   'users', 'user_permissions', 'shift_reports', 'suppliers',
-  'maceration_batches', 'maceration_batch_ingredients'
+  'maceration_batches', 'maceration_batch_ingredients', 'perfume_testers'
 ];
 
 // Validate a table-name identifier against the allowlist before it is used
@@ -290,6 +290,28 @@ function initDatabase() {
       total_cost REAL NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS perfume_testers (
+      id TEXT PRIMARY KEY,
+      source_type TEXT CHECK(source_type IN ('ready_perfume', 'compounded_mix')) NOT NULL,
+      sample_volume_ml REAL NOT NULL,
+      total_cost REAL NOT NULL DEFAULT 0.0,
+      finished_product_id TEXT,
+      product_name TEXT,
+      fragrance_oil_id TEXT,
+      fragrance_oil_name TEXT,
+      oil_volume_ml REAL DEFAULT 0.0,
+      oil_cost_per_ml REAL DEFAULT 0.0,
+      alcohol_id TEXT,
+      alcohol_name TEXT,
+      alcohol_volume_ml REAL DEFAULT 0.0,
+      alcohol_cost_per_ml REAL DEFAULT 0.0,
+      reason TEXT DEFAULT 'عرض المحل والتجربة للزبائن',
+      dispensed_by TEXT NOT NULL,
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      is_demo INTEGER DEFAULT 0
+    );
   `;
 
   db.exec(schema);
@@ -422,6 +444,9 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_returns_sale ON returns(sale_id);
     CREATE INDEX IF NOT EXISTS idx_maceration_status ON maceration_batches(status);
     CREATE INDEX IF NOT EXISTS idx_maceration_ready_date ON maceration_batches(ready_date);
+    CREATE INDEX IF NOT EXISTS idx_tester_source ON perfume_testers(source_type);
+    CREATE INDEX IF NOT EXISTS idx_tester_date ON perfume_testers(created_at);
+    CREATE INDEX IF NOT EXISTS idx_tester_product ON perfume_testers(finished_product_id);
   `;
   db.exec(indexes);
 

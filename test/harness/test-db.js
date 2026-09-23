@@ -256,6 +256,28 @@ export function createTestDb() {
       total_cost REAL NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS perfume_testers (
+      id TEXT PRIMARY KEY,
+      source_type TEXT CHECK(source_type IN ('ready_perfume', 'compounded_mix')) NOT NULL,
+      sample_volume_ml REAL NOT NULL,
+      total_cost REAL NOT NULL DEFAULT 0.0,
+      finished_product_id TEXT,
+      product_name TEXT,
+      fragrance_oil_id TEXT,
+      fragrance_oil_name TEXT,
+      oil_volume_ml REAL DEFAULT 0.0,
+      oil_cost_per_ml REAL DEFAULT 0.0,
+      alcohol_id TEXT,
+      alcohol_name TEXT,
+      alcohol_volume_ml REAL DEFAULT 0.0,
+      alcohol_cost_per_ml REAL DEFAULT 0.0,
+      reason TEXT DEFAULT 'عرض المحل والتجربة للزبائن',
+      dispensed_by TEXT NOT NULL,
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      is_demo INTEGER DEFAULT 0
+    );
   `;
 
   db.exec(schema);

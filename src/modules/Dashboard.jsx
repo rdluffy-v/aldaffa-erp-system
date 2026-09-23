@@ -11,7 +11,8 @@ import {
   ArrowDownRight,
   Minus,
   Loader2,
-  Hourglass
+  Hourglass,
+  Sparkles
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -37,6 +38,7 @@ import { SalesRepository } from '../database/repositories/SalesRepository.js';
 import { DebtorsRepository } from '../database/repositories/DebtorsRepository.js';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
 import { MacerationRepository } from '../database/repositories/MacerationRepository.js';
+import { TestersRepository } from '../database/repositories/TestersRepository.js';
 import { formatCurrency, formatNumber } from '../utils/helpers.js';
 
 /* ============================================================================
@@ -75,6 +77,7 @@ const salesRepo = new SalesRepository();
 const debtorsRepo = new DebtorsRepository();
 const inventoryRepo = new InventoryRepository();
 const macerationRepo = new MacerationRepository();
+const testersRepo = new TestersRepository();
 
 /* ============================================================================
  * HELPERS
@@ -173,7 +176,8 @@ const fetchDashboardData = async (range) => {
     totalDebt,
     recentPage,
     rangeSales,
-    macerationMetrics
+    macerationMetrics,
+    testerMetrics
   ] = await Promise.all([
     salesRepo.getSalesSummary(start, end),
     salesRepo.getSalesSummary(prevStart, prevEnd),
@@ -184,7 +188,8 @@ const fetchDashboardData = async (range) => {
     debtorsRepo.getTotalDebt(),
     salesRepo.paginate(1, 10, {}, 'date DESC'),
     salesRepo.getSalesInRange(start, end),
-    macerationRepo.getMetrics().catch(() => ({ pendingApproval: 0, volumeLiters: 0, capitalTied: 0 }))
+    macerationRepo.getMetrics().catch(() => ({ pendingApproval: 0, volumeLiters: 0, capitalTied: 0 })),
+    testersRepo.getTesterAnalytics().catch(() => ({ total_spend: 0, month_spend: 0, total_volume_ml: 0, total_samples: 0 }))
   ]);
 
   // Coerce nullable aggregate rows into safe zero-filled summaries.
@@ -301,7 +306,8 @@ const fetchDashboardData = async (range) => {
     lowStockCount: lowStockItems.length,
     activeDebtorsCount: activeDebtors.length,
     totalDebt: totalDebt || 0,
-    macerationMetrics
+    macerationMetrics,
+    testerMetrics: testerMetrics || { total_spend: 0, month_spend: 0, total_volume_ml: 0, total_samples: 0 }
   };
 };
 
@@ -841,6 +847,28 @@ const Dashboard = () => {
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 يمكنك فحص نقاء العطر واعتماده فوراً من معمل التعتيق لتخريجه كعطر سائب أو تعبئته في زجاجات فاخرة للبيع.
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Tester Marketing Spend Notice */}
+      {data?.testerMetrics?.month_spend > 0 && (
+        <motion.div
+          variants={itemVariants}
+          className="p-4 rounded-2xl border border-purple-500/30 bg-gradient-to-r from-purple-500/15 via-purple-500/5 to-transparent flex items-center justify-between gap-3 shadow-lg shadow-purple-500/10"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                🧴 استهلاك العينات والتيسترات هذا الشهر: {formatCurrency(data.testerMetrics.month_spend)} ({data.testerMetrics.month_samples} عينة ترويجية - {data.testerMetrics.month_volume_ml} مل)
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                استهلاك ترويجي داخلي موثق ومخصوم ذرياً من المخزون مع حماية من العجز الجردي.
               </p>
             </div>
           </div>
