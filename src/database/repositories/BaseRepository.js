@@ -14,7 +14,7 @@ const ALLOWED_TABLES = new Set([
   'inventory', 'sales', 'sale_items', 'returns', 'withdrawals', 'capital_injections',
   'gifts', 'notes', 'debtors', 'debt_history', 'losses', 'purchases',
   'archives', 'settings', 'users', 'user_permissions', 'categories',
-  'shift_reports', 'suppliers'
+  'shift_reports', 'suppliers', 'maceration_batches', 'maceration_batch_ingredients'
 ]);
 
 export class BaseRepository {

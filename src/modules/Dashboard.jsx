@@ -10,7 +10,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Minus,
-  Loader2
+  Loader2,
+  Hourglass
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -35,6 +36,7 @@ import { useSettingsStore } from '../stores/useSettingsStore.js';
 import { SalesRepository } from '../database/repositories/SalesRepository.js';
 import { DebtorsRepository } from '../database/repositories/DebtorsRepository.js';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
+import { MacerationRepository } from '../database/repositories/MacerationRepository.js';
 import { formatCurrency, formatNumber } from '../utils/helpers.js';
 
 /* ============================================================================
@@ -72,6 +74,7 @@ const AUTO_REFRESH_INTERVAL = 30_000; // 30 seconds
 const salesRepo = new SalesRepository();
 const debtorsRepo = new DebtorsRepository();
 const inventoryRepo = new InventoryRepository();
+const macerationRepo = new MacerationRepository();
 
 /* ============================================================================
  * HELPERS
@@ -169,7 +172,8 @@ const fetchDashboardData = async (range) => {
     activeDebtors,
     totalDebt,
     recentPage,
-    rangeSales
+    rangeSales,
+    macerationMetrics
   ] = await Promise.all([
     salesRepo.getSalesSummary(start, end),
     salesRepo.getSalesSummary(prevStart, prevEnd),
@@ -179,7 +183,8 @@ const fetchDashboardData = async (range) => {
     debtorsRepo.getActiveDebtors(),
     debtorsRepo.getTotalDebt(),
     salesRepo.paginate(1, 10, {}, 'date DESC'),
-    salesRepo.getSalesInRange(start, end)
+    salesRepo.getSalesInRange(start, end),
+    macerationRepo.getMetrics().catch(() => ({ pendingApproval: 0, volumeLiters: 0, capitalTied: 0 }))
   ]);
 
   // Coerce nullable aggregate rows into safe zero-filled summaries.
@@ -295,7 +300,8 @@ const fetchDashboardData = async (range) => {
     recentSales: recentPage.items,
     lowStockCount: lowStockItems.length,
     activeDebtorsCount: activeDebtors.length,
-    totalDebt: totalDebt || 0
+    totalDebt: totalDebt || 0,
+    macerationMetrics
   };
 };
 
@@ -817,6 +823,28 @@ const Dashboard = () => {
           <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
           جارٍ تحديث البيانات...
         </div>
+      )}
+
+      {/* Maceration Maturation Alert Banner */}
+      {data?.macerationMetrics?.pendingApproval > 0 && (
+        <motion.div
+          variants={itemVariants}
+          className="p-4 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent flex items-center justify-between gap-3 shadow-lg shadow-amber-500/10"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+              <Hourglass className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                🔔 تنبيه معمل التعتيق: توجد ({data.macerationMetrics.pendingApproval}) خلطات عطرية أتمت فترة التعتيق وبانتظار الاعتماد المخبري!
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                يمكنك فحص نقاء العطر واعتماده فوراً من معمل التعتيق لتخريجه كعطر سائب أو تعبئته في زجاجات فاخرة للبيع.
+              </p>
+            </div>
+          </div>
+        </motion.div>
       )}
 
       {/* --------------------------- Summary cards (Organic Atelier Pebble Row) ----------------------- */}

@@ -32,6 +32,7 @@ export const PERMISSION_KEYS = {
   MODULE_GIFTS: 'module_gifts',
   MODULE_LOSSES: 'module_losses',
   MODULE_MIXLAB: 'module_mixlab',
+  MODULE_MACERATION: 'module_maceration',
   MODULE_DISCOUNTS: 'module_discounts',
   MODULE_CATEGORIES: 'module_categories',
   MODULE_NOTES: 'module_notes',

@@ -19,6 +19,7 @@ export const DEFAULT_MODULE_LABELS = {
   gifts: 'الهدايا',
   losses: 'الفاقد',
   mixlab: 'المختبر',
+  maceration: 'معمل التعتيق',
   discounts: 'الخصومات',
   categories: 'التصنيفات',
   notes: 'الملاحظات',

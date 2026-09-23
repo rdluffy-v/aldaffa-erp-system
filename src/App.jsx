@@ -40,7 +40,8 @@ import {
   FileText,
   QrCode,
   SettingsIcon,
-  BarChart3
+  BarChart3,
+  Hourglass
 } from 'lucide-react';
 
 // Layout & Modals
@@ -64,6 +65,7 @@ import CapitalInjectionsModule from './modules/CapitalInjections.jsx';
 import GiftsModule from './modules/Gifts.jsx';
 import LossesModule from './modules/Losses.jsx';
 import PerfumeMixLabModule from './modules/PerfumeMixLab.jsx';
+import MacerationLabModule from './modules/MacerationLab.jsx';
 import DiscountsModule from './modules/Discounts.jsx';
 import CategoriesModule from './modules/Categories.jsx';
 import NotesModule from './modules/Notes.jsx';
@@ -91,6 +93,7 @@ const MODULE_DEFINITIONS = [
   { id: 'gifts', defaultLabel: 'الهدايا', icon: Gift, component: GiftsModule },
   { id: 'losses', defaultLabel: 'الفاقد', icon: HeartCrack, component: LossesModule },
   { id: 'mixlab', defaultLabel: 'المختبر', icon: FlaskConical, component: PerfumeMixLabModule },
+  { id: 'maceration', defaultLabel: 'معمل التعتيق', icon: Hourglass, component: MacerationLabModule },
   { id: 'discounts', defaultLabel: 'الخصومات', icon: Tag, component: DiscountsModule },
   { id: 'categories', defaultLabel: 'التصنيفات', icon: Folder, component: CategoriesModule },
   { id: 'notes', defaultLabel: 'الملاحظات', icon: StickyNote, component: NotesModule },

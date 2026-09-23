@@ -222,6 +222,40 @@ export function createTestDb() {
       notes TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS maceration_batches (
+      id TEXT PRIMARY KEY,
+      batch_number TEXT UNIQUE NOT NULL,
+      blend_name TEXT NOT NULL,
+      start_date DATE NOT NULL,
+      maceration_days INTEGER NOT NULL,
+      ready_date DATE NOT NULL,
+      target_volume_ml REAL NOT NULL,
+      actual_volume_ml REAL,
+      total_batch_cost REAL NOT NULL DEFAULT 0.0,
+      unit_cost_per_ml REAL NOT NULL DEFAULT 0.0,
+      status TEXT CHECK(status IN ('aging', 'mature_pending_approval', 'ready_for_sale', 'bottled', 'discarded')) DEFAULT 'aging',
+      vessel_item_id TEXT,
+      vessel_cost REAL DEFAULT 0.0,
+      vessel_absorbed INTEGER DEFAULT 1,
+      category TEXT DEFAULT 'Signature Blend',
+      qa_notes TEXT,
+      notes TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS maceration_batch_ingredients (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL REFERENCES maceration_batches(id) ON DELETE CASCADE,
+      ingredient_type TEXT CHECK(ingredient_type IN ('oil', 'alcohol', 'fixative', 'other')) NOT NULL,
+      raw_material_id TEXT,
+      ingredient_name TEXT NOT NULL,
+      volume_ml REAL NOT NULL,
+      cost_per_ml REAL NOT NULL,
+      total_cost REAL NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
   `;
 
   db.exec(schema);

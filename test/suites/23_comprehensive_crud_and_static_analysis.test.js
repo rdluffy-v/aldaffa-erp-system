@@ -227,10 +227,10 @@ export async function run() {
     return db;
   };
 
-  await test('23.1 All 22 JSX Modules Have Valid Physical Import Targets', async () => {
+  await test('23.1 All 23 JSX Modules Have Valid Physical Import Targets', async () => {
     const modulesDir = path.join(process.cwd(), 'src', 'modules');
     const files = fs.readdirSync(modulesDir).filter(f => f.endsWith('.jsx'));
-    assert.strictEqual(files.length, 22, 'Must have exactly 22 modules');
+    assert.strictEqual(files.length, 23, 'Must have exactly 23 modules');
 
     for (const file of files) {
       const fullPath = path.join(modulesDir, file);

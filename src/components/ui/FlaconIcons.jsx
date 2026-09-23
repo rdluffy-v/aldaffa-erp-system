@@ -96,6 +96,7 @@ export const MODULE_FLACON_MAP = {
   gifts: FlaconAtomizer,
   losses: FlaconDropper,
   mixlab: FlaconCrystal,
+  maceration: FlaconDropper,
   discounts: FlaconClassic,
   categories: FlaconOudJar,
   notes: FlaconClassic,

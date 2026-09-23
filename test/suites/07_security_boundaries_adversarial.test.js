@@ -76,9 +76,9 @@ export async function run() {
   await test('7.3 Manager Role (Full Authority & Sole Manager Immunity)', async () => {
     const managerPerms = ROLE_PRESETS.manager.permissions;
 
-    // 1. Full 21 modules access
+    // 1. Full 22 modules access
     const moduleKeys = Object.keys(managerPerms).filter((k) => k.startsWith('module_'));
-    assert.strictEqual(moduleKeys.length, 21, 'Manager must have 21 modules mapped');
+    assert.strictEqual(moduleKeys.length, 22, 'Manager must have 22 modules mapped');
     moduleKeys.forEach((key) => {
       assert.strictEqual(managerPerms[key], true, `Manager must have permission ${key}`);
     });
