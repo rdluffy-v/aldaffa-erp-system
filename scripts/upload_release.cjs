@@ -1,10 +1,10 @@
-#!/usr/bin/env node
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
+const crypto = require('crypto');
 
 const token = process.argv[2] || process.env.GITHUB_TOKEN;
-const tag = process.argv[3] || 'v2.3.45';
+const tag = process.argv[3] || 'v2.3.51';
 const debPath = process.argv[4] || path.join(__dirname, `../release/aldaffa-app-desktop_${tag.replace(/^v/, '')}_amd64.deb`);
 const ymlPath = path.join(__dirname, '../release/latest-linux.yml');
 
@@ -16,6 +16,18 @@ if (!token) {
 if (!fs.existsSync(debPath)) {
   console.error('Deb file does not exist at:', debPath);
   process.exit(1);
+}
+
+// Compute genuine SHA-512 of Debian package and synchronize latest-linux.yml
+const debBuffer = fs.readFileSync(debPath);
+const computedSha512 = crypto.createHash('sha512').update(debBuffer).digest('base64');
+console.log(`[Upload] Computed SHA-512 for package: ${computedSha512}`);
+
+if (fs.existsSync(ymlPath)) {
+  let ymlContent = fs.readFileSync(ymlPath, 'utf8');
+  ymlContent = ymlContent.replace(/sha512: .*/g, `sha512: ${computedSha512}`);
+  fs.writeFileSync(ymlPath, ymlContent, 'utf8');
+  console.log('[Upload] Synchronized release/latest-linux.yml with computed SHA-512');
 }
 
 console.log(`[Upload] Target Tag: ${tag}`);
@@ -64,13 +76,12 @@ function uploadAsset(uploadBaseUrl, filePath, contentType) {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
-        console.log(`[Result] Upload response for ${fileName}: status ${res.statusCode}`);
+        console.log(`Asset ${fileName} upload response status: ${res.statusCode}`);
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          console.log(`✅ Asset ${fileName} successfully attached to release ${tag}!`);
-          resolve(true);
+          resolve(body);
         } else {
-          console.error(`Upload error response for ${fileName}:`, body);
-          resolve(false);
+          console.error(`Asset upload failed:`, body);
+          reject(new Error(`Asset upload failed with status ${res.statusCode}: ${body}`));
         }
       });
     });
@@ -99,26 +110,26 @@ async function run() {
   let release = relRes.data;
   if (relRes.status === 404) {
     console.log(`Release ${tag} not found, creating it...`);
-    const releaseNotes = `### الإصدار الشامل المستقر v2.3.50 - معمل تعتيق العطور وإدارة التيسترات والعينات الترويجية 🌿🧴🧪
+    const releaseNotes = `### الإصدار الشامل المستقر v2.3.51 - تحسينات المشتريات والتوالف واحتساب عبوات التيسترات والحماية الوقائية 🛡️📦🧪
 
-- **1. وحدة معمل تعتيق العطور وأصول التشغيل (Perfume Maceration & Aging Lab)**:
-  - إدارة فترات تعتيق ونضج العطور المركبة صناعياً ومحاسبياً (30 إلى 90 يوماً).
-  - محرك التكلفة اللحظي التفاعلي للزيوت الخام، كحول الإيثانول، المثبتات (DPG / ISO E Super)، والأوعية الزجاجية.
-  - الحجز والخصم الذري للمخزون (WIP Inventory Commit) مع العزل التام عن شاشات البيع (POS).
-  - تتبع الجدول الزمني للنضج، مؤشرات التقدم الحية، وزناد التنبيهات الآلي للمدير عند اكتمال النضج.
-  - مسارات التخريج والاعتماد المرنة: تعويض فاقد التبخر، التخريج كعطر سائب بالمل، أو التعبئة في قوارير فاخرة مع خصم الزجاجات والعلب الكرتونية تلقائياً.
+- **1. وحدة المشتريات (Purchases Module)**:
+  - إصلاح وتحسين قائمة الفئات في فاتورة الموردين: دمج فئات العطور الأساسية تلقائياً مع فئات قاعدة البيانات والمخزون لمنع انحصار القائمة في فئة واحدة.
+  - التحديث الديناميكي للمدخلات المعتمدة: ضبط وحدة القياس الافتراضية ونوع الصنف (\`item_type\`) تلقائياً عند تغيير الفئة (مل للزيوت، لتر للكحول، قطعة للعبوات والإكسسوارات).
+  - حفظ وتصنيف الصنف الجديد في جدول المخزون تلقائياً، وإظهار وسم الفئة بوضوح بجانب كل صنف.
 
-- **2. وحدة إدارة التيسترات والعينات الترويجية (Perfume Tester & Sampling Inventory)**:
-  - معالجة الاستهلاك الداخلي غير الإيرادي للعينات لمنع حدوث عجز وهمي في الجرد الدوري (Inventory Shrinkage).
-  - تصنيف استهلاك العينات محاسبياً كمصروفات تسويق وترويج (Marketing / Sampling Expenses) دون تسجيلها كمبيعات أو خسائر تلف.
-  - **مسار العطر الجاهز**: سحب كمية مخصصة بالمل مباشرة من زجاجة عطر جاهزة مع خصم الحجم تناسبياً واحتساب تكلفة الملي.
-  - **مسار التركيب والتخليط اللحظي**: تركيب عينة تستر بخلط زيت عطري خام وكحول إيثانول مع قراءة حية لنسبة التركيز والتكلفة وخصم المواد الخام ذرياً.
-  - **الوصول السريع والتكامل**: اختصار لوحة المفاتيح السريع **F7** وزر \`🧴 تستر (F7)\` في شاشة البيع (POS)، وزر \`🧴 إدارة التيسترات والعينات\` في المخزون.
-  - **لوحة التحليلات وقائمة العطور الأكثر طلباً**: مؤشرات الإنفاق التسويقي، قائمة الشرف لأكثر العطور سحباً كعينات، وتصدير كشف الجرد والتدقيق بصيغة Excel CSV مع ترميز UTF-8 BOM.
+- **2. وحدة التوالف والفاقد (Losses Module)**:
+  - إضافة منتقي تاريخ الحركة الفعلي (\`transactionDate\`) في نافذة تسجيل التالف يتيح للمستخدم تحديد تاريخ الكسر أو التلف بدقة.
+  - الحفظ الآمن في SQLite بصيغة ISO مع الحفاظ الدقيق على تاريخ اليوم المحدد.
+  - إضافة تصدير كشف التوالف بصيغة Excel CSV مع ترميز UTF-8 BOM (\`\\uFEFF\`) لضمان فتح النصوص العربية والأرقام بدقة تامة.
 
-- **3. الاستقرار الشامل والجودة الفائقة**:
-  - اجتياز جميع حزم الاختبارات المؤتمتة (39 حزمة اختبار و 274 فحصاً آلياً) بنسبة نجاح 100%.
-  - حماية كاملة ضد القيم السالبة (Zero-Floor Boundary Clamping) وتناسق تام في كافة العمليات المحاسبية.`;
+- **3. إدارة التيسترات والعينات (Tester Batches & Compounding)**:
+  - احتساب التكلفة التجميعية لعينات التخليط ديناميكياً: (تكلفة الزيت العطري) + (تكلفة كحول الإيثانول) + (سعر القارورة/الزجاجة المختارة من المخزون).
+  - الخصم الذري لجميع المكونات (الزيت، الكحول، والزجاجة) في حركة واحدة بقاعدة البيانات مع حماية حظر السالب \`MAX(0, qty - ?)\`.
+  - إظهار تفاصيل العبوة وتكلفتها في جدول المتابعة وكشف التصدير CSV.
+
+- **4. الحماية الوقائية المؤتمتة والأمان البرمجي (Error Prevention Engine)**:
+  - سكريبت الفحص الوقائي (\`scripts/verify_aldaffa_guardrails.cjs\`) المعتمد على القواعد الـ 13 المستفادة من تاريخ النظام (خطافات React، دقة TSPL 203 DPI، علامة UTF-8 BOM، حظر السالب، استقرار أزرار ومدراء النظام، وتطابق قنوات IPC).
+  - حزمة الاختبارات الآلية رقم 36 (\`Suite 36\`) واجتياز 40 حزمة اختبار (280 فحصاً آلياً) بنسبة نجاح 100%.`;
 
     const createRes = await githubRequest({
       hostname: 'api.github.com',

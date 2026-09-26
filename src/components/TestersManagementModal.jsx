@@ -326,6 +326,11 @@ export const TestersManagementModal = ({ isOpen, onClose, onRefreshInventory }) 
                               مخلوط مع: {log.alcohol_name} ({log.alcohol_volume_ml} مل)
                             </span>
                           )}
+                          {log.bottle_name && (
+                            <span className="text-[10px] text-emerald-400/90 block">
+                              العبوة: {log.bottle_name} ({log.bottle_qty || 1} قطعة — {formatCurrency(log.bottle_cost * (log.bottle_qty || 1))})
+                            </span>
+                          )}
                           {log.notes && (
                             <span className="text-[10px] text-amber-400/80 block mt-0.5">
                               ملاحظة: {log.notes}

@@ -22,7 +22,8 @@ import {
   FileText,
   DollarSign,
   TrendingDown,
-  Info
+  Info,
+  Download
 } from 'lucide-react';
 
 const inventoryRepo = new InventoryRepository();
@@ -37,6 +38,7 @@ const LossesModule = () => {
   const [selectedProduct, setSelectedProduct] = useState('');
   const [quantity, setQuantity] = useState('');
   const [reason, setReason] = useState('زجاجة مكسورة');
+  const [transactionDate, setTransactionDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [filterDays, setFilterDays] = useState(30);
   const [searchTerm, setSearchTerm] = useState('');
@@ -107,9 +109,12 @@ const LossesModule = () => {
     setSaving(true);
     try {
       const id = generateId();
+      const dateIso = transactionDate
+        ? new Date(transactionDate + 'T12:00:00.000Z').toISOString()
+        : new Date().toISOString();
       const lossData = {
         id,
-        date: new Date().toISOString(),
+        date: dateIso,
         item_name: product.name,
         qty: actualQty,
         unit: product.unit || 'قطعة',
@@ -123,6 +128,7 @@ const LossesModule = () => {
       setSelectedProduct('');
       setQuantity('');
       setReason('زجاجة مكسورة');
+      setTransactionDate(new Date().toISOString().split('T')[0]);
       setNotes('');
       setShowAddModal(false);
       await Promise.all([loadLosses(), loadProducts()]);
@@ -209,6 +215,48 @@ const LossesModule = () => {
   const totalCost = filteredLosses.reduce((sum, l) => sum + (safeParseFloat(l.cost_value, 0)), 0);
   const totalQty = filteredLosses.reduce((sum, l) => sum + (safeParseFloat(l.qty, 0)), 0);
 
+  const handleExportCSV = () => {
+    if (filteredLosses.length === 0) {
+      showWarning('لا توجد سجلات توالف لتصديرها');
+      return;
+    }
+    const headers = [
+      'المعرف',
+      'تاريخ الحركة',
+      'اسم الصنف المتضرر',
+      'الكمية التالفة',
+      'الوحدة',
+      'قيمة التكلفة (د.ل)',
+      'سبب التلف والتفاصيل'
+    ];
+    const escapeCell = (val) => {
+      const str = String(val ?? '');
+      return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const rows = filteredLosses.map((l) => [
+      l.id,
+      l.date ? new Date(l.date).toLocaleDateString('ar-LY') : '—',
+      l.item_name,
+      l.qty,
+      l.unit || 'قطعة',
+      safeParseFloat(l.cost_value).toFixed(2),
+      l.reason || ''
+    ].map(escapeCell).join(','));
+
+    // UTF-8 BOM byte marker
+    const csvContent = '\uFEFF' + [headers.map(escapeCell).join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `aldaffa_losses_report_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showSuccess('✅ تم تصدير كشف التوالف بنجاح');
+  };
+
   return (
     <div className="h-full flex flex-col gap-4">
       {/* Header Bar */}
@@ -236,6 +284,16 @@ const LossesModule = () => {
             <option value={90}>آخر 90 يوم</option>
             <option value={365}>السنة كاملة</option>
           </select>
+
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="btn-atelier-secondary py-1.5 px-3 text-xs flex items-center gap-1.5 font-bold cursor-pointer"
+            title="تصدير كشف التوالف إلى ملف Excel CSV"
+          >
+            <Download className="w-4 h-4 text-emerald-500" />
+            <span>تصدير CSV</span>
+          </button>
 
           <button
             onClick={() => setShowAddModal(true)}
@@ -396,19 +454,17 @@ const LossesModule = () => {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1">
-                    الكمية التالفة *:
+                  <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-amber-500" />
+                    <span>تاريخ تسجيل الحركة *:</span>
                   </label>
                   <input
-                    type="number"
-                    step="any"
-                    min="0.1"
-                    placeholder="مثال: 1"
-                    value={quantity}
-                    onChange={(e) => setQuantity(e.target.value)}
-                    className="input-atelier w-full text-xs font-bold text-center"
+                    type="date"
+                    value={transactionDate}
+                    onChange={(e) => setTransactionDate(e.target.value)}
+                    className="input-atelier w-full text-xs font-bold"
                   />
                 </div>
 
@@ -428,6 +484,21 @@ const LossesModule = () => {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#5C524F] dark:text-slate-300 mb-1">
+                  الكمية التالفة *:
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0.1"
+                  placeholder="مثال: 1"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  className="input-atelier w-full text-xs font-bold text-center font-mono"
+                />
               </div>
 
               <div>

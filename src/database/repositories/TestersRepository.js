@@ -126,6 +126,12 @@ export class TestersRepository extends BaseRepository {
     alcohol_volume_ml,
     alcoholCostPerMl,
     alcohol_cost_per_ml,
+    bottleId,
+    bottle_id,
+    bottleQty,
+    bottle_qty,
+    bottleCost,
+    bottle_cost,
     reason = 'تركيب عينة وتجربة شذية للزبون',
     dispensedBy,
     dispensed_by,
@@ -135,8 +141,10 @@ export class TestersRepository extends BaseRepository {
     const id = generateId();
     const fOilId = fragranceOilId || fragrance_oil_id;
     const fAlcId = alcoholId || alcohol_id;
+    const fBottleId = bottleId || bottle_id;
     const oilVol = safeParseFloat(oilVolumeMl ?? oil_volume_ml);
     const alcVol = safeParseFloat(alcoholVolumeMl ?? alcohol_volume_ml);
+    const bQty = safeParseFloat(bottleQty ?? bottle_qty ?? (fBottleId ? 1 : 0));
     const staff = dispensedBy || dispensed_by || 'الكاشير';
 
     if (!fOilId && !fAlcId) {
@@ -148,6 +156,7 @@ export class TestersRepository extends BaseRepository {
 
     let oilProduct = null;
     let alcProduct = null;
+    let bottleProduct = null;
     const queries = [];
 
     // Resolve oil details & deduction
@@ -212,22 +221,42 @@ export class TestersRepository extends BaseRepository {
       }
     }
 
+    // Resolve optional bottle / packaging details & deduction
+    let derivedBottleCost = safeParseFloat(bottleCost ?? bottle_cost);
+    let bottleDeductQty = 0;
+    if (fBottleId && bQty > 0) {
+      const bRows = await db.query('SELECT * FROM inventory WHERE id = ?', [fBottleId]);
+      if (bRows && bRows.length > 0) {
+        bottleProduct = bRows[0];
+        if (derivedBottleCost <= 0) {
+          derivedBottleCost = safeParseFloat(bottleProduct.cost);
+        }
+        bottleDeductQty = bQty;
+        queries.push({
+          sql: 'UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ?',
+          params: [bottleDeductQty, fBottleId]
+        });
+      }
+    }
+
     const totalOilCost = Number((oilVol * derivedOilCostPerMl).toFixed(4));
     const totalAlcCost = Number((alcVol * derivedAlcCostPerMl).toFixed(4));
-    const totalCost = Number((totalOilCost + totalAlcCost).toFixed(4));
+    const totalBottleCost = Number((bottleDeductQty * derivedBottleCost).toFixed(4));
+    const totalCost = Number((totalOilCost + totalAlcCost + totalBottleCost).toFixed(4));
     const totalSampleVolume = Number((oilVol + alcVol).toFixed(2));
     const oilConcentration = totalSampleVolume > 0 ? Number(((oilVol / totalSampleVolume) * 100).toFixed(1)) : 0;
     const nowIso = new Date().toISOString();
 
-    const isDemoRecord = (oilProduct?.is_demo || alcProduct?.is_demo || is_demo) ? 1 : 0;
+    const isDemoRecord = (oilProduct?.is_demo || alcProduct?.is_demo || bottleProduct?.is_demo || is_demo) ? 1 : 0;
 
     queries.push({
       sql: `INSERT INTO perfume_testers (
         id, source_type, sample_volume_ml, total_cost,
         fragrance_oil_id, fragrance_oil_name, oil_volume_ml, oil_cost_per_ml,
         alcohol_id, alcohol_name, alcohol_volume_ml, alcohol_cost_per_ml,
+        bottle_id, bottle_name, bottle_cost, bottle_qty,
         reason, dispensed_by, notes, created_at, is_demo
-      ) VALUES (?, 'compounded_mix', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, 'compounded_mix', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       params: [
         id,
         totalSampleVolume,
@@ -240,6 +269,10 @@ export class TestersRepository extends BaseRepository {
         alcProduct?.name || 'كحول إيثانول نقي',
         alcVol,
         derivedAlcCostPerMl,
+        fBottleId || null,
+        bottleProduct?.name || null,
+        derivedBottleCost,
+        bottleDeductQty,
         reason,
         staff,
         notes || '',
@@ -260,6 +293,10 @@ export class TestersRepository extends BaseRepository {
       oil_cost_per_ml: derivedOilCostPerMl,
       alcohol_volume_ml: alcVol,
       alcohol_cost_per_ml: derivedAlcCostPerMl,
+      bottle_id: fBottleId || null,
+      bottle_name: bottleProduct?.name || null,
+      bottle_cost: derivedBottleCost,
+      bottle_qty: bottleDeductQty,
       oil_concentration: oilConcentration,
       oil_name: oilProduct?.name,
       alcohol_name: alcProduct?.name
@@ -381,6 +418,8 @@ export class TestersRepository extends BaseRepository {
       'نوع المصدر',
       'اسم العطر / الزيت',
       'حجم العينة (مل)',
+      'العبوة / الزجاجة',
+      'تكلفة العبوة (د.ل)',
       'التكلفة الإجمالية (د.ل)',
       'سياق وسبب الصرف',
       'الموظف المسئول',
@@ -395,6 +434,8 @@ export class TestersRepository extends BaseRepository {
     const rows = logs.map((log) => {
       const sourceLabel = log.source_type === 'ready_perfume' ? 'عطر جاهز' : 'تركيب وتخليط';
       const fragranceName = log.product_name || log.fragrance_oil_name || '—';
+      const bottleInfo = log.bottle_name ? `${log.bottle_name} (×${log.bottle_qty || 1})` : 'بدون عبوة';
+      const bottleCostStr = log.bottle_cost ? safeParseFloat(log.bottle_cost * (log.bottle_qty || 1)).toFixed(2) : '0.00';
       const dateFormatted = log.created_at ? new Date(log.created_at).toLocaleString('ar-LY') : '—';
 
       return [
@@ -403,6 +444,8 @@ export class TestersRepository extends BaseRepository {
         sourceLabel,
         fragranceName,
         log.sample_volume_ml,
+        bottleInfo,
+        bottleCostStr,
         safeParseFloat(log.total_cost).toFixed(2),
         log.reason || 'عرض المحل',
         log.dispensed_by || '—',

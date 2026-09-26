@@ -309,6 +309,10 @@ function initDatabase() {
       reason TEXT DEFAULT 'عرض المحل والتجربة للزبائن',
       dispensed_by TEXT NOT NULL,
       notes TEXT,
+      bottle_id TEXT,
+      bottle_name TEXT,
+      bottle_cost REAL DEFAULT 0.0,
+      bottle_qty REAL DEFAULT 0.0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       is_demo INTEGER DEFAULT 0
     );
@@ -319,6 +323,10 @@ function initDatabase() {
   // Non-destructive column migrations & index extensions
   const migrations = [
     "ALTER TABLE suppliers ADD COLUMN is_demo INTEGER DEFAULT 0;",
+    "ALTER TABLE perfume_testers ADD COLUMN bottle_id TEXT;",
+    "ALTER TABLE perfume_testers ADD COLUMN bottle_name TEXT;",
+    "ALTER TABLE perfume_testers ADD COLUMN bottle_cost REAL DEFAULT 0.0;",
+    "ALTER TABLE perfume_testers ADD COLUMN bottle_qty REAL DEFAULT 0.0;",
     "ALTER TABLE inventory ADD COLUMN barcode TEXT;",
     "ALTER TABLE inventory ADD COLUMN min_qty REAL DEFAULT 5;",
     "ALTER TABLE inventory ADD COLUMN notes TEXT;",

@@ -45,6 +45,9 @@ export const RecordTesterModal = ({ isOpen, onClose, onSuccess, initialProduct =
   const [selectedAlcoholId, setSelectedAlcoholId] = useState('');
   const [alcoholSearch, setAlcoholSearch] = useState('');
   const [alcoholVolumeMl, setAlcoholVolumeMl] = useState(8);
+  const [selectedBottleId, setSelectedBottleId] = useState('');
+  const [bottleSearch, setBottleSearch] = useState('');
+  const [bottleQty, setBottleQty] = useState(1);
 
   // Audit and Metadata
   const [reason, setReason] = useState('عرض وتجربة على الرف / رف التستر بالمحل');
@@ -119,6 +122,20 @@ export const RecordTesterModal = ({ isOpen, onClose, onSuccess, initialProduct =
     });
   }, [products, alcoholSearch]);
 
+  // Filter bottle / packaging from inventory
+  const bottleOptions = useMemo(() => {
+    return products.filter((p) => {
+      const isBottle = p.item_type === 'empty_bottle' ||
+        (p.category && (p.category.includes('علب') || p.category.includes('زجاج') || p.category.includes('تغليف') || p.category.includes('عبو'))) ||
+        (p.name && (p.name.includes('زجاج') || p.name.includes('علبة') || p.name.includes('قارورة') || p.name.includes('غرشة') || p.name.includes('تستر') || p.name.includes('عينة') || p.name.includes('بخاخ')));
+      const matchSearch = bottleSearch
+        ? p.name.toLowerCase().includes(bottleSearch.toLowerCase()) ||
+          (p.barcode && p.barcode.includes(bottleSearch))
+        : true;
+      return matchSearch && isBottle;
+    });
+  }, [products, bottleSearch]);
+
   // Auto-select first alcohol if available and not set
   useEffect(() => {
     if (alcoholOptions.length > 0 && !selectedAlcoholId) {
@@ -141,6 +158,11 @@ export const RecordTesterModal = ({ isOpen, onClose, onSuccess, initialProduct =
   const selectedAlcohol = useMemo(() => {
     return products.find((p) => p.id === selectedAlcoholId) || null;
   }, [products, selectedAlcoholId]);
+
+  // Selected bottle object
+  const selectedBottle = useMemo(() => {
+    return products.find((p) => p.id === selectedBottleId) || null;
+  }, [products, selectedBottleId]);
 
   // Calculations for Ready Perfume
   const readyCalculations = useMemo(() => {
@@ -194,21 +216,28 @@ export const RecordTesterModal = ({ isOpen, onClose, onSuccess, initialProduct =
         : (cap > 0 ? safeParseFloat(selectedAlcohol.cost) / cap : safeParseFloat(selectedAlcohol.cost));
     }
 
+    const bUnitPrice = selectedBottle ? safeParseFloat(selectedBottle.cost) : 0;
+    const bCount = selectedBottle ? safeParseFloat(bottleQty, 1) : 0;
+    const bottleTotalCost = bUnitPrice * bCount;
+
     const oilTotalCost = oVol * oCostPerMl;
     const alcTotalCost = aVol * aCostPerMl;
-    const totalCost = oilTotalCost + alcTotalCost;
+    const totalCost = oilTotalCost + alcTotalCost + bottleTotalCost;
     const oilConcentration = totalVol > 0 ? ((oVol / totalVol) * 100) : 0;
 
     return {
       totalVol,
       oilTotalCost,
       alcTotalCost,
+      bottleTotalCost,
+      bUnitPrice,
+      bCount,
       totalCost,
       oilConcentration,
       oCostPerMl,
       aCostPerMl
     };
-  }, [selectedOil, oilVolumeMl, selectedAlcohol, alcoholVolumeMl]);
+  }, [selectedOil, oilVolumeMl, selectedAlcohol, alcoholVolumeMl, selectedBottle, bottleQty]);
 
   // Submit Handler
   const handleSubmit = async (e) => {
@@ -258,13 +287,17 @@ export const RecordTesterModal = ({ isOpen, onClose, onSuccess, initialProduct =
           oilVolumeMl,
           alcoholId: selectedAlcoholId,
           alcoholVolumeMl,
+          bottleId: selectedBottleId || null,
+          bottleQty: selectedBottle ? bottleQty : 0,
+          bottleCost: selectedBottle ? safeParseFloat(selectedBottle.cost) : 0,
           reason: activeReason,
           dispensedBy: staffName,
           notes
         });
 
         if (res.success) {
-          setSuccessMsg(`✅ تم تركيب وصرف عينة ${res.sample_volume_ml} مل بنسبة تركيز ${res.oil_concentration}% وتوثيق تكلفة ${formatCurrency(res.total_cost)}`);
+          const bottleText = res.bottle_name ? ` + عبوة ${res.bottle_name}` : '';
+          setSuccessMsg(`✅ تم تركيب وصرف عينة ${res.sample_volume_ml} مل بنسبة تركيز ${res.oil_concentration}%${bottleText} وتوثيق تكلفة ${formatCurrency(res.total_cost)}`);
           setTimeout(() => {
             if (onSuccess) onSuccess(res);
             onClose();
@@ -537,6 +570,54 @@ export const RecordTesterModal = ({ isOpen, onClose, onSuccess, initialProduct =
                     <span className="text-xs text-slate-400 whitespace-nowrap">مل كحول</span>
                   </div>
                 </div>
+              </div>
+
+              {/* Bottle / Packaging Selection */}
+              <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-700/60 space-y-2">
+                <label className="block text-xs font-bold text-emerald-300 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Package className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>3. الزجاجة أو عبوة التستر (من المخزون):</span>
+                  </span>
+                  {selectedBottle && (
+                    <span className="text-[11px] text-emerald-400 font-mono font-bold">
+                      تكلفة العبوة: {formatCurrency(selectedBottle.cost)}
+                    </span>
+                  )}
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <select
+                    value={selectedBottleId}
+                    onChange={(e) => setSelectedBottleId(e.target.value)}
+                    className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-emerald-400"
+                  >
+                    <option value="">-- بدون خصم عبوة (أو استخدام قارورة مستعملة) --</option>
+                    {bottleOptions.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (المتوفر: {p.qty} | التكلفة: {formatCurrency(p.cost)})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      disabled={!selectedBottleId}
+                      value={bottleQty}
+                      onChange={(e) => setBottleQty(safeParseFloat(e.target.value, 1))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-emerald-400 font-mono disabled:opacity-40"
+                      placeholder="عدد العبوات..."
+                    />
+                    <span className="text-xs text-slate-400 whitespace-nowrap">عبوة</span>
+                  </div>
+                </div>
+                {selectedBottle && (
+                  <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-800">
+                    <span>الرصيد المتاح: <b className="text-white">{selectedBottle.qty}</b> {selectedBottle.unit || 'قطعة'}</span>
+                    <span>إجمالي تكلفة العبوات: <b className="text-emerald-400 font-mono">{formatCurrency(compoundedCalculations.bottleTotalCost)}</b></span>
+                  </div>
+                )}
               </div>
 
               {/* Compounded Summary */}

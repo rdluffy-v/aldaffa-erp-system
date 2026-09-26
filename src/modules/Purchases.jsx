@@ -79,13 +79,14 @@ const DEFAULT_UNITS = [
 ];
 
 const DEFAULT_CATEGORIES = [
+  'عطور',
   'عطور شرقية',
-  'عطور غربية',
-  'عطور فرنسية',
-  'زيوت خام',
-  'زجاجات ومستلزمات',
+  'عطور فرنسية وغربية',
+  'مواد خام وزيوت عطرية',
+  'زجاجات وعبوات وتغليف',
+  'كحول ومذيبات سكب',
+  'إكسسوارات وهدايا',
   'بخور ومباخر',
-  'كحول ومذيبات',
   'مثبتات وأدوات',
   'عطور عامة'
 ];
@@ -192,16 +193,14 @@ const PurchasesModule = () => {
   const loadCategories = useCallback(async () => {
     try {
       const dbCategories = await categoriesRepo.findAll({}, 'name ASC');
-      if (dbCategories && dbCategories.length > 0) {
-        const names = dbCategories.map((c) => c.name).filter(Boolean);
-        setCategories(names);
-      } else {
-        setCategories(DEFAULT_CATEGORIES);
-      }
+      const dbNames = (dbCategories || []).map((c) => c.name).filter(Boolean);
+      const productCats = (products || []).map((p) => p.category).filter(Boolean);
+      const merged = Array.from(new Set([...DEFAULT_CATEGORIES, ...dbNames, ...productCats])).filter(Boolean);
+      setCategories(merged.sort((a, b) => a.localeCompare(b, 'ar')));
     } catch (e) {
       setCategories(DEFAULT_CATEGORIES);
     }
-  }, []);
+  }, [products]);
 
   const handleCreateQuickCategory = async () => {
     const trimmed = quickCatName.trim();
@@ -704,7 +703,8 @@ const PurchasesModule = () => {
         is_new: false,
         product_id: '',
         name: '',
-        category: 'عطور شرقية',
+        category: 'عطور',
+        item_type: 'ready_perfume',
         unit: 'قطعة',
         quantity: 1,
         cost_per_unit: 0,
@@ -720,6 +720,7 @@ const PurchasesModule = () => {
   };
 
   const addNewItem = () => {
+    const defaultCat = categories[0] || 'عطور';
     setPurchaseItems((prev) => [
       ...prev,
       {
@@ -727,7 +728,8 @@ const PurchasesModule = () => {
         is_new: true,
         product_id: '',
         name: '',
-        category: categories[0] || 'عطور شرقية',
+        category: defaultCat,
+        item_type: 'ready_perfume',
         unit: 'قطعة',
         quantity: 1,
         cost_per_unit: 0,
@@ -753,6 +755,31 @@ const PurchasesModule = () => {
       const updated = [...prev];
       const currentItem = { ...updated[index], [field]: value };
 
+      if (field === 'category') {
+        const cat = String(value || '').trim();
+        currentItem.category = cat;
+        // Dynamically update dependent inputs: default unit and item_type
+        if (cat.includes('زيت') || cat.includes('مواد خام')) {
+          currentItem.unit = 'مل';
+          currentItem.item_type = 'raw_oil';
+        } else if (cat.includes('كحول') || cat.includes('مذيب')) {
+          currentItem.unit = 'لتر';
+          currentItem.item_type = 'alcohol_fixative';
+        } else if (cat.includes('زجاج') || cat.includes('عبو') || cat.includes('تغليف') || cat.includes('قارور')) {
+          currentItem.unit = 'قطعة';
+          currentItem.item_type = 'empty_bottle';
+        } else if (cat.includes('إكسسوار') || cat.includes('اكسسوار') || cat.includes('هدايا') || cat.includes('مباخر')) {
+          currentItem.unit = 'قطعة';
+          currentItem.item_type = 'accessory';
+        } else if (cat.includes('بخور') || cat.includes('مسك خام')) {
+          currentItem.unit = 'جرام';
+          currentItem.item_type = 'accessory';
+        } else {
+          currentItem.unit = 'قطعة';
+          currentItem.item_type = 'ready_perfume';
+        }
+      }
+
       if (field === 'product_id') {
         const product = products.find((p) => String(p.id) === String(value));
         if (product) {
@@ -760,9 +787,10 @@ const PurchasesModule = () => {
           currentItem.cost_per_unit = product.cost || 0;
           currentItem.sell_price = product.price || 0;
           currentItem.wholesale_price = product.wholesale_price || 0;
-          currentItem.category = product.category || 'عطور شرقية';
+          currentItem.category = product.category || 'عطور';
           currentItem.unit = product.unit || 'قطعة';
           currentItem.barcode = product.barcode || '';
+          currentItem.item_type = product.item_type || 'ready_perfume';
         }
       }
 
@@ -863,10 +891,18 @@ const PurchasesModule = () => {
             barcode = generateValidBarcode('628');
           }
           const newProductId = item.product_id || generateId();
+          const derivedType = item.item_type || (
+            (item.category && (item.category.includes('زيت') || item.category.includes('مواد خام'))) ? 'raw_oil' :
+            (item.category && (item.category.includes('كحول') || item.category.includes('مذيب'))) ? 'alcohol_fixative' :
+            (item.category && (item.category.includes('زجاج') || item.category.includes('عبو') || item.category.includes('تغليف'))) ? 'empty_bottle' :
+            (item.category && (item.category.includes('إكسسوار') || item.category.includes('اكسسوار') || item.category.includes('بخور'))) ? 'accessory' :
+            'ready_perfume'
+          );
+
           await inventoryRepo.create({
             id: newProductId,
             name: item.name.trim(),
-            category: item.category || 'عطور شرقية',
+            category: item.category || 'عطور',
             cost: item.cost_per_unit,
             price: item.sell_price || item.cost_per_unit * 1.35,
             wholesale_price: item.wholesale_price || 0,
@@ -874,6 +910,7 @@ const PurchasesModule = () => {
             unit: item.unit || 'قطعة',
             barcode,
             min_qty: 5,
+            item_type: derivedType,
             notes: item.batch_number || batchNumber ? `رقم التشغيلة: ${item.batch_number || batchNumber}` : null
           });
           pId = newProductId;
@@ -1823,12 +1860,14 @@ No additional text, only JSON.`
                                           <option value="">-- اختر المنتج من المخزون --</option>
                                           {products.map((p) => (
                                             <option key={p.id} value={p.id}>
-                                              {p.name} (المتوفر: {p.qty} {p.unit} — التكلفة: {formatCurrency(p.cost)})
+                                              [{p.category || 'عام'}] {p.name} (المتوفر: {p.qty} {p.unit} — التكلفة: {formatCurrency(p.cost)})
                                             </option>
                                           ))}
                                         </select>
                                         <div className="flex items-center justify-between text-[10px] text-gray-400">
-                                          <span>الفئة: {item.category}</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold">
+                                            الفئة: {item.category || 'عطور'}
+                                          </span>
                                           {item.barcode && (
                                             <span className="font-mono bg-black/10 dark:bg-slate-800 px-1.5 rounded">
                                               {item.barcode}
