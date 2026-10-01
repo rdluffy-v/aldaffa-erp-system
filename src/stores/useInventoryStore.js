@@ -1,12 +1,10 @@
-/**
- * Inventory Store - Global Product Catalog State
- * Manages products, filtering, caching
- */
-
 import { create } from 'zustand';
 import { InventoryRepository } from '../database/repositories/InventoryRepository.js';
+import { StockAuditsRepository } from '../database/repositories/StockAuditsRepository.js';
+import { safeParseFloat } from '../utils/helpers.js';
 
 const inventoryRepo = new InventoryRepository();
+const stockAuditsRepo = new StockAuditsRepository();
 
 export const useInventoryStore = create((set, get) => ({
   // State
@@ -17,6 +15,9 @@ export const useInventoryStore = create((set, get) => ({
   categoryFilter: 'all',
   itemTypeFilter: 'all',
   lowStockFilter: false,
+  sortBy: 'created_at_desc',
+  startDateFilter: '',
+  endDateFilter: '',
   lastFetch: null,
 
   // Actions
@@ -38,11 +39,34 @@ export const useInventoryStore = create((set, get) => ({
     }
   },
 
-  addProduct: async (productData) => {
+  addProduct: async (productData, userName = 'المستخدم') => {
     set({ loading: true, error: null });
 
     try {
-      await inventoryRepo.create(productData);
+      const now = new Date().toISOString();
+      const enrichedData = {
+        ...productData,
+        created_at: productData.created_at || now,
+        updated_at: now
+      };
+
+      await inventoryRepo.create(enrichedData);
+
+      // Log stock audit
+      await stockAuditsRepo.logAction({
+        productId: enrichedData.id,
+        productName: enrichedData.name,
+        actionType: 'create',
+        oldQty: 0,
+        newQty: enrichedData.qty,
+        qtyDelta: enrichedData.qty,
+        oldPrice: 0,
+        newPrice: enrichedData.price,
+        notes: enrichedData.notes || 'إضافة صنف جديد إلى المخزون',
+        userName,
+        date: enrichedData.created_at
+      });
+
       await get().loadProducts(true);
       return { success: true };
     } catch (error) {
@@ -51,11 +75,41 @@ export const useInventoryStore = create((set, get) => ({
     }
   },
 
-  updateProduct: async (id, productData) => {
+  updateProduct: async (id, productData, userName = 'المستخدم') => {
     set({ loading: true, error: null });
 
     try {
-      await inventoryRepo.update(id, productData);
+      const existing = get().products.find(p => p.id === id || String(p.id) === String(id));
+      const now = new Date().toISOString();
+      const enrichedData = {
+        ...productData,
+        updated_at: now
+      };
+
+      await inventoryRepo.update(id, enrichedData);
+
+      // Log stock audit
+      if (existing) {
+        const oldQ = safeParseFloat(existing.qty);
+        const newQ = productData.qty !== undefined ? safeParseFloat(productData.qty) : oldQ;
+        const oldP = safeParseFloat(existing.price);
+        const newP = productData.price !== undefined ? safeParseFloat(productData.price) : oldP;
+
+        await stockAuditsRepo.logAction({
+          productId: id,
+          productName: productData.name || existing.name,
+          actionType: oldQ !== newQ ? 'restock' : 'update',
+          oldQty: oldQ,
+          newQty: newQ,
+          qtyDelta: newQ - oldQ,
+          oldPrice: oldP,
+          newPrice: newP,
+          notes: productData.notes || 'تحديث بيانات الصنف في المخزون',
+          userName,
+          date: now
+        });
+      }
+
       await get().loadProducts(true);
       return { success: true };
     } catch (error) {
@@ -64,10 +118,29 @@ export const useInventoryStore = create((set, get) => ({
     }
   },
 
-  deleteProduct: async (id, name = null) => {
+  deleteProduct: async (id, name = null, userName = 'المستخدم') => {
     set({ loading: true, error: null });
 
     try {
+      const target = get().products.find(p => p.id === id || String(p.id) === String(id) || (name && p.name === name));
+      const now = new Date().toISOString();
+
+      if (target) {
+        await stockAuditsRepo.logAction({
+          productId: target.id,
+          productName: target.name,
+          actionType: 'delete',
+          oldQty: target.qty,
+          newQty: 0,
+          qtyDelta: -safeParseFloat(target.qty),
+          oldPrice: target.price,
+          newPrice: 0,
+          notes: 'حذف صنف من المخزون',
+          userName,
+          date: now
+        });
+      }
+
       // 1. Optimistically remove from state immediately
       set((state) => ({
         products: state.products.filter(
@@ -106,8 +179,14 @@ export const useInventoryStore = create((set, get) => ({
 
   setLowStockFilter: (enabled) => set({ lowStockFilter: enabled }),
 
+  setSortBy: (sortBy) => set({ sortBy }),
+
+  setStartDateFilter: (startDateFilter) => set({ startDateFilter }),
+
+  setEndDateFilter: (endDateFilter) => set({ endDateFilter }),
+
   // Batch update prices across category or itemType
-  batchUpdatePrices: async ({ category = 'all', itemType = 'all', adjustmentType = 'percent_increase', value = 0 }) => {
+  batchUpdatePrices: async ({ category = 'all', itemType = 'all', adjustmentType = 'percent_increase', value = 0, userName = 'المستخدم' }) => {
     set({ loading: true, error: null });
     try {
       const state = get();
@@ -121,6 +200,8 @@ export const useInventoryStore = create((set, get) => ({
       });
 
       let updatedCount = 0;
+      const now = new Date().toISOString();
+
       for (const p of targets) {
         let newPrice = p.price;
         let newWholesale = p.wholesale_price;
@@ -139,7 +220,26 @@ export const useInventoryStore = create((set, get) => ({
           newWholesale = Math.max(0, Math.round((p.wholesale_price - val) * 100) / 100);
         }
 
-        await inventoryRepo.update(p.id, { price: newPrice, wholesale_price: newWholesale });
+        await inventoryRepo.update(p.id, {
+          price: newPrice,
+          wholesale_price: newWholesale,
+          updated_at: now
+        });
+
+        await stockAuditsRepo.logAction({
+          productId: p.id,
+          productName: p.name,
+          actionType: 'batch_price_update',
+          oldQty: p.qty,
+          newQty: p.qty,
+          qtyDelta: 0,
+          oldPrice: p.price,
+          newPrice,
+          notes: `تعديل سعر جماعي (${adjustmentType})`,
+          userName,
+          date: now
+        });
+
         updatedCount++;
       }
 
@@ -154,7 +254,7 @@ export const useInventoryStore = create((set, get) => ({
   // Computed
   getFilteredProducts: () => {
     const state = get();
-    let filtered = state.products;
+    let filtered = [...state.products];
 
     // Category filter
     if (state.categoryFilter !== 'all') {
@@ -174,6 +274,27 @@ export const useInventoryStore = create((set, get) => ({
       });
     }
 
+    // Date range filter
+    if (state.startDateFilter) {
+      const startMs = new Date(`${state.startDateFilter}T00:00:00`).getTime();
+      filtered = filtered.filter(p => {
+        const itemDateStr = p.created_at || p.updated_at;
+        if (!itemDateStr) return true;
+        const itemMs = new Date(itemDateStr).getTime();
+        return isNaN(itemMs) || itemMs >= startMs;
+      });
+    }
+
+    if (state.endDateFilter) {
+      const endMs = new Date(`${state.endDateFilter}T23:59:59.999`).getTime();
+      filtered = filtered.filter(p => {
+        const itemDateStr = p.created_at || p.updated_at;
+        if (!itemDateStr) return true;
+        const itemMs = new Date(itemDateStr).getTime();
+        return isNaN(itemMs) || itemMs <= endMs;
+      });
+    }
+
     // Search filter
     if (state.searchTerm) {
       const term = state.searchTerm.toLowerCase();
@@ -183,6 +304,44 @@ export const useInventoryStore = create((set, get) => ({
         (p.shelf_location && p.shelf_location.toLowerCase().includes(term))
       );
     }
+
+    // Sorting
+    filtered.sort((a, b) => {
+      switch (state.sortBy) {
+        case 'created_at_desc': {
+          const dateA = a.created_at || a.updated_at || '';
+          const dateB = b.created_at || b.updated_at || '';
+          return dateB.localeCompare(dateA);
+        }
+        case 'created_at_asc': {
+          const dateA = a.created_at || a.updated_at || '';
+          const dateB = b.created_at || b.updated_at || '';
+          return dateA.localeCompare(dateB);
+        }
+        case 'updated_at_desc': {
+          const dateA = a.updated_at || a.created_at || '';
+          const dateB = b.updated_at || b.created_at || '';
+          return dateB.localeCompare(dateA);
+        }
+        case 'name_asc': {
+          return a.name.localeCompare(b.name, 'ar');
+        }
+        case 'price_desc': {
+          return safeParseFloat(b.price) - safeParseFloat(a.price);
+        }
+        case 'price_asc': {
+          return safeParseFloat(a.price) - safeParseFloat(b.price);
+        }
+        case 'qty_desc': {
+          return safeParseFloat(b.qty) - safeParseFloat(a.qty);
+        }
+        case 'qty_asc': {
+          return safeParseFloat(a.qty) - safeParseFloat(b.qty);
+        }
+        default:
+          return (b.created_at || '').localeCompare(a.created_at || '');
+      }
+    });
 
     return filtered;
   },

@@ -6,16 +6,18 @@ import { useAuthStore } from '../stores/useAuthStore.js';
 import { CategoriesRepository } from '../database/repositories/CategoriesRepository.js';
 import { SuppliersRepository } from '../database/repositories/SuppliersRepository.js';
 import { PurchasesRepository } from '../database/repositories/PurchasesRepository.js';
+import { StockAuditsRepository } from '../database/repositories/StockAuditsRepository.js';
 import useDebounce from '../hooks/useDebounce.js';
 import { getIpcRenderer } from '../utils/electronBridge.js';
 import usePagination from '../hooks/usePagination.js';
 import Modal from '../components/ui/Modal.jsx';
 import TestersManagementModal from '../components/TestersManagementModal.jsx';
-import { generateId, formatCurrency, safeParseFloat } from '../utils/helpers.js';
+import { generateId, formatCurrency, formatDate, safeParseFloat } from '../utils/helpers.js';
 
 const categoriesRepo = new CategoriesRepository();
 const suppliersRepo = new SuppliersRepository();
 const purchasesRepo = new PurchasesRepository();
+const stockAuditsRepo = new StockAuditsRepository();
 
 const PAGE_SIZE = 8;
 
@@ -110,7 +112,13 @@ const InventoryFullModule = () => {
     setItemTypeFilter,
     setLowStockFilter,
     batchUpdatePrices,
-    getFilteredProducts
+    getFilteredProducts,
+    sortBy,
+    setSortBy,
+    startDateFilter,
+    setStartDateFilter,
+    endDateFilter,
+    setEndDateFilter
   } = useInventoryStore();
 
   const { showSuccess, showError, showWarning } = useUIStore();
@@ -125,6 +133,14 @@ const InventoryFullModule = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [dbCategoryNames, setDbCategoryNames] = useState([]);
   const [suppliersList, setSuppliersList] = useState([]);
+
+  // Stock Audit Log Modal state
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [loadingAudits, setLoadingAudits] = useState(false);
+  const [auditFilterProduct, setAuditFilterProduct] = useState('');
+  const [auditStartDate, setAuditStartDate] = useState('');
+  const [auditEndDate, setAuditEndDate] = useState('');
 
   // Category Quick Add
   const [showQuickCatModal, setShowQuickCatModal] = useState(false);
@@ -232,8 +248,32 @@ const InventoryFullModule = () => {
   // ---- Filtered products ----
   const filtered = useMemo(
     () => getFilteredProducts(),
-    [getFilteredProducts, products, categoryFilter, itemTypeFilter, lowStockFilter, searchTerm]
+    [getFilteredProducts, products, categoryFilter, itemTypeFilter, lowStockFilter, searchTerm, sortBy, startDateFilter, endDateFilter]
   );
+
+  // Load Stock Audits for Audit Log Modal
+  const loadAuditLogs = useCallback(async () => {
+    setLoadingAudits(true);
+    try {
+      const logs = await stockAuditsRepo.getAudits({
+        limit: 100,
+        productId: auditFilterProduct || undefined,
+        startDate: auditStartDate || undefined,
+        endDate: auditEndDate || undefined
+      });
+      setAuditLogs(logs || []);
+    } catch (e) {
+      console.warn('Failed to load audit logs:', e);
+    } finally {
+      setLoadingAudits(false);
+    }
+  }, [auditFilterProduct, auditStartDate, auditEndDate]);
+
+  useEffect(() => {
+    if (showAuditModal) {
+      loadAuditLogs();
+    }
+  }, [showAuditModal, loadAuditLogs]);
 
   // ---- Categories derived from database and products ----
   const categories = useMemo(() => {
@@ -798,6 +838,15 @@ const InventoryFullModule = () => {
           </button>
           <button
             type="button"
+            onClick={() => setShowAuditModal(true)}
+            className="px-3 py-2 bg-blue-500/20 text-blue-300 border border-blue-500/40 font-bold rounded-lg hover:bg-blue-500/30 transition-all cursor-pointer flex items-center gap-1.5 text-xs sm:text-sm shadow-sm"
+            title="عرض سجل تاريخ حركات وتعديلات الجرد والأسعار والكميات"
+          >
+            <span>📜</span>
+            <span>سجل الحركات والتعديلات</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setShowBatchModal(true)}
             className="px-3 py-2 bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold rounded-lg hover:bg-amber-500/30 transition-all cursor-pointer flex items-center gap-1 text-xs sm:text-sm"
             title="تعديل أسعار جماعي لتصنيف أو للكل"
@@ -934,19 +983,19 @@ const InventoryFullModule = () => {
       </div>
 
       {/* Search + filter bar */}
-      <div className="flex flex-wrap gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
         <input
           type="text"
           placeholder="🔍 بحث بالاسم، الباركود، أو موقع الرف..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          className="flex-1 min-w-[200px] bg-gray-800 text-white px-4 py-2.5 rounded-lg border border-gold/30 focus:outline-none focus:border-gold transition-colors"
+          className="flex-1 min-w-[200px] bg-gray-800 text-white px-4 py-2.5 rounded-lg border border-gold/30 focus:outline-none focus:border-gold transition-colors text-xs sm:text-sm"
           aria-label="بحث في المنتجات"
         />
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="bg-gray-800 text-white px-4 py-2.5 rounded-lg border border-gold/30 focus:outline-none focus:border-gold transition-colors cursor-pointer"
+          className="bg-gray-800 text-white px-3 py-2.5 rounded-lg border border-gold/30 focus:outline-none focus:border-gold transition-colors cursor-pointer text-xs sm:text-sm"
           aria-label="تصفية حسب الفئة"
         >
           <option value="all">كل الفئات</option>
@@ -956,6 +1005,53 @@ const InventoryFullModule = () => {
             </option>
           ))}
         </select>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="bg-gray-800 text-white px-3 py-2.5 rounded-lg border border-gold/30 focus:outline-none focus:border-gold transition-colors cursor-pointer text-xs sm:text-sm font-bold"
+          aria-label="ترتيب المنتجات"
+          title="ترتيب قائمة الأصناف"
+        >
+          <option value="created_at_desc">🕒 الأحدث إضافة</option>
+          <option value="created_at_asc">🕒 الأقدم إضافة</option>
+          <option value="updated_at_desc">🔄 آخر تعديل</option>
+          <option value="name_asc">🔤 الاسم (أ - ي)</option>
+          <option value="price_desc">💰 السعر (الأعلى)</option>
+          <option value="price_asc">🏷️ السعر (الأقل)</option>
+          <option value="qty_desc">📦 الكمية (الأعلى)</option>
+          <option value="qty_asc">⚠️ الكمية (الأقل)</option>
+        </select>
+        <div className="flex items-center gap-1.5 bg-gray-800/80 px-3 py-1.5 rounded-lg border border-gold/20 text-xs">
+          <span className="text-gray-400 font-bold shrink-0">من:</span>
+          <input
+            type="date"
+            value={startDateFilter}
+            onChange={(e) => setStartDateFilter(e.target.value)}
+            className="bg-gray-900 text-white px-2 py-1 rounded border border-gray-700 text-xs focus:border-gold outline-none"
+            title="تصفية من تاريخ"
+          />
+          <span className="text-gray-400 font-bold shrink-0 mr-1">إلى:</span>
+          <input
+            type="date"
+            value={endDateFilter}
+            onChange={(e) => setEndDateFilter(e.target.value)}
+            className="bg-gray-900 text-white px-2 py-1 rounded border border-gray-700 text-xs focus:border-gold outline-none"
+            title="تصفية إلى تاريخ"
+          />
+          {(startDateFilter || endDateFilter) && (
+            <button
+              type="button"
+              onClick={() => {
+                setStartDateFilter('');
+                setEndDateFilter('');
+              }}
+              className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors cursor-pointer text-[10px] font-bold"
+              title="إلغاء تصفية التاريخ"
+            >
+              ✕ مسح
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Product list / grid */}
@@ -1053,6 +1149,15 @@ const InventoryFullModule = () => {
                           {isLowStock(product) && (
                             <span className="badge badge-danger text-xs font-bold animate-pulse">
                               ⚠️ مخزون منخفض (≤ {product.min_qty ?? 5})
+                            </span>
+                          )}
+                          {(product.created_at || product.updated_at) && (
+                            <span
+                              className="text-[11px] bg-gray-800 text-gray-400 border border-gray-700/60 px-2 py-0.5 rounded font-mono flex items-center gap-1"
+                              title={product.updated_at ? `آخر تعديل: ${formatDate(product.updated_at)}` : `تاريخ الإضافة: ${formatDate(product.created_at)}`}
+                            >
+                              <span>🕒</span>
+                              <span>{formatDate(product.updated_at || product.created_at)}</span>
                             </span>
                           )}
                         </div>
@@ -2097,6 +2202,149 @@ const InventoryFullModule = () => {
           onClose={() => setShowTestersModal(false)}
           onRefreshInventory={() => loadProducts(true)}
         />
+      )}
+
+      {/* =====================================================================
+       * MODAL 6: STOCK AUDIT LOG (سجل حركات وتعديلات الجرد)
+       * ==================================================================== */}
+      {showAuditModal && (
+        <Modal
+          open={showAuditModal}
+          onClose={() => setShowAuditModal(false)}
+          title="📜 سجل حركات وتعديلات المخزون والأسعار"
+          size="lg"
+          footer={
+            <div className="flex justify-between items-center w-full">
+              <span className="text-xs text-gray-400">
+                إجمالي السجلات المعروضة: {auditLogs.length} حركة
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAuditModal(false)}
+                className="px-4 py-2 bg-gray-700 text-white rounded-lg font-bold hover:bg-gray-600 transition-colors cursor-pointer text-xs"
+              >
+                إغلاق
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-3" dir="rtl">
+            {/* Filter controls */}
+            <div className="flex flex-wrap items-center gap-2 bg-[#161b22] p-2.5 rounded-lg border border-white/10 text-xs">
+              <input
+                type="text"
+                placeholder="تصفية حسب اسم الصنف أو الكود..."
+                value={auditFilterProduct}
+                onChange={(e) => setAuditFilterProduct(e.target.value)}
+                className="flex-1 min-w-[160px] bg-gray-900 text-white px-2.5 py-1.5 rounded border border-gray-700 text-xs focus:border-gold outline-none"
+              />
+              <span className="text-gray-400">من:</span>
+              <input
+                type="date"
+                value={auditStartDate}
+                onChange={(e) => setAuditStartDate(e.target.value)}
+                className="bg-gray-900 text-white px-2 py-1 rounded border border-gray-700 text-xs focus:border-gold outline-none"
+              />
+              <span className="text-gray-400">إلى:</span>
+              <input
+                type="date"
+                value={auditEndDate}
+                onChange={(e) => setAuditEndDate(e.target.value)}
+                className="bg-gray-900 text-white px-2 py-1 rounded border border-gray-700 text-xs focus:border-gold outline-none"
+              />
+              <button
+                type="button"
+                onClick={loadAuditLogs}
+                className="px-3 py-1.5 bg-gold text-[#0d1117] font-bold rounded hover:bg-amber-300 text-xs cursor-pointer"
+              >
+                تحديث السجل
+              </button>
+            </div>
+
+            {/* Audit Records Table */}
+            <div className="border border-white/10 rounded-lg overflow-hidden max-h-96 overflow-y-auto scrollbar-thin">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-[#161b22] text-gray-400 font-bold sticky top-0">
+                  <tr>
+                    <th className="p-2.5">التاريخ والوقت</th>
+                    <th className="p-2.5">اسم الصنف</th>
+                    <th className="p-2.5">نوع العملية</th>
+                    <th className="p-2.5">الكمية (قبل ⬅ بعد)</th>
+                    <th className="p-2.5">السعر (قبل ⬅ بعد)</th>
+                    <th className="p-2.5">المستخدم</th>
+                    <th className="p-2.5">ملاحظات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 bg-[#0d1117]/80">
+                  {loadingAudits ? (
+                    <tr>
+                      <td colSpan="7" className="p-6 text-center text-gray-400">
+                        جاري تحميل سجل التدقيق...
+                      </td>
+                    </tr>
+                  ) : auditLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="p-6 text-center text-gray-500">
+                        لا توجد حركات مسجلة مطابقة لمعايير البحث.
+                      </td>
+                    </tr>
+                  ) : (
+                    auditLogs.map((log) => {
+                      const actionLabels = {
+                        create: { label: '➕ إضافة صنف', color: 'text-emerald-400 bg-emerald-500/10' },
+                        update: { label: '✏️ تعديل صنف', color: 'text-blue-400 bg-blue-500/10' },
+                        restock: { label: '🔄 توريد واستلام', color: 'text-emerald-400 bg-emerald-500/10' },
+                        delete: { label: '🗑️ حذف صنف', color: 'text-rose-400 bg-rose-500/10' },
+                        batch_price_update: { label: '🏷️ تعديل جماعي', color: 'text-amber-400 bg-amber-500/10' }
+                      };
+                      const meta = actionLabels[log.action_type] || { label: log.action_type, color: 'text-gray-300 bg-gray-800' };
+
+                      return (
+                        <tr key={log.id} className="hover:bg-white/5 transition-colors">
+                          <td className="p-2.5 font-mono text-[11px] text-gray-400">
+                            {formatDate(log.created_at)}
+                          </td>
+                          <td className="p-2.5 font-bold text-white">
+                            {log.product_name}
+                          </td>
+                          <td className="p-2.5">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${meta.color}`}>
+                              {meta.label}
+                            </span>
+                          </td>
+                          <td className="p-2.5 font-mono">
+                            {log.old_qty != null && log.new_qty != null ? (
+                              <span>
+                                {log.old_qty} ⬅ <span className="font-bold text-emerald-400">{log.new_qty}</span>
+                              </span>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td className="p-2.5 font-mono">
+                            {log.old_price != null && log.new_price != null ? (
+                              <span>
+                                {log.old_price} ⬅ <span className="font-bold text-gold">{log.new_price}</span>
+                              </span>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td className="p-2.5 text-gray-300">
+                            {log.user_name || 'النظام'}
+                          </td>
+                          <td className="p-2.5 text-gray-400 text-[11px] max-w-[200px] truncate" title={log.notes || ''}>
+                            {log.notes || '—'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

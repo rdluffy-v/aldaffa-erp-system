@@ -41,7 +41,8 @@ const KNOWN_TABLES = [
   'withdrawals', 'capital_injections', 'gifts', 'notes', 'debtors',
   'debt_history', 'losses', 'purchases', 'archives', 'settings',
   'users', 'user_permissions', 'shift_reports', 'suppliers',
-  'maceration_batches', 'maceration_batch_ingredients', 'perfume_testers'
+  'maceration_batches', 'maceration_batch_ingredients', 'perfume_testers',
+  'stock_audits'
 ];
 
 // Validate a table-name identifier against the allowlist before it is used
@@ -316,12 +317,33 @@ function initDatabase() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       is_demo INTEGER DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS stock_audits (
+      id TEXT PRIMARY KEY,
+      product_id TEXT,
+      product_name TEXT,
+      action_type TEXT,
+      old_qty REAL,
+      new_qty REAL,
+      qty_delta REAL,
+      old_price REAL,
+      new_price REAL,
+      notes TEXT,
+      user_name TEXT,
+      date TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      is_demo INTEGER DEFAULT 0
+    );
   `;
 
   db.exec(schema);
 
   // Non-destructive column migrations & index extensions
   const migrations = [
+    "ALTER TABLE inventory ADD COLUMN created_at TEXT;",
+    "ALTER TABLE inventory ADD COLUMN updated_at TEXT;",
+    "ALTER TABLE notes ADD COLUMN updated_at TEXT;",
+    "ALTER TABLE stock_audits ADD COLUMN is_demo INTEGER DEFAULT 0;",
     "ALTER TABLE suppliers ADD COLUMN is_demo INTEGER DEFAULT 0;",
     "ALTER TABLE perfume_testers ADD COLUMN bottle_id TEXT;",
     "ALTER TABLE perfume_testers ADD COLUMN bottle_name TEXT;",
@@ -455,8 +477,20 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_tester_source ON perfume_testers(source_type);
     CREATE INDEX IF NOT EXISTS idx_tester_date ON perfume_testers(created_at);
     CREATE INDEX IF NOT EXISTS idx_tester_product ON perfume_testers(finished_product_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_audits_date ON stock_audits(date);
+    CREATE INDEX IF NOT EXISTS idx_stock_audits_product ON stock_audits(product_id);
+    CREATE INDEX IF NOT EXISTS idx_inventory_created ON inventory(created_at);
+    CREATE INDEX IF NOT EXISTS idx_inventory_updated ON inventory(updated_at);
+    CREATE INDEX IF NOT EXISTS idx_notes_date ON notes(date);
   `;
   db.exec(indexes);
+
+  // Backfill created_at and updated_at for existing records if null
+  try {
+    db.prepare("UPDATE inventory SET created_at = datetime('now') WHERE created_at IS NULL").run();
+    db.prepare("UPDATE inventory SET updated_at = datetime('now') WHERE updated_at IS NULL").run();
+    db.prepare("UPDATE notes SET updated_at = datetime('now') WHERE updated_at IS NULL").run();
+  } catch (e) {}
 
   // Seed default manager user if users table is empty
   try {
@@ -647,12 +681,13 @@ function purgeSafeCaches() {
 // ----------------------------------------------------
 // RESILIENT GITHUB PRIVATE REPO UPDATER ENGINE
 // ----------------------------------------------------
-const DEFAULT_GH_FALLBACK_TOKEN = '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';
+const DEFAULT_GH_FALLBACK_TOKEN = '';
 let latestDownloadedPackagePath = null;
 
 function getEffectiveGitHubToken(customToken) {
   if (customToken && String(customToken).trim()) return String(customToken).trim();
   if (process.env.GH_TOKEN && String(process.env.GH_TOKEN).trim()) return String(process.env.GH_TOKEN).trim();
+  if (process.env.GITHUB_TOKEN && String(process.env.GITHUB_TOKEN).trim()) return String(process.env.GITHUB_TOKEN).trim();
   try {
     const row = db.prepare("SELECT value FROM settings WHERE key='github_token'").get();
     if (row && row.value && String(row.value).trim()) return String(row.value).trim();
@@ -2365,13 +2400,14 @@ ipcMain.handle('print:inventory-report', async (event, inventoryData) => {
   <table>
     <thead>
       <tr>
-        <th style="width: 5%;">#</th>
-        <th style="width: 35%;">اسم الصنف / المنتج</th>
-        <th style="width: 15%;">التصنيف</th>
-        <th style="width: 10%;">الكمية</th>
-        <th style="width: 10%;">الوحدة</th>
-        <th style="width: 12%;">التكلفة</th>
-        <th style="width: 13%;">سعر البيع</th>
+        <th style="width: 4%;">#</th>
+        <th style="width: 28%;">اسم الصنف / المنتج</th>
+        <th style="width: 14%;">التصنيف</th>
+        <th style="width: 9%;">الكمية</th>
+        <th style="width: 9%;">الوحدة</th>
+        <th style="width: 11%;">التكلفة</th>
+        <th style="width: 11%;">سعر البيع</th>
+        <th style="width: 14%;">تاريخ التسجيل/التعديل</th>
       </tr>
     </thead>
     <tbody>
@@ -2384,6 +2420,7 @@ ipcMain.handle('print:inventory-report', async (event, inventoryData) => {
         <td>${p.unit || 'حبة'}</td>
         <td>${formatCurrency(p.cost)}</td>
         <td>${formatCurrency(p.price)}</td>
+        <td style="font-size: 9px; color: #4b5563;">${p.updated_at ? p.updated_at.slice(0, 10) : (p.created_at ? p.created_at.slice(0, 10) : '-')}</td>
       </tr>
       `).join('')}
     </tbody>

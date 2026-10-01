@@ -12,6 +12,7 @@ export default {
         gold: '#fbbf24',
         'gold-dark': '#f59e0b',
         glass: 'rgba(255, 255, 255, 0.05)',
+        'slate-850': '#151f32',
       },
       fontFamily: {
         arabic: ['Tajawal', 'Segoe UI', 'sans-serif'],

@@ -77,6 +77,9 @@ const MacerationLabModule = () => {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatusTab, setSelectedStatusTab] = useState('all'); // all, aging, mature_pending_approval, ready_for_sale, bottled, discarded
+  const [dateFilterStart, setDateFilterStart] = useState('');
+  const [dateFilterEnd, setDateFilterEnd] = useState('');
+  const [sortBy, setSortBy] = useState('ready_date_asc');
 
   // Modals state
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -158,6 +161,38 @@ const MacerationLabModule = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Filter and sort batches by dates and selection
+  const displayedBatches = useMemo(() => {
+    let list = [...batches];
+
+    if (dateFilterStart) {
+      list = list.filter(b => (b.start_date >= dateFilterStart || b.ready_date >= dateFilterStart));
+    }
+
+    if (dateFilterEnd) {
+      list = list.filter(b => (b.start_date <= dateFilterEnd || b.ready_date <= dateFilterEnd));
+    }
+
+    list.sort((a, b) => {
+      switch (sortBy) {
+        case 'ready_date_asc':
+          return (a.ready_date || '').localeCompare(b.ready_date || '');
+        case 'ready_date_desc':
+          return (b.ready_date || '').localeCompare(a.ready_date || '');
+        case 'start_date_desc':
+          return (b.start_date || '').localeCompare(a.start_date || '');
+        case 'start_date_asc':
+          return (a.start_date || '').localeCompare(b.start_date || '');
+        case 'created_at_desc':
+          return (b.created_at || b.start_date || '').localeCompare(a.created_at || a.start_date || '');
+        default:
+          return (a.ready_date || '').localeCompare(b.ready_date || '');
+      }
+    });
+
+    return list;
+  }, [batches, dateFilterStart, dateFilterEnd, sortBy]);
 
   // Open Create Modal & generate sequential batch code
   const handleOpenCreateModal = async () => {
@@ -561,23 +596,73 @@ const MacerationLabModule = () => {
           ))}
         </div>
 
-        <div className="relative min-w-[240px]">
-          <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="بحث باسم العطر أو كود الدفعة..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-3 pr-9 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-amber-500"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Date range filter */}
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+            <span>من:</span>
+            <input
+              type="date"
+              value={dateFilterStart}
+              onChange={(e) => setDateFilterStart(e.target.value)}
+              className="px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-amber-500"
+              title="تصفية حسب تاريخ البدء أو الجاهزية من"
+            />
+            <span>إلى:</span>
+            <input
+              type="date"
+              value={dateFilterEnd}
+              onChange={(e) => setDateFilterEnd(e.target.value)}
+              className="px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-amber-500"
+              title="تصفية حسب تاريخ البدء أو الجاهزية إلى"
+            />
+            {(dateFilterStart || dateFilterEnd) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDateFilterStart('');
+                  setDateFilterEnd('');
+                }}
+                className="text-[11px] text-amber-500 hover:underline px-1"
+              >
+                مسح التواريخ
+              </button>
+            )}
+          </div>
+
+          {/* Sort dropdown */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-amber-500 cursor-pointer"
+          >
+            <option value="ready_date_asc">⏳ الجاهزية (الأقرب)</option>
+            <option value="ready_date_desc">⌛ الجاهزية (الأبعد)</option>
+            <option value="start_date_desc">📅 البدء (الأحدث)</option>
+            <option value="start_date_asc">📅 البدء (الأقدم)</option>
+            <option value="created_at_desc">🕒 التسجيل (الأحدث)</option>
+          </select>
+
+          {/* Search bar */}
+          <div className="relative min-w-[200px]">
+            <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="بحث بالعطر أو الكود..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-3 pr-9 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-amber-500"
+            />
+          </div>
         </div>
       </div>
 
       {/* Batches Grid / List */}
-      {batches.length === 0 ? (
+      {displayedBatches.length === 0 ? (
         <div className="glass-card p-12 rounded-2xl text-center border border-dashed border-slate-300 dark:border-slate-800">
           <FlaskConical className="w-12 h-12 mx-auto text-amber-500/40 mb-3" />
-          <h3 className="text-base font-bold text-slate-700 dark:text-slate-200">لا توجد دفعات تعتيق مسجلة</h3>
+          <h3 className="text-base font-bold text-slate-700 dark:text-slate-200">
+            {batches.length === 0 ? 'لا توجد دفعات تعتيق مسجلة' : 'لا توجد دفعات مطابقة لخيارات الفرز والبحث المحددة'}
+          </h3>
           <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1 mb-4">
             ابدأ بتسجيل دفعة عطرية معتقة جديدة لتتبع فترات النضج واحتساب التكاليف ونسب التركيز بدقة
           </p>
@@ -591,7 +676,7 @@ const MacerationLabModule = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {batches.map((batch) => {
+          {displayedBatches.map((batch) => {
             const isMature = batch.status === 'mature_pending_approval' || (batch.status === 'aging' && batch.days_remaining <= 0);
             const isBottled = batch.status === 'bottled';
             const isReadySale = batch.status === 'ready_for_sale';
@@ -924,7 +1009,7 @@ const MacerationLabModule = () => {
             </h4>
 
             {/* Fragrance Oil Row */}
-            <div className="p-3 rounded-lg bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 mb-2.5">
+            <div className="p-3 rounded-lg bg-slate-100/70 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 mb-2.5">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-amber-500"></span>
@@ -986,7 +1071,7 @@ const MacerationLabModule = () => {
             </div>
 
             {/* Alcohol / Solvent Row */}
-            <div className="p-3 rounded-lg bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 mb-2.5">
+            <div className="p-3 rounded-lg bg-slate-100/70 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 mb-2.5">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-blue-500"></span>
@@ -1048,7 +1133,7 @@ const MacerationLabModule = () => {
             </div>
 
             {/* Fixatives & Modifiers Dynamic Rows */}
-            <div className="p-3 rounded-lg bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 mb-2.5">
+            <div className="p-3 rounded-lg bg-slate-100/70 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 mb-2.5">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-purple-500"></span>
@@ -1091,7 +1176,7 @@ const MacerationLabModule = () => {
                               return { ...prev, fixatives: list };
                             });
                           }}
-                          className="w-full px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                          className="w-full px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200"
                         />
                       </div>
                       <div className="col-span-3">
@@ -1107,7 +1192,7 @@ const MacerationLabModule = () => {
                               return { ...prev, fixatives: list };
                             });
                           }}
-                          className="w-full px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                          className="w-full px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200"
                         />
                       </div>
                       <div className="col-span-3">
@@ -1124,7 +1209,7 @@ const MacerationLabModule = () => {
                               return { ...prev, fixatives: list };
                             });
                           }}
-                          className="w-full px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                          className="w-full px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200"
                         />
                       </div>
                       <div className="col-span-1 text-left">
@@ -1148,7 +1233,7 @@ const MacerationLabModule = () => {
             </div>
 
             {/* Vessel / Aging Container */}
-            <div className="p-3 rounded-lg bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800">
+            <div className="p-3 rounded-lg bg-slate-100/70 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                   وعاء التعتيق / القارورة الكيميائية (Aging Vessel)
@@ -1171,7 +1256,7 @@ const MacerationLabModule = () => {
                     placeholder="اسم أو وصف الوعاء"
                     value={formData.vessel_name}
                     onChange={(e) => setFormData(prev => ({ ...prev, vessel_name: e.target.value }))}
-                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200"
                   />
                 </div>
                 <div>
@@ -1181,7 +1266,7 @@ const MacerationLabModule = () => {
                     placeholder="تكلفة الوعاء (د.ل)"
                     value={formData.vessel_cost}
                     onChange={(e) => setFormData(prev => ({ ...prev, vessel_cost: e.target.value }))}
-                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200"
                   />
                 </div>
               </div>
@@ -1332,7 +1417,7 @@ const MacerationLabModule = () => {
                     <select
                       value={gradData.bottle_capacity}
                       onChange={(e) => setGradData(prev => ({ ...prev, bottle_capacity: e.target.value }))}
-                      className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200"
                     >
                       {COMMON_BOTTLE_SIZES.map(s => (
                         <option key={s.size} value={s.size}>{s.label}</option>
@@ -1365,7 +1450,7 @@ const MacerationLabModule = () => {
                           bottle_cost: sel ? sel.cost : prev.bottle_cost
                         }));
                       }}
-                      className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200"
                     >
                       <option value="">-- بدون خصم زجاجات --</option>
                       {inventoryProducts.filter(p => p.item_type === 'empty_bottle').map(p => (
@@ -1388,7 +1473,7 @@ const MacerationLabModule = () => {
                           box_cost: sel ? sel.cost : prev.box_cost
                         }));
                       }}
-                      className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200"
                     >
                       <option value="">-- بدون علبة --</option>
                       {inventoryProducts.filter(p => p.category?.includes('علب') || p.item_type === 'accessory').map(p => (
@@ -1586,7 +1671,7 @@ const MacerationLabModule = () => {
               <button
                 type="button"
                 onClick={() => setExtendModalBatch(null)}
-                className="px-4 py-1.5 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700"
+                className="px-4 py-1.5 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 إلغاء
               </button>
@@ -1673,7 +1758,7 @@ const MacerationLabModule = () => {
               <button
                 type="button"
                 onClick={() => setFormulaModalBatch(null)}
-                className="px-4 py-2 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700"
+                className="px-4 py-2 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 إغلاق
               </button>
@@ -1709,7 +1794,7 @@ const MacerationLabModule = () => {
                 placeholder="مثلاً: رائحة زنخة / تغير لون / عكارة لا تزول بالترشيح"
                 value={discardReasonInput}
                 onChange={(e) => setDiscardReasonInput(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200"
               />
             </div>
 
@@ -1717,7 +1802,7 @@ const MacerationLabModule = () => {
               <button
                 type="button"
                 onClick={() => setDiscardModalBatch(null)}
-                className="px-4 py-1.5 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700"
+                className="px-4 py-1.5 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 إلغاء
               </button>

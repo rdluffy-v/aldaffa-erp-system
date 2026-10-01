@@ -74,6 +74,12 @@ const ShiftCloseModule = () => {
   const [activeTab, setActiveTab] = useState('current'); // 'current' | 'history'
   const [activeDetailTab, setActiveDetailTab] = useState('summary'); // 'summary' | 'sales' | 'purchases' | 'losses' | 'withdrawals' | 'capital' | 'gifts' | 'notes'
 
+  // Past reports filtering and sorting
+  const [pastSearchTerm, setPastSearchTerm] = useState('');
+  const [pastStartDate, setPastStartDate] = useState('');
+  const [pastEndDate, setPastEndDate] = useState('');
+  const [pastSortBy, setPastSortBy] = useState('newest'); // 'newest' | 'oldest'
+
   // Delete past report state
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -123,6 +129,38 @@ const ShiftCloseModule = () => {
       console.warn('loadPastReports error:', e);
     }
   };
+
+  const filteredPastReports = useMemo(() => {
+    let list = pastReports.filter((item) => {
+      // Search by cashier name
+      if (pastSearchTerm) {
+        const term = pastSearchTerm.toLowerCase();
+        const matchesName = item.cashier_name && item.cashier_name.toLowerCase().includes(term);
+        if (!matchesName) return false;
+      }
+      // Date range filter
+      if (pastStartDate) {
+        const repDate = (item.start_date || item.created_at || '').slice(0, 10);
+        if (repDate && repDate < pastStartDate) return false;
+      }
+      if (pastEndDate) {
+        const repDate = (item.end_date || item.created_at || '').slice(0, 10);
+        if (repDate && repDate > pastEndDate) return false;
+      }
+      return true;
+    });
+
+    list.sort((a, b) => {
+      const dateA = a.created_at || a.start_date || '';
+      const dateB = b.created_at || b.start_date || '';
+      if (pastSortBy === 'oldest') {
+        return dateA.localeCompare(dateB);
+      }
+      return dateB.localeCompare(dateA);
+    });
+
+    return list;
+  }, [pastReports, pastSearchTerm, pastStartDate, pastEndDate, pastSortBy]);
 
   const handleDeleteReport = async () => {
     if (!deleteTarget) return;
@@ -746,6 +784,7 @@ const ShiftCloseModule = () => {
                       <table className="w-full text-right text-xs">
                         <thead className="bg-black/10 dark:bg-slate-800 font-bold text-gray-400 sticky top-0">
                           <tr>
+                            <th className="p-2">التاريخ</th>
                             <th className="p-2">الصنف التالف</th>
                             <th className="p-2 text-center">الكمية</th>
                             <th className="p-2">سبب التلف</th>
@@ -755,11 +794,12 @@ const ShiftCloseModule = () => {
                         <tbody className="divide-y divide-white/5">
                           {report.losses.items.length === 0 ? (
                             <tr>
-                              <td colSpan="4" className="p-4 text-center text-gray-400">لا توجد توالف أو فاقد مسجل</td>
+                              <td colSpan="5" className="p-4 text-center text-gray-400">لا توجد توالف أو فاقد مسجل</td>
                             </tr>
                           ) : (
                             report.losses.items.map((l, idx) => (
                               <tr key={idx} className="hover:bg-rose-500/5">
+                                <td className="p-2 font-mono text-[11px] text-gray-400">{formatDate(l.date)}</td>
                                 <td className="p-2 font-bold">{l.item_name}</td>
                                 <td className="p-2 text-center">
                                   {l.qty} {l.unit}
@@ -780,6 +820,7 @@ const ShiftCloseModule = () => {
                       <table className="w-full text-right text-xs">
                         <thead className="bg-black/10 dark:bg-slate-800 font-bold text-gray-400 sticky top-0">
                           <tr>
+                            <th className="p-2">التاريخ</th>
                             <th className="p-2">المستلم / البند</th>
                             <th className="p-2">السبب / التصنيف</th>
                             <th className="p-2 text-left">المبلغ</th>
@@ -788,11 +829,12 @@ const ShiftCloseModule = () => {
                         <tbody className="divide-y divide-white/5">
                           {report.withdrawals.items.length === 0 ? (
                             <tr>
-                              <td colSpan="3" className="p-4 text-center text-gray-400">لا توجد سحوبات نقدية</td>
+                              <td colSpan="4" className="p-4 text-center text-gray-400">لا توجد سحوبات نقدية</td>
                             </tr>
                           ) : (
                             report.withdrawals.items.map((w, idx) => (
                               <tr key={idx} className="hover:bg-amber-500/5">
+                                <td className="p-2 font-mono text-[11px] text-gray-400">{formatDate(w.date)}</td>
                                 <td className="p-2 font-bold">{w.person || 'سحب عام'}</td>
                                 <td className="p-2 text-gray-400">{w.reason || w.category || '—'}</td>
                                 <td className="p-2 text-left font-bold text-rose-600">{formatCurrency(w.amount)}</td>
@@ -810,6 +852,7 @@ const ShiftCloseModule = () => {
                       <table className="w-full text-right text-xs">
                         <thead className="bg-black/10 dark:bg-slate-800 font-bold text-gray-400 sticky top-0">
                           <tr>
+                            <th className="p-2">التاريخ</th>
                             <th className="p-2">المصدر</th>
                             <th className="p-2">الملاحظات</th>
                             <th className="p-2 text-left">المبلغ المضاف للخزينة</th>
@@ -818,11 +861,12 @@ const ShiftCloseModule = () => {
                         <tbody className="divide-y divide-white/5">
                           {report.capital.items.length === 0 ? (
                             <tr>
-                              <td colSpan="3" className="p-4 text-center text-gray-400">لا يوجد ضخ مالي مسجل</td>
+                              <td colSpan="4" className="p-4 text-center text-gray-400">لا يوجد ضخ مالي مسجل</td>
                             </tr>
                           ) : (
                             report.capital.items.map((c, idx) => (
                               <tr key={idx} className="hover:bg-blue-500/5">
+                                <td className="p-2 font-mono text-[11px] text-gray-400">{formatDate(c.date)}</td>
                                 <td className="p-2 font-bold">{c.source || 'ضخ مالي'}</td>
                                 <td className="p-2 text-gray-400">{c.notes || '—'}</td>
                                 <td className="p-2 text-left font-bold text-blue-600">{formatCurrency(c.amount)}</td>
@@ -840,6 +884,7 @@ const ShiftCloseModule = () => {
                       <table className="w-full text-right text-xs">
                         <thead className="bg-black/10 dark:bg-slate-800 font-bold text-gray-400 sticky top-0">
                           <tr>
+                            <th className="p-2">التاريخ</th>
                             <th className="p-2">المهدى إليه</th>
                             <th className="p-2">المنتج</th>
                             <th className="p-2 text-center">الكمية</th>
@@ -849,11 +894,12 @@ const ShiftCloseModule = () => {
                         <tbody className="divide-y divide-white/5">
                           {report.gifts.items.length === 0 ? (
                             <tr>
-                              <td colSpan="4" className="p-4 text-center text-gray-400">لا توجد هدايا أو عينات مسجلة</td>
+                              <td colSpan="5" className="p-4 text-center text-gray-400">لا توجد هدايا أو عينات مسجلة</td>
                             </tr>
                           ) : (
                             report.gifts.items.map((g, idx) => (
                               <tr key={idx} className="hover:bg-purple-500/5">
+                                <td className="p-2 font-mono text-[11px] text-gray-400">{formatDate(g.date)}</td>
                                 <td className="p-2 font-bold">{g.recipient || 'زبون'}</td>
                                 <td className="p-2">{g.item_name}</td>
                                 <td className="p-2 text-center">{g.qty}</td>
@@ -929,14 +975,69 @@ const ShiftCloseModule = () => {
       ) : (
         /* Past Shift Reports History */
         <div className="flex-1 overflow-y-auto space-y-2.5 scrollbar-thin pr-1">
-          {pastReports.length === 0 ? (
+          {/* History Search & Filters Strip */}
+          <div className="atelier-card p-3 bg-amber-50/40 dark:bg-slate-800/40 border-amber-500/20 flex flex-wrap items-center gap-2.5 text-xs">
+            <input
+              type="text"
+              placeholder="🔍 بحث باسم الكاشير..."
+              value={pastSearchTerm}
+              onChange={(e) => setPastSearchTerm(e.target.value)}
+              className="flex-1 min-w-[160px] input-atelier text-xs py-1.5 px-3"
+            />
+            <div className="flex items-center gap-1.5 bg-black/5 dark:bg-slate-900/60 px-2.5 py-1 rounded-lg border border-amber-500/15">
+              <span className="text-gray-400 font-bold">من:</span>
+              <input
+                type="date"
+                value={pastStartDate}
+                onChange={(e) => setPastStartDate(e.target.value)}
+                className="bg-transparent text-xs outline-none font-bold text-[#2D2424] dark:text-white"
+              />
+              <span className="text-gray-400 font-bold mr-1">إلى:</span>
+              <input
+                type="date"
+                value={pastEndDate}
+                onChange={(e) => setPastEndDate(e.target.value)}
+                className="bg-transparent text-xs outline-none font-bold text-[#2D2424] dark:text-white"
+              />
+              {(pastStartDate || pastEndDate) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPastStartDate('');
+                    setPastEndDate('');
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors cursor-pointer text-[10px] font-bold"
+                  title="مسح تصفية التاريخ"
+                >
+                  ✕ مسح
+                </button>
+              )}
+            </div>
+            <select
+              value={pastSortBy}
+              onChange={(e) => setPastSortBy(e.target.value)}
+              className="input-atelier text-xs py-1.5 px-2.5 font-bold cursor-pointer"
+              title="ترتيب تقارير الورديات"
+            >
+              <option value="newest">🕒 الأحدث أولاً</option>
+              <option value="oldest">🕒 الأقدم أولاً</option>
+            </select>
+          </div>
+
+          {filteredPastReports.length === 0 ? (
             <div className="atelier-card p-12 text-center flex flex-col items-center justify-center gap-3">
               <History className="w-12 h-12 text-gray-300 dark:text-slate-600" />
-              <div className="text-sm font-bold text-gray-600 dark:text-gray-300">لا توجد تقارير ورديات مغلقة سابقة</div>
-              <p className="text-xs text-gray-400">عند إغلاق أي وردية سيتم أرشفة كامل تقريرها هنا للرجوع إليها وتصديرها PDF أو طباعتها</p>
+              <div className="text-sm font-bold text-gray-600 dark:text-gray-300">
+                {pastReports.length === 0 ? 'لا توجد تقارير ورديات مغلقة سابقة' : 'لا توجد تقارير مطابقة لفلاتر البحث'}
+              </div>
+              <p className="text-xs text-gray-400">
+                {pastReports.length === 0
+                  ? 'عند إغلاق أي وردية سيتم أرشفة كامل تقريرها هنا للرجوع إليها وتصديرها PDF أو طباعتها'
+                  : 'جرب تعديل اسم الكاشير أو نطاق التواريخ للعثور على التقارير المطلوبة'}
+              </p>
             </div>
           ) : (
-            pastReports.map((item) => {
+            filteredPastReports.map((item) => {
               let parsed = null;
               try {
                 parsed = JSON.parse(item.report_data_json || '{}');

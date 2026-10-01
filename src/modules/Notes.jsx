@@ -18,8 +18,12 @@ const NotesModule = () => {
   const [content, setContent] = useState('');
   const [author, setAuthor] = useState('');
   const [priority, setPriority] = useState('normal');
+  const [noteDate, setNoteDate] = useState(new Date().toISOString().slice(0, 10));
   const [filterPriority, setFilterPriority] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('date_desc'); // 'date_desc' | 'date_asc' | 'priority'
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
 
   // Loading + confirmation states
   const [loading, setLoading] = useState(false);
@@ -55,6 +59,13 @@ const NotesModule = () => {
     }
 
     setSaving(true);
+    const nowIso = new Date().toISOString();
+    // Build ISO timestamp from selected noteDate or keep full ISO
+    let finalDateIso = nowIso;
+    if (noteDate) {
+      const timePart = nowIso.includes('T') ? nowIso.split('T')[1] : '00:00:00.000Z';
+      finalDateIso = `${noteDate}T${timePart}`;
+    }
 
     try {
       if (editingNote) {
@@ -63,18 +74,21 @@ const NotesModule = () => {
           title: title.trim(),
           content: content.trim(),
           author: author.trim(),
-          priority
+          priority,
+          date: finalDateIso,
+          updated_at: nowIso
         });
         showSuccess('✅ تم تحديث الملاحظة');
       } else {
         // Create new note
         await notesRepo.create({
           id: generateId(),
-          date: new Date().toISOString(),
+          date: finalDateIso,
           author: author.trim(),
           title: title.trim(),
           content: content.trim(),
-          priority
+          priority,
+          updated_at: nowIso
         });
         showSuccess('✅ تم إضافة الملاحظة');
       }
@@ -114,6 +128,7 @@ const NotesModule = () => {
     setContent(note.content || '');
     setAuthor(note.author || '');
     setPriority(note.priority || 'normal');
+    setNoteDate(note.date ? note.date.slice(0, 10) : new Date().toISOString().slice(0, 10));
     setShowModal(true);
   };
 
@@ -123,6 +138,7 @@ const NotesModule = () => {
     setContent('');
     setAuthor('');
     setPriority('normal');
+    setNoteDate(new Date().toISOString().slice(0, 10));
     setShowModal(false);
   };
 
@@ -155,16 +171,55 @@ const NotesModule = () => {
     return counts;
   }, [notes]);
 
-  const filteredNotes = notes.filter(note => {
-    // Priority filter
-    if (filterPriority !== 'all' && note.priority !== filterPriority) {
-      return false;
-    }
-    // Search filter
-    return note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (note.content && note.content.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (note.author && note.author.toLowerCase().includes(searchTerm.toLowerCase()));
-  });
+  const filteredNotes = useMemo(() => {
+    let list = notes.filter(note => {
+      // Priority filter
+      if (filterPriority !== 'all' && note.priority !== filterPriority) {
+        return false;
+      }
+      // Date range filter
+      if (startDateFilter) {
+        const itemDateStr = (note.date || '').slice(0, 10);
+        if (itemDateStr && itemDateStr < startDateFilter) return false;
+      }
+      if (endDateFilter) {
+        const itemDateStr = (note.date || '').slice(0, 10);
+        if (itemDateStr && itemDateStr > endDateFilter) return false;
+      }
+      // Search filter
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        return (
+          note.title.toLowerCase().includes(term) ||
+          (note.content && note.content.toLowerCase().includes(term)) ||
+          (note.author && note.author.toLowerCase().includes(term))
+        );
+      }
+      return true;
+    });
+
+    // Sorting
+    list.sort((a, b) => {
+      if (sortBy === 'date_desc') {
+        return (b.date || '').localeCompare(a.date || '');
+      }
+      if (sortBy === 'date_asc') {
+        return (a.date || '').localeCompare(b.date || '');
+      }
+      if (sortBy === 'updated_desc') {
+        const dateA = a.updated_at || a.date || '';
+        const dateB = b.updated_at || b.date || '';
+        return dateB.localeCompare(dateA);
+      }
+      if (sortBy === 'priority') {
+        const priorityOrder = { urgent: 4, high: 3, normal: 2, low: 1 };
+        return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+      }
+      return 0;
+    });
+
+    return list;
+  }, [notes, filterPriority, startDateFilter, endDateFilter, searchTerm, sortBy]);
 
   return (
     <div className="h-full flex flex-col glass-card p-6">
@@ -185,19 +240,19 @@ const NotesModule = () => {
       </div>
 
       <div className="flex flex-col gap-3 mb-4">
-        {/* Search + priority select */}
-        <div className="flex gap-3">
+        {/* Search + priority + sort + date range */}
+        <div className="flex flex-wrap items-center gap-3">
           <input
             type="text"
-            placeholder="🔍 بحث..."
+            placeholder="🔍 بحث في الملاحظات أو الكاتب..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 bg-gray-800 text-white px-4 py-2 rounded-lg border border-gold/30"
+            className="flex-1 min-w-[200px] bg-gray-800 text-white px-4 py-2 rounded-lg border border-gold/30 text-xs sm:text-sm"
           />
           <select
             value={filterPriority}
             onChange={(e) => setFilterPriority(e.target.value)}
-            className="bg-gray-800 text-white px-4 py-2 rounded-lg border border-gold/30"
+            className="bg-gray-800 text-white px-3 py-2 rounded-lg border border-gold/30 text-xs sm:text-sm cursor-pointer"
           >
             <option value="all">كل الأولويات</option>
             <option value="urgent">🔴 عاجل</option>
@@ -205,6 +260,45 @@ const NotesModule = () => {
             <option value="normal">🔵 عادي</option>
             <option value="low">⚪ منخفض</option>
           </select>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="bg-gray-800 text-white px-3 py-2 rounded-lg border border-gold/30 text-xs sm:text-sm cursor-pointer font-bold"
+            title="ترتيب الملاحظات"
+          >
+            <option value="date_desc">📅 التاريخ (الأحدث)</option>
+            <option value="date_asc">📅 التاريخ (الأقدم)</option>
+            <option value="updated_desc">🔄 آخر تعديل</option>
+            <option value="priority">⚡ حسب الأولوية</option>
+          </select>
+          <div className="flex items-center gap-1.5 bg-gray-800/80 px-3 py-1.5 rounded-lg border border-gold/20 text-xs">
+            <span className="text-gray-400 font-bold shrink-0">من:</span>
+            <input
+              type="date"
+              value={startDateFilter}
+              onChange={(e) => setStartDateFilter(e.target.value)}
+              className="bg-gray-900 text-white px-2 py-1 rounded border border-gray-700 text-xs focus:border-gold outline-none"
+            />
+            <span className="text-gray-400 font-bold shrink-0 mr-1">إلى:</span>
+            <input
+              type="date"
+              value={endDateFilter}
+              onChange={(e) => setEndDateFilter(e.target.value)}
+              className="bg-gray-900 text-white px-2 py-1 rounded border border-gray-700 text-xs focus:border-gold outline-none"
+            />
+            {(startDateFilter || endDateFilter) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStartDateFilter('');
+                  setEndDateFilter('');
+                }}
+                className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors cursor-pointer text-[10px] font-bold"
+              >
+                ✕ مسح
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Priority filter chips */}
@@ -283,8 +377,15 @@ const NotesModule = () => {
                   </p>
                 )}
 
-                <div className="flex justify-between items-center text-xs text-gray-500 border-t border-gray-700 pt-2">
-                  <span>{formatDate(note.date)}</span>
+                <div className="flex flex-wrap justify-between items-center text-xs text-gray-500 border-t border-gray-700/60 pt-2 gap-2">
+                  <div className="flex items-center gap-2">
+                    <span title="تاريخ التسجيل">📅 {formatDate(note.date)}</span>
+                    {note.updated_at && note.updated_at !== note.date && (
+                      <span className="text-[10px] text-gray-400" title={`آخر تعديل: ${formatDate(note.updated_at)}`}>
+                        (مُعدل: {formatDate(note.updated_at)})
+                      </span>
+                    )}
+                  </div>
                   {note.author && <span>👤 {note.author}</span>}
                 </div>
               </div>
@@ -294,55 +395,65 @@ const NotesModule = () => {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" dir="rtl">
-          <div className="glass-card p-6 w-[700px] max-h-[90vh] overflow-y-auto scrollbar-thin">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" dir="rtl">
+          <div className="glass-card bg-[#161b22] dark:bg-[#151f32] border border-gold/30 p-6 w-[700px] max-w-full max-h-[90vh] overflow-y-auto scrollbar-thin rounded-2xl shadow-2xl">
             <h2 className="text-2xl font-bold text-gold mb-4">
               {editingNote ? 'تعديل الملاحظة' : 'ملاحظة جديدة'}
             </h2>
-            <div className="space-y-3 mb-6">
+            <div className="space-y-3.5 mb-6">
               <div>
-                <label className="text-sm text-gray-400 mb-1 block">العنوان *</label>
+                <label className="text-sm text-gray-300 font-bold mb-1 block">العنوان *</label>
                 <input
                   type="text"
                   placeholder="عنوان الملاحظة..."
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
+                  className="w-full bg-gray-900 text-white px-4 py-2.5 rounded-lg border border-gold/30 focus:border-gold outline-none text-sm"
                   autoFocus
                 />
               </div>
               <div>
-                <label className="text-sm text-gray-400 mb-1 block">المحتوى</label>
+                <label className="text-sm text-gray-300 font-bold mb-1 block">المحتوى</label>
                 <textarea
                   placeholder="تفاصيل الملاحظة..."
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
-                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30 h-48 resize-none"
+                  className="w-full bg-gray-900 text-white px-4 py-2.5 rounded-lg border border-gold/30 focus:border-gold outline-none h-40 resize-none text-sm"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="text-sm text-gray-400 mb-1 block">المسجل</label>
+                  <label className="text-sm text-gray-300 font-bold mb-1 block">المسجل</label>
                   <input
                     type="text"
                     placeholder="اسم الكاتب..."
                     value={author}
                     onChange={(e) => setAuthor(e.target.value)}
-                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
+                    className="w-full bg-gray-900 text-white px-3 py-2 rounded-lg border border-gold/30 focus:border-gold outline-none text-xs sm:text-sm"
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-gray-400 mb-1 block">الأولوية</label>
+                  <label className="text-sm text-gray-300 font-bold mb-1 block">الأولوية</label>
                   <select
                     value={priority}
                     onChange={(e) => setPriority(e.target.value)}
-                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gold/30"
+                    className="w-full bg-gray-900 text-white px-3 py-2 rounded-lg border border-gold/30 focus:border-gold outline-none text-xs sm:text-sm cursor-pointer"
                   >
                     <option value="urgent">🔴 عاجل</option>
                     <option value="high">🟠 مهم</option>
                     <option value="normal">🔵 عادي</option>
                     <option value="low">⚪ منخفض</option>
                   </select>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-300 font-bold mb-1 block">تاريخ الملاحظة</label>
+                  <input
+                    type="date"
+                    value={noteDate}
+                    onChange={(e) => setNoteDate(e.target.value)}
+                    className="w-full bg-gray-900 text-white px-3 py-2 rounded-lg border border-gold/30 focus:border-gold outline-none text-xs sm:text-sm"
+                    title="تاريخ تسجيل أو استحقاق الملاحظة"
+                  />
                 </div>
               </div>
             </div>

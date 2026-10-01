@@ -15,7 +15,7 @@ const ALLOWED_TABLES = new Set([
   'gifts', 'notes', 'debtors', 'debt_history', 'losses', 'purchases',
   'archives', 'settings', 'users', 'user_permissions', 'categories',
   'shift_reports', 'suppliers', 'maceration_batches', 'maceration_batch_ingredients',
-  'perfume_testers'
+  'perfume_testers', 'stock_audits'
 ]);
 
 export class BaseRepository {
