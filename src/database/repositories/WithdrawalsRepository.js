@@ -157,4 +157,168 @@ export class WithdrawalsRepository extends BaseRepository {
     `;
     return await db.query(sql, [year.toString()]);
   }
+
+  /**
+   * Get all registered and past employee names from users table and withdrawals records
+   */
+  async getEmployeesList() {
+    try {
+      // 1. Fetch system users
+      let users = [];
+      try {
+        users = await db.query(`SELECT id, name, role FROM users ORDER BY name ASC`);
+      } catch (err) {
+        console.warn('Could not query users table directly:', err);
+      }
+
+      // 2. Fetch distinct employee names previously recorded in withdrawals
+      let pastEmployees = [];
+      try {
+        pastEmployees = await db.query(`
+          SELECT DISTINCT employee_name as name
+          FROM ${this.tableName}
+          WHERE employee_name IS NOT NULL AND TRIM(employee_name) != ''
+        `);
+      } catch (err) {
+        console.warn('Could not query past employees:', err);
+      }
+
+      const map = new Map();
+      (users || []).forEach(u => {
+        const cleanName = (u.name || '').trim();
+        if (cleanName) {
+          map.set(cleanName.toLowerCase(), {
+            id: u.id,
+            name: cleanName,
+            role: u.role || 'staff',
+            isUser: true
+          });
+        }
+      });
+
+      (pastEmployees || []).forEach(e => {
+        const cleanName = (e.name || '').trim();
+        if (cleanName && !map.has(cleanName.toLowerCase())) {
+          map.set(cleanName.toLowerCase(), {
+            id: `emp_${cleanName}`,
+            name: cleanName,
+            role: 'employee',
+            isUser: false
+          });
+        }
+      });
+
+      return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    } catch (e) {
+      console.warn('Error fetching employees list:', e);
+      return [];
+    }
+  }
+
+  /**
+   * Check if salary has already been paid for an employee for a specific month
+   */
+  async checkExistingSalary(employeeName, salaryMonth) {
+    if (!employeeName || !salaryMonth) return null;
+    const sql = `
+      SELECT * FROM ${this.tableName}
+      WHERE category = 'salary'
+        AND LOWER(TRIM(employee_name)) = LOWER(TRIM(?))
+        AND salary_month = ?
+      ORDER BY date DESC
+      LIMIT 1
+    `;
+    return await db.get(sql, [employeeName, salaryMonth]);
+  }
+
+  /**
+   * Get latest salary payment for an employee
+   */
+  async getLatestSalaryForEmployee(employeeName) {
+    if (!employeeName) return null;
+    const sql = `
+      SELECT * FROM ${this.tableName}
+      WHERE category = 'salary'
+        AND LOWER(TRIM(employee_name)) = LOWER(TRIM(?))
+      ORDER BY date DESC
+      LIMIT 1
+    `;
+    return await db.get(sql, [employeeName]);
+  }
+
+  /**
+   * Get summary of salaries grouped by employee in date range
+   */
+  async getSalariesByEmployeeSummary(startDate, endDate) {
+    const sql = `
+      SELECT 
+        employee_name,
+        COUNT(*) as payments_count,
+        SUM(amount) as total_amount,
+        MAX(date) as last_payment_date,
+        MAX(COALESCE(delivery_date, SUBSTR(date, 1, 10))) as last_delivery_date,
+        MAX(salary_month) as last_salary_month
+      FROM ${this.tableName}
+      WHERE category = 'salary'
+        AND date >= ? AND date <= ?
+        AND employee_name IS NOT NULL AND TRIM(employee_name) != ''
+      GROUP BY employee_name
+      ORDER BY total_amount DESC
+    `;
+    return await db.query(sql, [startDate, endDate]);
+  }
+
+  /**
+   * Get all salary payments made to an employee for a specific month (for multiple installments / advances)
+   */
+  async getEmployeeSalariesForMonth(employeeName, salaryMonth) {
+    if (!employeeName || !salaryMonth) return [];
+    const sql = `
+      SELECT * FROM ${this.tableName}
+      WHERE category = 'salary'
+        AND LOWER(TRIM(employee_name)) = LOWER(TRIM(?))
+        AND (salary_month = ? OR salary_month LIKE ?)
+      ORDER BY date DESC
+    `;
+    return await db.query(sql, [employeeName, salaryMonth, `%${salaryMonth}%`]);
+  }
+
+  /**
+   * Batch create multiple salaries atomically (for multi-employee payroll)
+   */
+  async batchCreateSalaries(salariesArray = []) {
+    if (!Array.isArray(salariesArray) || salariesArray.length === 0) return { count: 0 };
+    const queries = salariesArray.map((item) => {
+      const keys = Object.keys(item);
+      const values = Object.values(item);
+      const placeholders = keys.map(() => '?').join(', ');
+      return {
+        sql: `INSERT INTO ${this.tableName} (${keys.join(', ')}) VALUES (${placeholders})`,
+        params: values
+      };
+    });
+    await db.transaction(queries);
+    return { count: salariesArray.length };
+  }
+
+  /**
+   * Get daily cash outflow grouped by date (for tracking every day money goes out)
+   */
+  async getDailyCashFlow(startDate, endDate) {
+    const sql = `
+      SELECT 
+        COALESCE(delivery_date, SUBSTR(date, 1, 10)) as flow_date,
+        SUM(CASE WHEN source = 'drawer' AND category != 'capital_asset' THEN amount ELSE 0 END) as drawer_total,
+        SUM(CASE WHEN source = 'safe' OR category = 'capital_asset' THEN amount ELSE 0 END) as safe_total,
+        SUM(amount) as day_total,
+        COUNT(*) as count
+      FROM ${this.tableName}
+      WHERE date >= ? AND date <= ?
+      GROUP BY flow_date
+      ORDER BY flow_date DESC
+    `;
+    return await db.query(sql, [startDate, endDate]);
+  }
 }
+
+

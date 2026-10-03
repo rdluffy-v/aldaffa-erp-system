@@ -368,5 +368,194 @@ export async function run() {
     assert.strictEqual(totalCashOutflow, 6500.0);
   });
 
+  // =========================================================================
+  // 8. ENHANCED PAYROLL & SALARY SETTLEMENTS (MONTH, DELIVERY DATE & DUP CHECKS)
+  // =========================================================================
+
+  await test('33.5.1 Enhanced Salaries: Persist target salary_month and delivery_date in withdrawals', async () => {
+    const db = createTestDb();
+
+    db.run(`
+      INSERT INTO withdrawals (id, date, amount, recipient, reason, category, source, employee_name, notes, salary_month, delivery_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      'sal-oct-1',
+      '2026-10-03T00:00:00.000Z',
+      1800.0,
+      'أحمد عبد الله',
+      'مرتب شهر أكتوبر 2026 - أحمد عبد الله',
+      'salary',
+      'drawer',
+      'أحمد عبد الله',
+      'تسليم نقدي مع إيصال استلام',
+      '2026-10',
+      '2026-10-03'
+    );
+
+    const record = db.get(`SELECT * FROM withdrawals WHERE id = ?`, 'sal-oct-1');
+    assert.ok(record, 'Salary record must be persisted');
+    assert.strictEqual(record.employee_name, 'أحمد عبد الله');
+    assert.strictEqual(record.amount, 1800.0);
+    assert.strictEqual(record.salary_month, '2026-10', 'Target salary month must be accurately saved');
+    assert.strictEqual(record.delivery_date, '2026-10-03', 'Handover delivery date must be accurately saved');
+    assert.strictEqual(record.source, 'drawer');
+  });
+
+  await test('33.5.2 Enhanced Salaries: Duplicate month detection for same employee', async () => {
+    const db = createTestDb();
+
+    // First disbursement for October 2026
+    db.run(`
+      INSERT INTO withdrawals (id, date, amount, employee_name, category, source, salary_month, delivery_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, 'sal-1', '2026-10-01T00:00:00.000Z', 1500.0, 'سالم محمود', 'salary', 'safe', '2026-10', '2026-10-01');
+
+    // Check duplicate query
+    const dup = db.get(`
+      SELECT * FROM withdrawals
+      WHERE category = 'salary'
+        AND LOWER(TRIM(employee_name)) = LOWER(TRIM(?))
+        AND salary_month = ?
+    `, 'سالم محمود', '2026-10');
+
+    assert.ok(dup, 'Must detect existing salary for October 2026');
+    assert.strictEqual(dup.amount, 1500.0);
+
+    // Check non-duplicate for November 2026
+    const nonDup = db.get(`
+      SELECT * FROM withdrawals
+      WHERE category = 'salary'
+        AND LOWER(TRIM(employee_name)) = LOWER(TRIM(?))
+        AND salary_month = ?
+    `, 'سالم محمود', '2026-11');
+
+    assert.strictEqual(nonDup, undefined, 'November 2026 must have no duplicate');
+  });
+
+  await test('33.5.3 Enhanced Salaries: Employee list extraction combining users and withdrawals', async () => {
+    const db = createTestDb();
+
+    // Create users table and insert user
+    db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        role TEXT DEFAULT 'cashier'
+      )
+    `);
+    // Insert user with required pin
+    db.run(`INSERT INTO users (id, name, pin, role) VALUES (?, ?, ?, ?)`, 'u-1', 'خالد أحمد', '1234', 'cashier');
+
+    // Insert salary with non-user employee
+    db.run(`
+      INSERT INTO withdrawals (id, date, amount, employee_name, category, salary_month, delivery_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, 'sal-2', '2026-10-02T00:00:00.000Z', 1200.0, 'طارق نوري', 'salary', '2026-10', '2026-10-02');
+
+    const users = db.query(`SELECT id, name, role FROM users`);
+    const pastEmps = db.query(`SELECT DISTINCT employee_name as name FROM withdrawals WHERE employee_name IS NOT NULL`);
+
+    const names = new Set([...users.map(u => u.name), ...pastEmps.map(e => e.name)]);
+    assert(names.has('خالد أحمد'), 'Users must be in employee set');
+    assert(names.has('طارق نوري'), 'Past withdrawal employees must be in employee set');
+    assert.strictEqual(names.size, 2);
+  });
+
+  await test('33.5.4 Multi-Installments & Cross-Month Payroll: Advances, past arrears and future advance', async () => {
+    const db = createTestDb();
+
+    // 1. Advance payment for month 10
+    db.run(`
+      INSERT INTO withdrawals (id, date, amount, employee_name, category, source, salary_month, delivery_date, payment_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, 'sal-adv', '2026-10-05T10:00:00.000Z', 500.0, 'محمود عمر', 'salary', 'drawer', '2026-10', '2026-10-05', 'salary_advance');
+
+    // 2. Remaining balance for month 10
+    db.run(`
+      INSERT INTO withdrawals (id, date, amount, employee_name, category, source, salary_month, delivery_date, payment_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, 'sal-rem', '2026-10-25T14:00:00.000Z', 1000.0, 'محمود عمر', 'salary', 'drawer', '2026-10', '2026-10-25', 'salary_remaining');
+
+    // 3. Arrears for past month 9
+    db.run(`
+      INSERT INTO withdrawals (id, date, amount, employee_name, category, source, salary_month, delivery_date, payment_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, 'sal-past', '2026-10-10T12:00:00.000Z', 300.0, 'محمود عمر', 'salary', 'safe', '2026-09', '2026-10-10', 'salary_arrears');
+
+    // 4. Advance for future month 11
+    db.run(`
+      INSERT INTO withdrawals (id, date, amount, employee_name, category, source, salary_month, delivery_date, payment_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, 'sal-fut', '2026-10-28T16:00:00.000Z', 600.0, 'محمود عمر', 'salary', 'safe', '2026-11', '2026-10-28', 'salary_advance_next');
+
+    // Query all payments for month 10 (multiple installments)
+    const month10Payments = db.query(`
+      SELECT * FROM withdrawals
+      WHERE employee_name = 'محمود عمر' AND salary_month = '2026-10'
+      ORDER BY date ASC
+    `);
+    assert.strictEqual(month10Payments.length, 2, 'Must have 2 installments for month 10');
+    const month10Total = month10Payments.reduce((s, p) => s + p.amount, 0);
+    assert.strictEqual(month10Total, 1500.0, 'Combined month 10 salary must equal 1500');
+
+    // Query past month arrears
+    const arrears = db.get(`
+      SELECT * FROM withdrawals
+      WHERE employee_name = 'محمود عمر' AND salary_month = '2026-09'
+    `);
+    assert.ok(arrears, 'Past month arrears must be recorded');
+    assert.strictEqual(arrears.amount, 300.0);
+
+    // Query future month advance
+    const futureAdv = db.get(`
+      SELECT * FROM withdrawals
+      WHERE employee_name = 'محمود عمر' AND salary_month = '2026-11'
+    `);
+    assert.ok(futureAdv, 'Future month advance must be recorded');
+    assert.strictEqual(futureAdv.amount, 600.0);
+  });
+
+  await test('33.5.5 Daily Cash Outflow Invariant: Accurate day-by-day aggregation and drawer/safe isolation', async () => {
+    const db = createTestDb();
+
+    // Outflow on Oct 03: 1 drawer (100) + 1 safe (500)
+    db.run(`INSERT INTO withdrawals (id, date, amount, category, source, delivery_date) VALUES (?, ?, ?, ?, ?, ?)`,
+      'w1', '2026-10-03T09:00:00.000Z', 100.0, 'expense', 'drawer', '2026-10-03');
+    db.run(`INSERT INTO withdrawals (id, date, amount, category, source, delivery_date) VALUES (?, ?, ?, ?, ?, ?)`,
+      'w2', '2026-10-03T11:00:00.000Z', 500.0, 'salary', 'safe', '2026-10-03');
+
+    // Outflow on Oct 04: 1 drawer salary (1200)
+    db.run(`INSERT INTO withdrawals (id, date, amount, category, source, delivery_date) VALUES (?, ?, ?, ?, ?, ?)`,
+      'w3', '2026-10-04T15:00:00.000Z', 1200.0, 'salary', 'drawer', '2026-10-04');
+
+    const dailyFlow = db.query(`
+      SELECT 
+        COALESCE(delivery_date, SUBSTR(date, 1, 10)) as flow_date,
+        SUM(CASE WHEN source = 'drawer' AND category != 'capital_asset' THEN amount ELSE 0 END) as drawer_total,
+        SUM(CASE WHEN source = 'safe' OR category = 'capital_asset' THEN amount ELSE 0 END) as safe_total,
+        SUM(amount) as day_total,
+        COUNT(*) as count
+      FROM withdrawals
+      GROUP BY flow_date
+      ORDER BY flow_date ASC
+    `);
+
+    assert.strictEqual(dailyFlow.length, 2);
+    // Day 1
+    assert.strictEqual(dailyFlow[0].flow_date, '2026-10-03');
+    assert.strictEqual(dailyFlow[0].drawer_total, 100.0);
+    assert.strictEqual(dailyFlow[0].safe_total, 500.0);
+    assert.strictEqual(dailyFlow[0].day_total, 600.0);
+    assert.strictEqual(dailyFlow[0].count, 2);
+
+    // Day 2
+    assert.strictEqual(dailyFlow[1].flow_date, '2026-10-04');
+    assert.strictEqual(dailyFlow[1].drawer_total, 1200.0);
+    assert.strictEqual(dailyFlow[1].safe_total, 0.0);
+    assert.strictEqual(dailyFlow[1].day_total, 1200.0);
+    assert.strictEqual(dailyFlow[1].count, 1);
+  });
+
   return results;
 }
+

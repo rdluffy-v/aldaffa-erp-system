@@ -90,6 +90,9 @@ export function createTestDb() {
       employee_name TEXT,
       asset_name TEXT,
       notes TEXT,
+      salary_month TEXT,
+      delivery_date TEXT,
+      payment_type TEXT DEFAULT 'salary_full',
       is_demo INTEGER DEFAULT 0
     );
 

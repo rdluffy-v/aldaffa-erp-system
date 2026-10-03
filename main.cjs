@@ -147,6 +147,9 @@ function initDatabase() {
       employee_name TEXT,
       asset_name TEXT,
       notes TEXT,
+      salary_month TEXT,
+      delivery_date TEXT,
+      payment_type TEXT DEFAULT 'salary_full',
       is_demo INTEGER DEFAULT 0
     );
 
@@ -385,6 +388,9 @@ function initDatabase() {
     "ALTER TABLE withdrawals ADD COLUMN employee_name TEXT;",
     "ALTER TABLE withdrawals ADD COLUMN asset_name TEXT;",
     "ALTER TABLE withdrawals ADD COLUMN notes TEXT;",
+    "ALTER TABLE withdrawals ADD COLUMN salary_month TEXT;",
+    "ALTER TABLE withdrawals ADD COLUMN delivery_date TEXT;",
+    "ALTER TABLE withdrawals ADD COLUMN payment_type TEXT DEFAULT 'salary_full';",
     "ALTER TABLE capital_injections ADD COLUMN is_demo INTEGER DEFAULT 0;",
     "ALTER TABLE gifts ADD COLUMN is_demo INTEGER DEFAULT 0;",
     "ALTER TABLE losses ADD COLUMN is_demo INTEGER DEFAULT 0;",
@@ -470,6 +476,8 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(date);
     CREATE INDEX IF NOT EXISTS idx_losses_date ON losses(date);
     CREATE INDEX IF NOT EXISTS idx_withdrawals_date ON withdrawals(date);
+    CREATE INDEX IF NOT EXISTS idx_withdrawals_salary_month ON withdrawals(salary_month);
+    CREATE INDEX IF NOT EXISTS idx_withdrawals_employee ON withdrawals(employee_name);
     CREATE INDEX IF NOT EXISTS idx_debt_history_debtor ON debt_history(debtor_id);
     CREATE INDEX IF NOT EXISTS idx_returns_sale ON returns(sale_id);
     CREATE INDEX IF NOT EXISTS idx_maceration_status ON maceration_batches(status);
